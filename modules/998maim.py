@@ -16,7 +16,6 @@ from dataclasses import dataclass, asdict, field
 from colorama import Fore
 from PIL import Image
 
-# 尝试导入 maim_message，如果环境缺失则跳过（用于开发/迁移环境兼容）
 try:
     from maim_message import (
         MessageBase,
@@ -31,7 +30,6 @@ try:
         Seg,
     )
 except ImportError:
-    # 定义哑类以防导入失败导致代码无法加载
     class MessageBase: pass
     class BaseMessageInfo: pass
     class FormatInfo: pass
@@ -157,7 +155,7 @@ class Maim(Module):
         新版 Maimbot 返回的数据通常包含 reply_data 列表
         """
         try:
-            # 提取消息段列表
+            '''提取消息段列表'''
             message_segments = []
             if "reply_data" in raw_message:
                 message_segments = raw_message.get("reply_data", [])
@@ -165,14 +163,14 @@ class Maim(Module):
                 seg = raw_message.get("message_segment")
                 message_segments = [seg] if isinstance(seg, dict) else seg
             
-            # 日志打印简化
+            '''日志打印简化'''
             log_str = json.dumps(message_segments, ensure_ascii=False)
             if len(log_str) > 200:
                 log_str = log_str[:200] + "..."
             self.printf(f"{Fore.CYAN}[FROM Maim] {Fore.RESET}{log_str}")
 
             for segment in message_segments:
-                # 统一获取 type
+                '''统一获取 type'''
                 c_type = segment.get("content_type") or segment.get("type")
                 
                 if c_type == ReplyContentType.COMMAND:
@@ -185,7 +183,6 @@ class Maim(Module):
 
     async def send_command(self, segment: Dict, raw_message: Dict) -> None:
         """处理命令类消息"""
-        # segment 结构: {"content_type": "command", "content": {"name": "...", "args": {...}}}
         content = segment.get("content") or segment.get("data")
         if not content:
             return
@@ -193,11 +190,9 @@ class Maim(Module):
         command: str = content.get("name")
         args: Dict = content.get("args", {})
         
-        # 尝试从 raw_message 补充缺失的 ID 信息
         group_id = args.get("group_id")
         qq_id = args.get("qq_id")
 
-        # 如果命令参数里没有群号，尝试从消息上下文获取
         if not group_id:
              if raw_message.get("chat_info_platform") == "group":
                  group_id = raw_message.get("chat_id")
@@ -330,7 +325,7 @@ class Maim(Module):
                     payload += self.parse_reply_content(item)
                     
         elif c_type == ReplyContentType.FORWARD:
-            # TODO: 实现复杂的转发节点解析
+
             payload = "[转发消息]"
             
         return payload
@@ -347,7 +342,7 @@ class Maim(Module):
         msg = re.sub(r"(\s)+", "", msg) if msg and "\n" in msg else msg or ""
         reply_contents: List[Dict] = []
         
-        # 解析 CQ 码
+        '''解析 CQ 码'''
         while re.search(r"(\[CQ:(.+?),(.+?)\])", msg):
             match_obj = re.search(r"(\[CQ:(.+?),(.+?)\])", msg)
             if not match_obj: break
@@ -455,7 +450,7 @@ class Maim(Module):
 
             '''构造 GroupInfo'''
             group_info = None
-            # 只有在群聊模式下才创建 GroupInfo
+            
             if payload.get("chat_info_platform") == "group":
                 group_info = GroupInfo(
                     platform=str(payload.get("user_platform", "qq")),
@@ -463,14 +458,12 @@ class Maim(Module):
                 )
             
             '''构造 SenderInfo'''
-            # 根据源码，BaseMessageInfo 推荐使用 sender_info 替代直接的 user_info/group_info
             sender_info = SenderInfo(
                 group_info=group_info,
                 user_info=user_info
             )
 
             '''构造 MessageSegment'''
-            # payload 中的 'reply_data' 是一个字典列表，我们需要将其转换为 Seg 对象列表
             raw_segments = payload.get("reply_data") or payload.get("message_segment", [])
             seg_list = []
             
