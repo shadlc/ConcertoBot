@@ -10,22 +10,36 @@ import re
 import threading
 import time
 import traceback
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Union
+from dataclasses import dataclass, asdict, field
 
 from colorama import Fore
 from PIL import Image
 
-from maim_message import (
-    BaseMessageInfo,
-    FormatInfo,
-    UserInfo,
-    GroupInfo,
-    MessageBase,
-    Seg,
-    Router,
-    RouteConfig,
-    TargetConfig,
-)
+try:
+    from maim_message import (
+        MessageBase,
+        BaseMessageInfo,
+        FormatInfo,
+        UserInfo,
+        GroupInfo,
+        Router,
+        RouteConfig,
+        TargetConfig,
+        SenderInfo,
+        Seg,
+    )
+except ImportError:
+    class MessageBase: pass
+    class BaseMessageInfo: pass
+    class FormatInfo: pass
+    class UserInfo: pass
+    class GroupInfo: pass
+    class Router: pass
+    class RouteConfig: pass
+    class TargetConfig: pass
+    class SenderInfo: pass
+    class Seg: pass
 
 from src.utils import (
     Event,
@@ -53,14 +67,32 @@ from src.utils import (
     via,
 )
 
+class ReplyContentType:
+    TEXT = "text"
+    IMAGE = "image"
+    EMOJI = "emoji"
+    COMMAND = "command"
+    VOICE = "voice"
+    FORWARD = "forward"
+    HYBRID = "hybrid"
+
+@dataclass
+class ReplyContent:
+    content_type: str
+    content: Union[str, Dict, List, Any]
+
+    def to_dict(self):
+        return asdict(self)
+
+
 class Maim(Module):
-    """麦麦适配器模块"""
+    """麦麦适配器模块 (适配 Maimbot v0.3.3+ 架构)"""
 
     ID = "Maim"
     NAME = "麦麦适配器模块"
     HELP = {
         0: [
-            "本模块用于对接麦麦机器人，感谢[MaiMBot][MaiMBot-Napcat-Adapter]开源项目对本模块的实现提供助力"
+            "本模块用于对接新版麦麦机器人，支持混合消息与指令交互"
         ],
         1: [
             "[开启|关闭]麦麦 | 开启或关闭麦麦机器人功能",
@@ -91,10 +123,16 @@ class Maim(Module):
         apply_formatter(logger, self.ID)
         self.loop = asyncio.get_event_loop()
         threading.Thread(target=self.loop.run_forever, daemon=True).start()
-        target_config = TargetConfig(url=self.config["url"], token=None)
-        route_config = RouteConfig({self.config["platform"]: target_config})
-        self.router = Router(route_config)
-        self.router.register_class_handler(self.handle_maimbot_message)
+        
+        # 初始化连接
+        try:
+            target_config = TargetConfig(url=self.config["url"], token=None)
+            route_config = RouteConfig({self.config["platform"]: target_config})
+            self.router = Router(route_config)
+            self.router.register_class_handler(self.handle_maimbot_message)
+        except Exception as e:
+            self.errorf(f"初始化 Router 失败: {e}")
+            
         self.failed_times = 0
         self.listening()
 
@@ -108,118 +146,147 @@ class Maim(Module):
 
     def listening(self):
         """开启监听"""
-        asyncio.run_coroutine_threadsafe(self.router.run(), self.loop)
+        if hasattr(self, 'router'):
+            asyncio.run_coroutine_threadsafe(self.router.run(), self.loop)
 
     async def handle_maimbot_message(self, raw_message: dict):
-        """处理 MaiMBot 回复的消息"""
+        """
+        处理 MaiMBot 回复的消息 (接收逻辑)
+        新版 Maimbot 返回的数据通常包含 reply_data 列表
+        """
         try:
-            message: MessageBase = MessageBase.from_dict(raw_message)
-            simple_msg = re.sub(
-                r"type='(image|emoji|voice)',\s?data='.*?'",
-                r"type='\1', data='Base64File'",
-                str(message.message_segment)
-            )
-            self.printf(f"{Fore.CYAN}[FROM] {Fore.RESET}{simple_msg}")
-            message_segment: Seg = message.message_segment
-            if message_segment.type == "command":
-                return await self.send_command(message)
-            else:
-                return await self.send_message(message)
+            '''提取消息段列表'''
+            message_segments = []
+            if "reply_data" in raw_message:
+                message_segments = raw_message.get("reply_data", [])
+            elif "message_segment" in raw_message:
+                seg = raw_message.get("message_segment")
+                message_segments = [seg] if isinstance(seg, dict) else seg
+            
+            '''日志打印简化'''
+            log_str = json.dumps(message_segments, ensure_ascii=False)
+            if len(log_str) > 200:
+                log_str = log_str[:200] + "..."
+            self.printf(f"{Fore.CYAN}[FROM Maim] {Fore.RESET}{log_str}")
+
+            for segment in message_segments:
+                '''统一获取 type'''
+                c_type = segment.get("content_type") or segment.get("type")
+                
+                if c_type == ReplyContentType.COMMAND:
+                    await self.send_command(segment, raw_message)
+                else:
+                    await self.send_content(segment, raw_message)
+
         except Exception:
             self.errorf(f"处理来自MaiMBot的消息失败!\n{traceback.format_exc()}")
 
-    async def send_command(self, message_base: MessageBase) -> None:
-        """处理命令类"""
-        message_info: BaseMessageInfo = message_base.message_info
-        segment: Seg = message_base.message_segment
-        group_info: GroupInfo = message_info.group_info
-        seg_data: Dict[str, Any] = segment.data
-        args = seg_data.get("args")
-        command: str = seg_data.get("name")
+    async def send_command(self, segment: Dict, raw_message: Dict) -> None:
+        """处理命令类消息"""
+        content = segment.get("content") or segment.get("data")
+        if not content:
+            return
+
+        command: str = content.get("name")
+        args: Dict = content.get("args", {})
+        
+        group_id = args.get("group_id")
+        qq_id = args.get("qq_id")
+
+        if not group_id:
+             if raw_message.get("chat_info_platform") == "group":
+                 group_id = raw_message.get("chat_id")
+             elif raw_message.get("group_info"):
+                 group_id = raw_message.get("group_info", {}).get("group_id")
+
         info = None
         try:
             match command:
                 case "GROUP_BAN":
-                    info = set_group_ban(
-                        self.robot,
-                        group_info.group_id,
-                        args.get("qq_id"),
-                        args.get("duration"),
-                    )
+                    info = set_group_ban(self.robot, group_id, qq_id, args.get("duration"))
                 case "set_group_whole_ban":
-                    info = set_group_whole_ban(
-                        self.robot, group_info.group_id, args.get("enable")
-                    )
+                    info = set_group_whole_ban(self.robot, group_id, args.get("enable"))
                 case "set_group_kick":
-                    info = set_group_kick(
-                        self.robot, group_info.group_id, args.get("qq_id")
-                    )
+                    info = set_group_kick(self.robot, group_id, qq_id)
                 case "send_poke":
-                    if group_info is None:
-                        info = poke(self.robot, args.get("qq_id"))
-                    else:
-                        info = poke(self.robot, args.get("qq_id"), group_info.group_id)
+                    info = poke(self.robot, qq_id, group_id)
                 case "delete_msg":
                     info = del_msg(self.robot, args.get("message_id"))
                 case "send_group_ai_record":
                     info = send_group_ai_record(
-                        self.robot, group_info.group_id, args.get("character"), args.get("text")
+                        self.robot, group_id, args.get("character"), args.get("text")
                     )
                 case _:
-                    self.errorf(f"未知命令: {command}")
+                    self.warnf(f"收到未知命令: {command}")
                     return
         except Exception as e:
-            self.errorf(f"处理命令时发生错误: {e}")
-            return None
+            self.errorf(f"处理命令 {command} 时发生错误: {e}")
+            return
+
         if status_ok(info):
             self.printf(f"命令 {command} 执行成功")
         else:
             self.warnf(f"命令 {command} 执行失败: {info}")
 
-    async def send_message(self, message_base: MessageBase) -> None:
-        """处理消息发送"""
-        message_info: BaseMessageInfo = message_base.message_info
-        segment: Seg = message_base.message_segment
-        group_info: GroupInfo = message_info.group_info
-        user_info: UserInfo = message_info.user_info
-        target_id: int = None
-        msg_type: str = None
-        msg: list = []
+    async def send_content(self, segment: Dict, raw_message: Dict) -> None:
+        """处理内容发送 (修复ID解析版)"""
+        
+        target_id = raw_message.get("chat_id")
+        msg_type = "private"
+        chat_platform = raw_message.get("chat_info_platform")
 
-        if not segment.data:
-            self.warnf("暂不支持解析空回复！")
-            return None
-        try:
-            group_id = group_info.group_id if group_info else None
-            msg = self.handle_seg(segment, group_id)
-        except Exception as e:
-            self.errorf(f"处理MaiMBot消息时发生错误: {e}")
-            return
+        msg_info = raw_message.get("message_info", {})
+        
+        if not target_id:
+            group_data = msg_info.get("group_info")
+            if group_data and group_data.get("group_id"):
+                target_id = group_data.get("group_id")
+                chat_platform = "group"
+            
 
-        if group_info and user_info:
-            target_id = group_info.group_id
+            if not target_id:
+                user_data = msg_info.get("sender_info", {}).get("user_info") or \
+                            msg_info.get("user_info")
+                if user_data and user_data.get("user_id"):
+                    target_id = user_data.get("user_id")
+                    chat_platform = "private"
+
+
+        if chat_platform == "group":
             msg_type = "group"
-        elif user_info:
-            target_id = user_info.user_id
-            msg_type = "private"
-        else:
-            self.errorf("无法识别的消息类型")
+        elif not chat_platform:
+
+            if msg_info.get("group_info"): 
+                msg_type = "group"
+            else: 
+                msg_type = "private"
+
+
+        if not target_id:
+            self.warnf(f"无法解析目标ID，原始数据结构: {list(raw_message.keys())}")
             return
-        # 不重复发送消息
+
+        msg_str = self.parse_reply_content(segment)
+        if not msg_str:
+            return
+
         if len(self.robot.self_message) > 0:
             past_msg = self.robot.self_message[-1].get("message")
             if re.sub(r"\[CQ:.*?\]", "", msg) != "" and re.sub(r"\[CQ:.*?\]", "", msg) == re.sub(r"\[CQ:.*?\]", "", past_msg):
                 self.warnf("消息与上一条消息相同，未发送")
                 return
+
         info = None
-        if len(msg) > 100 and "CQ:" not in msg:
-            source = msg.split("\n")[0]
-            if msg_type == "group":
-                info = send_forward_msg(self.robot, self.node(msg), group_id=target_id, source=source)
-            else:
-                info = send_forward_msg(self.robot, self.node(msg), user_id=target_id, source=source)
+
+        if len(msg_str) > 100 and "CQ:" not in msg_str:
+             source = msg_str.split("\n")[0]
+             if msg_type == "group":
+                 info = send_forward_msg(self.robot, self.node(msg_str), group_id=target_id, source=source)
+             else:
+                 info = send_forward_msg(self.robot, self.node(msg_str), user_id=target_id, source=source)
         else:
-            info = reply_id(self.robot, msg_type, target_id, msg)
+            info = reply_id(self.robot, msg_type, target_id, msg_str)
+
         if status_ok(info):
             qq_message_id = info["data"].get("message_id")
             mmc_message_id = message_base.message_info.message_id
@@ -299,310 +366,234 @@ class Maim(Module):
                 new_payload = build_payload(payload, f"[CQ:file,file=file://{file_path}]", False)
             return new_payload
 
+    def parse_reply_content(self, segment: Dict) -> str:
+        """递归解析 ReplyContent 为 CQ 码字符串"""
+        c_type = segment.get("content_type") or segment.get("type")
+        content = segment.get("content") or segment.get("data")
+        
         payload = ""
-        if segment.type == "seglist":
-            if not segment.data:
-                return []
-            for seg in segment.data:
-                payload = process_message(seg, payload)
-        else:
-            payload = process_message(segment, payload)
+        
+        if c_type == ReplyContentType.TEXT:
+            payload = str(content)
+            
+        elif c_type == ReplyContentType.IMAGE:
+            payload = f"[CQ:image,file=base64://{content},sub_type=0]"
+            
+        elif c_type == ReplyContentType.EMOJI:
+
+            try:
+                 fmt = get_image_format(content)
+                 if fmt != "gif":
+                     content = self.convert_image_to_gif(content)
+            except Exception:
+                pass
+            payload = f"[CQ:image,file=base64://{content},sub_type=1]"
+            
+        elif c_type == ReplyContentType.VOICE:
+            payload = f"[CQ:record,file=base64://{content}]"
+            
+        elif c_type == ReplyContentType.HYBRID:
+
+            if isinstance(content, list):
+                for item in content:
+                    payload += self.parse_reply_content(item)
+                    
+        elif c_type == ReplyContentType.FORWARD:
+
+            payload = "[转发消息]"
+            
         return payload
 
-    async def handle_msg(self, raw: dict, in_reply: bool = False) -> List[Seg] | None:
-        """处理实际消息"""
+    async def handle_msg_to_maim(self, raw: dict, in_reply: bool = False) -> List[Dict]:
+        """
+        处理实际消息 -> 转为 Maimbot 识别的 ReplyContent 列表
+       
+        """
         msg: str = raw.get("message")
-        if msg == "":
-            return None
+        if not msg:
+            return []
+            
         msg = re.sub(r"(\s)+", "", msg) if msg and "\n" in msg else msg or ""
-        seg_message: List[Seg] = []
+        reply_contents: List[Dict] = []
+        
+        '''解析 CQ 码'''
         while re.search(r"(\[CQ:(.+?),(.+?)\])", msg):
-            cq_code, cq_type, cq_data = re.search(r"(\[CQ:(.+?),(.+?)\])", msg).groups()
+            match_obj = re.search(r"(\[CQ:(.+?),(.+?)\])", msg)
+            if not match_obj: break
+            
+            cq_code, cq_type, cq_data = match_obj.groups()
+            
             data = {}
             for item in cq_data.split(","):
-                k, v = item.split("=", maxsplit=1)
-                if v.isdigit():
-                    data[k] = int(v)
-                else:
+                if "=" in item:
+                    k, v = item.split("=", maxsplit=1)
                     data[k] = html.unescape(v)
-            seg = None
+
+            rc = None
             match cq_type:
                 case "face":
                     face_id = str(data.get("id"))
-                    face_content: str = qq_face.get(face_id)
-                    seg = Seg(type="text", data=face_content)
-                case "reply":
-                    if not in_reply:
-                        msg_id = data.get("id")
-                        detail = get_msg(self.robot, msg_id).get("data", {})
-                        reply_msg = await self.handle_msg(detail, in_reply=True)
-                        if reply_msg is None:
-                            reply_msg = "(获取发言内容失败)"
-                        sender_name: str = detail.get("sender", {}).get("nickname")
-                        sender_id: str = detail.get("sender", {}).get("user_id")
-                        ret_seg: List[Seg] = []
-                        if not sender_name:
-                            ret_seg.append(Seg(type="text", data="[回复 未知用户："))
-                        else:
-                            ret_seg.append(Seg(type="text", data=f"[回复<{sender_name}:{sender_id}>："))
-                        ret_seg += reply_msg
-                        ret_seg.append(Seg(type="text", data="]，说："))
-                        seg = ret_seg
-                case "record":
-                    seg = Seg(type="text", data="<语音>")
-                    try:
-                        file_id = data.get("file")
-                        data = get_record(self.robot, file_id)
-                        if status_ok(data):
-                            record_base64 = data.get("data").get("base64")
-                            seg = Seg(type="voice", data=record_base64)
-                    except Exception as e:
-                        self.errorf(f"语音消息处理失败: {str(e)}")
-                case "video":
-                    seg = Seg(type="text", data="<视频>")
-                case "at":
-                    qq_id = data.get("qq")
-                    if str(self.event.self_id) == str(qq_id):
-                        seg = Seg(type="text", data=f"@<{self.robot.self_name}:{self.robot.self_id}>")
-                    else:
-                        info = group_member_info(self.robot, self.event.group_id, qq_id)
-                        if info:
-                            seg = Seg(type="text", data=f"@<{info["data"].get('nickname')}:{info["data"].get('user_id')}>")
-                case "rps":
-                    seg = Seg(type="text", data="<猜拳>")
-                case "dice":
-                    seg = Seg(type="text", data="<骰子>")
-                case "shake":
-                    seg = Seg(type="poke", data="<戳一戳>")
-                case "anonymous":
-                    seg = Seg(type="text", data="<匿名聊天>")
-                case "share":
-                    seg = Seg(type="text", data="<分享>")
-                case "contact":
-                    seg = Seg(type="text", data="<名片>")
-                case "location":
-                    seg = Seg(type="text", data="<定位>")
-                case "music":
-                    seg = Seg(type="text", data="<音乐>")
+                    # 将 QQ 表情转为文本形式供 LLM 理解
+                    rc = ReplyContent(ReplyContentType.TEXT, f"[Face:{face_id}]")
                 case "image":
-                    seg = Seg(type="text", data="<图片>")
+                    url = data.get("url") or data.get("file")
+                    sub_type = data.get("sub_type")
                     try:
-                        url = data.get("url") or data.get("file")
-                        image_base64 = await async_get_content_base64(self.robot, url)
-                        sub_type = data.get("sub_type")
-                        if sub_type == 0:
-                            seg = Seg(type="image", data=image_base64)
-                        elif sub_type not in [4, 9]:
-                            seg = Seg(type="emoji", data=image_base64)
+                        img_b64 = await async_get_content_base64(self.robot, url)
+                        if sub_type == "1": # 动画表情
+                             rc = ReplyContent(ReplyContentType.EMOJI, img_b64)
                         else:
-                            self.warnf(f"不支持的图片子类型：{sub_type}")
+                             rc = ReplyContent(ReplyContentType.IMAGE, img_b64)
                     except Exception as e:
-                        self.errorf(f"图片消息处理失败: {str(e)}")
-                case "redbag":
-                    seg = Seg(type="text", data="<红包>")
-                case "poke":
-                    seg = Seg(type="text", data="<戳一戳>")
-                case "gift":
-                    seg = Seg(type="text", data="<礼物>")
-                case "forward":
-                    msg_id = str(data.get("id"))
-                    info = get_forward_msg(self.robot, msg_id)
-                    if status_ok(info):
-                        msg_list = info["data"].get("messages")
-                        ret_seg: List[Seg] = await self.handle_forward_msg(msg_list)
-                        seg = ret_seg
-                # case "xml":
-                #     pass
+                        self.warnf(f"图片下载失败: {e}")
+                        rc = ReplyContent(ReplyContentType.TEXT, "[图片下载失败]")
+                case "record":
+                    rc = ReplyContent(ReplyContentType.TEXT, "[语音消息]")
+                case "at":
+                    qq = data.get("qq")
+                    user_name = get_user_name(self.robot, qq)
+                    rc = ReplyContent(ReplyContentType.TEXT, f"@{user_name}")
+                case "reply":
+                    pass
                 case "json":
-                    json_data = json.loads(html.unescape(data.get("data")))
-                    detail = next(iter(json_data.get("meta", {}).values()))
-                    title = detail.get("title", "")
-                    desc = detail.get("desc", "")
-                    tag = f"({detail.get("tag")})" if detail.get("tag") else ""
-                    seg = Seg(type="text", data=f"分享<小程序[{title}]:{desc}{tag}>")
-                case "file":
-                    file = data.get("file")
-                    seg = Seg(type="text", data=f"上传文件<{file}>")
+                    rc = ReplyContent(ReplyContentType.TEXT, "[分享卡片]")
                 case _:
-                    self.errorf(f"未知CQ码: {cq_code}")
-            if seg:
-                if isinstance(seg, list):
-                    seg_message += seg
-                else:
-                    seg_message.append(seg)
+                    rc = ReplyContent(ReplyContentType.TEXT, f"[{cq_type}]")
+
+            if rc:
+                reply_contents.append(rc.to_dict())
+            
             msg = msg.replace(cq_code, "", 1)
+
         if msg:
-            msg = msg.replace("你收到一个专属红包，请在新版手机QQ查看。", "")
-            seg_message.append(Seg(type="text", data=msg))
-        elif raw.get("sub_type") == "poke":
-            if not raw.get("group_id"):
-                return seg_message
-            txt = raw.get("raw_info")[2]["txt"]
-            target_id = raw.get("target_id")
-            target_name = get_user_name(self.robot, target_id)
-            seg_message.append(Seg(type="text", data=f"[{txt}{target_name}]"))
-        elif raw.get("notice_type") == "group_ban":
-            if raw.get("sub_type") == "ban":
-                duration = self.event.raw["duration"]
-                target_name = self.event.user_name
-                seg_message.append(Seg(type="text", data=f"[为{target_name}设置了{duration}秒的禁言]"))
-            elif raw.get("sub_type") == "lift_ban":
-                target_name = self.event.user_name
-                seg_message.append(Seg(type="text", data=f"[为{target_name}解除了禁言]"))
-        return seg_message
+            reply_contents.append(ReplyContent(ReplyContentType.TEXT, msg).to_dict())
+            
+        return reply_contents
 
-    async def handle_forward_msg(self, msg_list: list) -> Seg | None:
-        """处理转发消息"""
-        async def process_forward_message(msg_list: list, layer: int) -> Seg:
-            """解析转发消息"""
-            if msg_list is None:
-                return None
-            seg_list: List[Seg] = []
-            process_count = 0
-            for sub_msg in msg_list:
-                sub_msg: dict
-                sender_info: dict = sub_msg.get("sender")
-                user_nickname: str = sender_info.get("nickname", "QQ用户")
-                user_nickname_str = f"【{user_nickname}】:"
-                message_of_sub_message_list: List[Dict[str, Any]] = sub_msg.get("message")
-                if not message_of_sub_message_list:
-                    continue
-                message_of_sub_message = message_of_sub_message_list[0]
-                if message_of_sub_message.get("type") == "forward":
-                    if layer >= 3:
-                        full_seg_data = Seg(type="text", data=("--" * layer) + f"【{user_nickname}】:【转发消息】\n",)
-                    else:
-                        sub_message_data = message_of_sub_message.get("data")
-                        if not sub_message_data:
-                            continue
-                        contents = sub_message_data.get("content")
-                        seg_data = await process_forward_message(contents, layer + 1)
-                        process_count += 1
-                        head_tip = Seg(type="text", data=("--" * layer) + f"【{user_nickname}】: 合并转发消息内容：\n",)
-                        full_seg_data = Seg(type="seglist", data=[head_tip, seg_data])
-                    seg_list.append(full_seg_data)
-                elif message_of_sub_message.get("type") == "text":
-                    sub_message_data = message_of_sub_message.get("data")
-                    if not sub_message_data:
-                        continue
-                    text_message = sub_message_data.get("text")
-                    seg_data = Seg(type="text", data=f"{text_message}\n")
-                    data_list: List[Any] = [Seg(type="text", data=("--" * layer) + user_nickname_str), seg_data]
-                    seg_list.append(Seg(type="seglist", data=data_list))
-                elif message_of_sub_message.get("type") == "image":
-                    process_count += 1
-                    image_data = message_of_sub_message.get("data")
-                    sub_type = image_data.get("sub_type")
-                    image_url = image_data.get("url")
-                    data_list: List[Any] = []
-                    if sub_type == 0:
-                        if process_count > 5:
-                            seg_data = Seg(type="text", data="[图片]\n")
-                        else:
-                            img_base64 = await async_get_content_base64(self.robot, image_url)
-                            seg_data = Seg(type="image", data=f"{img_base64}\n")
-                    else:
-                        if process_count > 3:
-                            seg_data = Seg(type="text", data="[表情包]\n")
-                        else:
-                            img_base64 = await async_get_content_base64(self.robot, image_url)
-                            seg_data = Seg(type="emoji", data=f"{img_base64}\n")
-                    if layer > 0:
-                        data_list = [Seg(type="text", data=("--" * layer) + user_nickname_str), seg_data]
-                    else:
-                        data_list = [Seg(type="text", data=user_nickname_str), seg_data]
-                    full_seg_data = Seg(type="seglist", data=data_list)
-                    seg_list.append(full_seg_data)
-            return Seg(type="seglist", data=seg_list)
+    async def construct_message(self, event: Event = None) -> Dict | None:
+        """
+        构造发送给 Maimbot 的消息体
+        适配 message_data_model.py 中的 MessageAndActionModel 结构
+        """
+        event = event or self.event
+        
+        user_id = str(event.user_id)
 
-        return await process_forward_message(msg_list, 0)
+        chat_id = str(event.group_id) if event.group_id else user_id
 
-    async def send_to_maim(self, msg: MessageBase) -> bool:
-        """发送消息到MaiMBot"""
+        reply_contents = await self.handle_msg_to_maim(event.raw)
+        if not reply_contents:
+            return None
+            
+        '''构造符合 MessageAndActionModel 的字典'''
+        message_payload = {
+            "chat_id": chat_id,
+            "time": time.time(),
+            "user_id": user_id,
+            "user_platform": self.config["platform"],
+            "user_nickname": event.user_name,
+            "user_cardname": event.user_card,
+            
+            "chat_info_platform": "group" if event.group_id else "private",
+            
+            "processed_plain_text": event.msg,
+            "display_message": event.msg,
+            
+            "reply_data": reply_contents,
+            
+            "message_segment": reply_contents, 
+        }
+        
+        return message_payload
+
+    async def send_to_maim(self, payload: Dict) -> bool:
+        '''发送消息到 MaiMBot'''
         try:
-            if len(msg.message_segment.data) == 0:
-                return False
-            if msg.message_segment:
-                simple_msg = re.sub(
-                    r"type='(image|emoji|voice)',\s?data='.*?'",
-                    r"type='\1', data='Base64File'",
-                    str(msg.message_segment.data)
+            log_payload = payload.copy()
+            if "reply_data" in log_payload:
+                 log_payload["reply_data"] = "[Content Data]"
+            self.printf(f"{Fore.GREEN}[TO Maim] {Fore.RESET}{json.dumps(log_payload, ensure_ascii=False)}")
+            
+            '''构造 UserInfo'''
+            user_info = UserInfo(
+                platform=str(payload.get("user_platform", "qq")),
+                user_id=str(payload.get("user_id", "")),
+                user_nickname=str(payload.get("user_nickname", "")),
+                user_cardname=str(payload.get("user_cardname", ""))
+            )
+
+            '''构造 GroupInfo'''
+            group_info = None
+            
+            if payload.get("chat_info_platform") == "group":
+                group_info = GroupInfo(
+                    platform=str(payload.get("user_platform", "qq")),
+                    group_id=str(payload.get("chat_id", ""))
                 )
-                self.printf(f"{Fore.GREEN}[TO] {Fore.RESET}{simple_msg}")
-            send_status = await self.router.send_message(msg)
+            
+            '''构造 SenderInfo'''
+            sender_info = SenderInfo(
+                group_info=group_info,
+                user_info=user_info
+            )
+
+            '''构造 MessageSegment'''
+            raw_segments = payload.get("reply_data") or payload.get("message_segment", [])
+            seg_list = []
+            
+            for item in raw_segments:
+                s_type = item.get("type") or item.get("content_type")
+                s_data = item.get("data") or item.get("content")
+                
+                if s_type == "text":
+                    s_data = str(s_data)
+                
+                seg_list.append(Seg(type=s_type, data=s_data))
+
+            main_segment = Seg(type="seglist", data=seg_list)
+
+            '''构造 BaseMessageInfo'''
+            base_info = BaseMessageInfo(
+                platform=str(payload.get("user_platform", "qq")),
+                message_id=str(int(payload.get("time", 0))),
+                time=float(payload.get("time", time.time())),
+                sender_info=sender_info,
+
+                user_info=user_info,
+                group_info=group_info
+            )
+
+            '''构造最终的 MessageBase'''
+            message_obj = MessageBase(
+                message_info=base_info,
+                message_segment=main_segment,
+                raw_message=payload.get("display_message", "")
+            )
+
+            '''发送'''
+            send_status = await self.router.send_message(message_obj)
+
             maim = self.robot.persist_mods[self.ID]
             if not send_status:
                 maim.failed_times += 1
                 self.failed_times = maim.failed_times
-                raise RuntimeError("路由未正确配置或连接异常, 请检查与MaiMBot之间的连接")
+                raise RuntimeError("路由未正确配置或连接异常")
+            
             maim.failed_times = 0
             return send_status
+
         except Exception as e:
             error_msg = f"发送消息失败: {traceback.format_exc()}"
             if isinstance(e, RuntimeError):
                 error_msg = f"{e}"
             self.errorf(f"{error_msg}(第{self.failed_times}次)")
+            
             if self.failed_times == 3:
-                group_name = msg.message_info.group_info.group_name if msg.message_info.group_info else ""
-                nickname = msg.message_info.user_info.user_nickname if msg.message_info.user_info else ""
-                error_msg = ("多次尝试发送消息至麦麦机器人后失败，请重启应用！\n")
-                if group_name:
-                    error_msg += (f"{group_name}|{nickname}:{msg.raw_message}")
-                else:
-                    error_msg += (f"{nickname}:{msg.raw_message}")
-                self.robot.admin_notify(error_msg)
-
-    async def construct_message(self, event: Event = None) -> MessageBase | None:
-        """根据平台事件构造标准 MessageBase"""
-        event = event or self.event
-        user_info = UserInfo(
-            platform=self.config["platform"],
-            user_id=event.user_id,
-            user_nickname=event.user_name,
-            user_cardname=event.user_card,
-        )
-        group_info = None
-        if event.group_id:
-            group_info = GroupInfo(
-                platform=self.config["platform"],
-                group_id=event.group_id,
-                group_name=event.group_name,
-            )
-        format_info: FormatInfo = FormatInfo(
-            content_format=["text", "image", "emoji", "voice"],
-            accept_format=[
-                "text", "image", "emoji", "reply",
-                "voice", "command", "voiceurl",
-                "music", "videourl", "file",
-            ],
-        )
-        message_info = BaseMessageInfo(
-            platform=self.config["platform"],
-            message_id=event.msg_id,
-            time=time.time(),
-            user_info=user_info,
-            group_info=group_info,
-            format_info=format_info,
-        )
-        seg_message: List[Seg] = await self.handle_msg(event.raw)
-        if len(seg_message) == 0:
-            return None
-        message_segment = Seg(type="seglist", data=seg_message)
-        return MessageBase(
-            message_info=message_info,
-            message_segment=message_segment,
-            raw_message=event.msg,
-        )
+                self.robot.admin_notify(f"多次尝试发送消息至麦麦机器人后失败，请检查连接。\n{error_msg}")
+            return False
 
     def convert_image_to_gif(self, image_base64: str) -> str:
-        """
-        将Base64编码的图片转换为GIF格式
-        Parameters:
-            image_base64: str: Base64编码的图片数据
-        Returns:
-            str: Base64编码的GIF图片数据
-        """
-        self.warnf("转换图片为GIF格式", level="DEBUG")
+        """将Base64图片转为GIF"""
         try:
             image_bytes = base64.b64decode(image_base64)
             image = Image.open(io.BytesIO(image_bytes))
@@ -633,16 +624,14 @@ class Maim(Module):
     async def restart_maimbot(self):
         """重新连接麦麦"""
         try:
-            asyncio.run_coroutine_threadsafe(
-                self.router.clients[self.config["platform"]].stop(), self.loop
-            ).result()
+            if self.router.clients.get(self.config["platform"]):
+                await self.router.clients[self.config["platform"]].stop()
+            await self.router.stop()
         except Exception:
             self.errorf(traceback.format_exc())
-        try:
-            asyncio.run_coroutine_threadsafe(self.router.stop(), self.loop).result()
-        except Exception:
-            self.errorf(traceback.format_exc())
+            
         self.listening()
+        self.reply("已尝试重置连接")
 
     @via(lambda self: self.ID in self.robot.persist_mods
          and self.config[self.owner_id]["enable"]
@@ -652,55 +641,30 @@ class Maim(Module):
         """发送至麦麦"""
         async def send_msg_task():
             try:
-                if msg := await self.construct_message():
-                    await self.send_to_maim(msg)
+                if payload := await self.construct_message():
+                    await self.send_to_maim(payload)
             except Exception:
                 self.errorf(traceback.format_exc())
         self.loop.call_soon_threadsafe(lambda: asyncio.create_task(send_msg_task()))
 
     def notify_maimbot(self, content: str, group_id: str):
-        """通知麦麦"""
+        """主动通知麦麦 (Api调用)"""
         if not self.ID in self.robot.persist_mods:
-            self.warnf("未开启麦麦功能，遂未发送")
-        if not self.config[f"g{group_id}"]["enable"]:
-            self.warnf(f"群{group_id}未开启麦麦功能，遂未发送")
             return
+        if not self.config[f"g{group_id}"]["enable"]:
+            return
+            
         async def send_msg_task():
             try:
-                user_info = UserInfo(
-                    platform=self.config["platform"],
-                    user_id=self.robot.self_id,
-                    user_nickname=self.robot.self_name,
-                )
-                group_info = GroupInfo(
-                    platform=self.config["platform"],
-                    group_id=group_id,
-                    group_name=get_group_name(self.robot, group_id),
-                )
-                format_info: FormatInfo = FormatInfo(
-                    content_format=["text", "image", "emoji", "voice"],
-                    accept_format=[
-                        "text", "image", "emoji", "reply",
-                        "voice", "command", "voiceurl",
-                        "music", "videourl", "file",
-                    ],
-                )
-                message_info = BaseMessageInfo(
-                    platform=self.config["platform"],
-                    message_id=int(time.time()),
-                    time=time.time(),
-                    user_info=user_info,
-                    group_info=group_info,
-                    format_info=format_info,
-                )
-                seg_message: List[Seg] = await self.handle_msg({"message":content})
-                message_segment = Seg(type="seglist", data=seg_message)
-                msg = MessageBase(
-                    message_info=message_info,
-                    message_segment=message_segment,
-                    raw_message=content,
-                )
-                await self.send_to_maim(msg)
+                fake_event = Event(self.robot)
+                fake_event.msg = content
+                fake_event.user_id = self.robot.self_id
+                fake_event.user_name = self.robot.self_name
+                fake_event.group_id = group_id
+                fake_event.raw = {"message": content}
+                
+                if payload := await self.construct_message(fake_event):
+                    await self.send_to_maim(payload)
             except Exception:
                 self.errorf(traceback.format_exc())
         self.loop.call_soon_threadsafe(lambda: asyncio.create_task(send_msg_task()))
