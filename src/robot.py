@@ -299,8 +299,9 @@ class Concerto:
             event (Event): 事件数据
             auth (int, optional): 权限等级
         """
+        notice_type = event.sub_type or event.notice_type
         self.printf(f"{Fore.GREEN}[NOTICE] {Fore.RESET}收到了{Fore.MAGENTA}{event.user_id}{Fore.RESET}"
-                    f"的{Fore.MAGENTA}{event.sub_type}{Fore.RESET}类型通知", level="DEBUG")
+                    f"的{Fore.MAGENTA}{notice_type}{Fore.RESET}类型通知", level="DEBUG")
         self.module_handle(event, "notice", auth)
 
     def request(self, event: Event, auth=3):

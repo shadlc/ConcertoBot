@@ -266,12 +266,13 @@ class Bilibili(Module):
                     if len(dyn["imgs"]) == 1:
                         img = dyn["imgs"][0]
                         nodes.append(self.node(f"[CQ:image,file={img}]"))
+                        nodes.append(self.node(msg))
                     else:
                         for img in dyn["imgs"]:
                             msg += f"[CQ:image,file={img}]"
-                    nodes.append(self.node(msg))
+                        nodes.append(self.node(msg))
                     if ori := dyn["origin"]:
-                        msg = f"以下是转发内容:\n====================\n"
+                        msg = "以下是转发内容:\n\n"
                         msg += f"{ori["author"]}:\n"
                         msg += ori["content"]
                         for img in ori["imgs"]:
@@ -557,11 +558,9 @@ class Bilibili(Module):
                     nodes.append(self.node(f"[CQ:image,file={img}]"))
                     nodes.append(self.node(msg))
                 else:
-                    nodes.append(self.node(msg))
-                    img_msg = ""
                     for img in dyn["imgs"]:
-                        img_msg += f"[CQ:image,file={img}]"
-                    nodes.append(self.node(img_msg))
+                        msg += f"[CQ:image,file={img}]"
+                    nodes.append(self.node(msg))
                 if ori := dyn["origin"]:
                     msg = "以下是转发内容:\n\n"
                     msg += f"{ori["author"]}:\n"
@@ -610,8 +609,8 @@ class Bilibili(Module):
             for owner_id in notice_list:
                 uname = self.get_local_name(uid)
                 msg = f"{uname}开播啦~\n"
-                msg += f"\n标题: {title}"
-                msg += f"\n链接: https://live.bilibili.com/{room_id}"
+                msg += f"\nhttps://live.bilibili.com/{room_id}"
+                msg += f"\n{title}"
                 if cover:
                     msg += f"\n[CQ:image,file={cover}]"
                 self.reply_back(owner_id, msg)
