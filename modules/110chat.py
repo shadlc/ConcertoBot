@@ -419,19 +419,26 @@ class Chat(Module):
                or self.match(r"\[CQ:reply,id=([^\]]+?)\]\s?(直链)?$")), success=False)
     def sticker_url(self):
         """获取表情链接"""
-        url = ""
-        if match := re.search(r"\[CQ:image.*url=([^,\]]+?),.*\]", self.event.text):
-            url = match.group(1)
-        elif self.match(r"\[CQ:reply,id=([^\]]+?)\]"):
+        urls = []
+        current_urls = re.findall(r"\[CQ:image.*?url=([^,\]]+?),.*?\]", self.event.text)
+        urls.extend(current_urls)
+        if self.match(r"\[CQ:reply,id=([^\]]+?)\]"):
             msg = self.get_reply()
-            if msg and re.search(r"\[CQ:image.*url=([^,\]]+?),.*\]", msg):
-                url = re.search(r"\[CQ:image.*url=([^,\]]+?),.*\]", msg).group(1)
-        if not url:
+            if msg:
+                reply_urls = re.findall(r"\[CQ:image.*?url=([^,\]]+?),.*?\]", msg)
+                urls.extend(reply_urls)
+        if not urls:
             return
-        elif len(url) > 100:
-            self.reply_forward(self.node(url), source="图片直链")
+        urls = list(dict.fromkeys(urls))
+        if len(urls) == 1:
+            url = urls[0]
+            if len(url) > 100:
+                self.reply_forward(self.node(url), source="图片直链")
+            else:
+                self.reply(url, reply=True)
         else:
-            self.reply(url, reply=True)
+            nodes = [self.node(url) for url in urls]
+            self.reply_forward(nodes, source="图片直链")
         self.success = True
 
     @via(lambda self: self.au(2) and self.at_or_private() and self.match(r"(\S+?)(又|也|同时|人)能?被?(称|叫)(为|做)?(\S+)$"))
