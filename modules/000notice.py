@@ -23,9 +23,10 @@ class Notice(Module):
     HANDLE_NOTICE = True
     HANDLE_MESSAGE = False
 
-    def __init__(self, event, auth=0):
-        self.last_notice_timestamp = time.time()
-        super().__init__(event, auth)
+    def premise(self):
+        if not hasattr(self.robot, "last_notice_timestamp"):
+            self.robot.last_notice_timestamp = time.time()
+        return True
 
     @via(lambda self: self.event.notice_type == "notify"
          and self.event.sub_type == "poke"
@@ -99,9 +100,9 @@ class Notice(Module):
             and self.event.operator_id != self.robot.self_id
             and self.event.operator_id not in self.robot.config.admin_list
             and random.randint(0, 2) == 0
-            and time.time() - self.last_notice_timestamp > 1
+            and time.time() - self.robot.last_notice_timestamp > 1
         ):
-            self.last_notice_timestamp = time.time()
+            self.robot.last_notice_timestamp = time.time()
             msg = f"{self.event.operator_name}在{recall_time}将%ROBOT_NAME%的消息撤回，%ROBOT_NAME%很难过"
             reply_event(self.robot, self.event, msg)
         elif self.event.user_id != self.robot.self_id:
@@ -174,9 +175,9 @@ class Notice(Module):
                 msg = llm_chat(f"你的名字叫{self.robot.self_name}，你申请加入了群聊{self.event.group_name}，现在请简短礼貌的向大家介绍自己，无需其他内容")
             reply_id(self.robot, "group", self.event.group_id, msg)
         elif self.event.group_id in self.robot.config.rev_group and self.config.get("welcome_newbie"):
-            if time.time() - self.last_notice_timestamp < 1:
+            if time.time() - self.robot.last_notice_timestamp < 1:
                 return
-            self.last_notice_timestamp = time.time()
+            self.robot.last_notice_timestamp = time.time()
             msg = self.event.user_name + " %WELCOME_NEWBIE%"
             if llm_chat:
                 msg = llm_chat(f"你的名字叫{self.robot.self_name}，刚刚有新成员{self.event.user_name}加入了群聊{self.event.group_name}，现在请作为群友简短友好诙谐地欢迎，无需其他内容")

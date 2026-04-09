@@ -23,9 +23,10 @@ class Group(Module):
     HANDLE_NOTICE = True
     HANDLE_REQUEST = True
 
-    def __init__(self, event, auth=0):
-        super().__init__(event, auth)
-        self.group_decrease_broadcasts = {}
+    def premise(self):
+        if not hasattr(self.robot, "group_decrease_broadcasts"):
+            self.robot.group_decrease_broadcasts = {}
+        return True
 
     @via(lambda self: self.group_at() and self.au(1)
         and self.match(r"^(为|给|替)\s*(\S+)\s*(设置|添加|增加|颁发|设立)(专属)*(头衔|称号)\s*(\S+)$"))
@@ -66,7 +67,7 @@ class Group(Module):
          and self.event.notice_type == ("group_decrease"))
     def group_decrease(self):
         group_id = self.event.group_id
-        pending = self.group_decrease_broadcasts.setdefault(group_id, {"events": [], "timer": None})
+        pending = self.robot.group_decrease_broadcasts.setdefault(group_id, {"events": [], "timer": None})
 
         # 取消已有的定时器（重置延迟）
         if pending["timer"] is not None:
@@ -79,7 +80,7 @@ class Group(Module):
     def send_group_decrease_broadcast(self, group_id):
         """延迟发送群成员退出广播"""
         # 取出该群组的待处理数据
-        pending = self.group_decrease_broadcasts.pop(group_id, None)
+        pending = self.robot.group_decrease_broadcasts.pop(group_id, None)
         if pending is None:
             return
 
@@ -97,6 +98,7 @@ class Group(Module):
 
         # 发送广播
         reply_id(self.robot, "group", group_id, msg)
+
     @via(lambda self: self.config[self.owner_id]["member_broadcast"]["enable"]
          and self.event.raw.get("request_type") == "group")
     def group_request(self):

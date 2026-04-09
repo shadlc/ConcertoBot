@@ -23,6 +23,7 @@ from src.utils import (
     MiniCron,
     Module,
     get_error,
+    get_forward_msg,
     get_group_member_list,
     get_group_name,
     get_record,
@@ -387,11 +388,12 @@ class Chat(Module):
                 nickname = msg.get("sender",{}).get("nickname","")
                 content = html.unescape(msg.get("message",""))
                 content = re.sub(r",sub_type=\d", "", content)
-                match = re.search(r"\[CQ:record.*path=([^,]+).*\]", content)
-                text = "未知语音"
-                if match and llm_stt:
+                content = re.sub(r"summary=[^,]*,", "", content)
+                record_match = re.search(r"\[CQ:record.*path=([^,]+).*\]", content)
+                record_text = "未知语音"
+                if record_match and llm_stt:
                     try:
-                        file_path = match.group(1)
+                        file_path = record_match.group(1)
                         if qq_data := self.config["qq_data"]:
                             file_path = file_path.replace("/app/.config/QQ", qq_data) + ".mp3"
                         record = open(file_path, "rb").read()
@@ -403,13 +405,14 @@ class Chat(Module):
                         ))
                     except Exception:
                         self.errorf(traceback.format_exc())
-                content = re.sub(r"\[CQ:record.*\]", f"[语音:{text.strip()}]", content)
+                content = re.sub(r"\[CQ:record.*\]", f"[语音:{record_text.strip()}]", content)
+                content = re.sub(r"\[CQ:forward.*\]", "[转发消息(不支持防撤回)]", content)
                 nodes.append(self.node(content, user_id=user_id, nickname=nickname))
             result = self.reply_forward(nodes, "一小时内撤回消息列表")
             if not status_ok(result):
                 # 一般是发送图片出错
                 for node in nodes:
-                    node["data"]["content"] = re.sub(r"\[CQ:image.*\]", "[未知图片]", node["data"]["content"])
+                    node["data"]["content"] = re.sub(r"\[CQ:image.*?url=([^,\]]+).*\]", r"[图片URL:\1]", node["data"]["content"])
                 self.reply_forward(nodes, "一小时内撤回消息列表")
         else:
             self.reply("什么也没有哦~")
