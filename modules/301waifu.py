@@ -187,7 +187,13 @@ class Waifu(Module):
         """添加二次元老婆"""
         try:
             waifu_name = re.sub(r"(添加?老婆|\[.*?\])", "", self.event.msg).strip()
-            ret = self.match(r"\[CQ:image,file=(.*)?,url=(.*),.*\]")
+            img_url = ""
+            if img_match := re.search(r"\[CQ:image,.*url=([^,\]]+?),.*\]", self.event.msg):
+                img_url = img_match.group(1)
+            elif reply_msg := self.get_reply():
+                if img_match := re.search(r"\[CQ:image,.*url=([^,\]]+?),.*\]", reply_msg):
+                    img_url = img_match.group(1)
+                    
             if not waifu_name:
                 return self.reply("请注明二次元老婆名称~", reply=True)
             elif not ret:
