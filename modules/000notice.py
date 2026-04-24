@@ -168,7 +168,7 @@ class Notice(Module):
                 f"{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}已被邀请加入"
                 f"群{Fore.MAGENTA}{self.event.group_name}({self.event.group_id}){Fore.RESET}"
             )
-        llm_chat = self.robot.func.get("chat")
+        llm_chat = self.robot.func.get("llm_chat")
         if self.event.user_id == self.robot.self_id and self.config.get("self_introduction"):
             msg = "%SELF_INTRODUCTION%"
             if llm_chat:
@@ -180,7 +180,7 @@ class Notice(Module):
             self.robot.last_notice_timestamp = time.time()
             msg = self.event.user_name + " %WELCOME_NEWBIE%"
             if llm_chat:
-                msg = llm_chat(f"你的名字叫{self.robot.self_name}，刚刚有新成员{self.event.user_name}加入了群聊{self.event.group_name}，现在请作为群友简短友好诙谐地欢迎，无需其他内容")
+                msg = llm_chat(f"刚刚有新成员{self.event.user_name}加入了群聊{self.event.group_name}，现在请作为群友简短友好诙谐地欢迎，无需其他内容")
             reply_id(self.robot, "group", self.event.group_id, msg)
 
     @via(lambda self: self.event.notice_type == "group_ban", success=False)

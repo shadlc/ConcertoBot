@@ -254,7 +254,9 @@ class Picture(Module):
             if not success:
                 return self.reply(data, reply=True)
             nodes = []
-            for img_msg in data:
+            if msg := data[0]:
+                nodes.append(self.node(msg))
+            for img_msg in data[1]:
                 nodes.append(self.node(img_msg))
             if not self.is_private():
                 set_emoji(self.robot, self.event.msg_id, 66)
@@ -467,14 +469,15 @@ class Picture(Module):
         api_url = "https://serpapi.com/search"
         params = {
             "engine": "google_lens",
-            # "type": "exact_matches",
             "hl": "zh-cn",
             "api_key": serpapi_key,
             "url": image_url,
         }
         resp = httpx.get(api_url, params=params, timeout=10, proxy=proxies)
+        self.printf(f"谷歌搜图结果:\n{json.dumps(resp.text, ensure_ascii=False)}", level="DEBUG")
+        success = False
+        result = ""
         if matches :=resp.json().get("visual_matches"):
-            self.printf(f"谷歌搜图结果:\n{json.dumps(matches, ensure_ascii=False)}", level="DEBUG")
             msg_list = []
             for _, data in enumerate(matches[:10]):
                 title = data.get("title", "")
@@ -489,11 +492,58 @@ class Picture(Module):
                 if thumbnail:
                     msg += f"\n[CQ:image,file={thumbnail}]"
                 msg_list.append(msg)
-            return True, msg_list
+            result = ["", msg_list]
+            success = True
+            if page_token := resp.json().get("ai_overview", {}).get("page_token"):
+                flag, overview = self.get_google_ai_overview(page_token)
+                if flag:
+                    result[0] = overview
         elif message := resp.json().get("error"):
-            return False, message
+            result = message
         else:
-            return False, "谷歌搜图返回无结果~"
+            result = "谷歌搜图返回无结果~"
+        return success, result
+
+    def get_google_ai_overview(self, page_token: str, proxies: str = None) -> Tuple[bool, str | list]:
+        """
+        谷歌AI总结
+        :param page_token: 页面令牌
+        :param proxies: 代理配置
+        :return: [搜索是否成功, 搜索结果]
+        """
+        def extract_snippets(obj):
+            """提取snippets"""
+            result = []
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if k == "snippet":
+                        result.append(v)
+                    else:
+                        result.extend(extract_snippets(v))
+            elif isinstance(obj, list):
+                for item in obj:
+                    result.extend(extract_snippets(item))
+            return result
+
+        serpapi_key = self.config.get("serpapi_key")
+        if not serpapi_key:
+            msg = "请先前往[https://serpapi.com/manage-api-key]获取APIKey"
+            return False, msg
+        api_url = "https://serpapi.com/search"
+        params = {
+            "engine": "google_ai_overview",
+            "api_key": serpapi_key,
+            "page_token": page_token,
+        }
+        resp = httpx.get(api_url, params=params, timeout=10, proxy=proxies)
+        self.printf(f"谷歌AI总结结果:\n{json.dumps(resp.text, ensure_ascii=False)}", level="DEBUG")
+        success = False
+        result = ""
+        if ai_overview :=resp.json().get("ai_overview"):
+            success = True
+            snippets = extract_snippets(ai_overview)
+            result = "\n".join(snippets)
+        return success, result
 
     def search_animate_tracemoe(self, image_url: str, proxies: str = None) -> str:
         """

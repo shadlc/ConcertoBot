@@ -167,6 +167,7 @@ class LLM(Module):
             if system_prompt := self.config["system_prompt"]:
                 messages = [{"role": "system", "content": system_prompt}, *messages]
             params = self.get_request_params(model_name)
+            self.printf(f"调用chat模型 {params["model"]}")
             return self.sync_chat(messages, params, stream)
         except Exception:
             self.errorf(f"LLM请求失败: {traceback.print_exc()}")
@@ -179,7 +180,7 @@ class LLM(Module):
             if system_prompt := self.config["system_prompt"]:
                 messages = [{"role": "system", "content": system_prompt}, *messages]
             params = self.get_request_params(model_name)
-            self.printf(f"调用chat模型 {params["payload"]}")
+            self.printf(f"调用chat模型 {params["model"]}")
             return await self.async_chat(messages, params, stream)
         except Exception:
             self.errorf(f"LLM请求失败: {traceback.print_exc()}")
@@ -192,7 +193,7 @@ class LLM(Module):
             url = f"{params["base_url"]}/audio/transcriptions"
             headers = {"Authorization": f"Bearer {params["api_key"]}"}
             payload = {"model": params["model"]}
-            self.printf(f"调用stt模型 {payload}")
+            self.printf(f"调用stt模型 {params["model"]}")
             response = httpx.post(url, data=payload, files=file, headers=headers, timeout=params["timeout"])
             data = response.json()
             return data.get("text") or data.get("message")
