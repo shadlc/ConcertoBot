@@ -277,6 +277,8 @@ class Waifu(Module):
         """读取二次元老婆"""
         pic_path = self.get_path()
         filepath = os.path.join(pic_path, filename)
+        if not os.path.exists(filepath):
+            return None
         with open(filepath, "rb") as f:
             return base64.b64encode(f.read()).decode("utf-8")
 

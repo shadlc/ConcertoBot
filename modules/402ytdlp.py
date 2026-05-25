@@ -42,7 +42,7 @@ class Ytdlp(Module):
             "playlist_items": "1",
             "extractor_args": "youtubetab:skip=authcheck youtube:player-client=web",
             "merge_output_format": "mp4",
-            "format": "bv*+ba/b",
+            "format": "bv*[vcodec!*=av01]+ba/b",
             "restrictfilenames": True
         },
     }
