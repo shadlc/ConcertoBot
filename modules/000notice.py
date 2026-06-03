@@ -18,14 +18,20 @@ class Notice(Module):
     GLOBAL_CONFIG = {
         "poke_reply": True,
         "self_introduction": True,
+        "self_intro": "你的名字叫{self_name}，你申请加入了群聊{group_name}，现在请简短礼貌的向大家介绍自己，无需其他内容",
+        "welcome": "你的名字叫{self_name}，刚刚有新成员{user_name}加入了群聊{group_name}，现在请作为群友简短友好诙谐地欢迎，无需其他内容",
+    }
+    CONV_CONFIG = {
         "welcome_newbie": True,
+        # 可以为每个群聊设置独立欢迎提示词
+        "welcome": None
     }
     HANDLE_NOTICE = True
     HANDLE_MESSAGE = False
 
     def premise(self):
         if not hasattr(self.robot, "last_notice_timestamp"):
-            self.robot.last_notice_timestamp = time.time()
+            self.robot.last_notice_timestamp = 0
         return True
 
     @via(lambda self: self.event.notice_type == "notify"
@@ -169,18 +175,29 @@ class Notice(Module):
                 f"群{Fore.MAGENTA}{self.event.group_name}({self.event.group_id}){Fore.RESET}"
             )
         llm_chat = self.robot.func.get("llm_chat")
+        print(self.event.group_id in self.robot.config.rev_group, self.config[self.owner_id].get("welcome_newbie"))
+        print(time.time() - self.robot.last_notice_timestamp < 1)
         if self.event.user_id == self.robot.self_id and self.config.get("self_introduction"):
             msg = "%SELF_INTRODUCTION%"
             if llm_chat:
-                msg = llm_chat(f"你的名字叫{self.robot.self_name}，你申请加入了群聊{self.event.group_name}，现在请简短礼貌的向大家介绍自己，无需其他内容")
+                self_intro = self.config.get("self_intro")
+                self_intro = self_intro.format(
+                    self_name=self.robot.self_name,
+                    group_name=self.event.group_name)
+                msg = llm_chat(self_intro)
             reply_id(self.robot, "group", self.event.group_id, msg)
-        elif self.event.group_id in self.robot.config.rev_group and self.config.get("welcome_newbie"):
+        elif self.event.group_id in self.robot.config.rev_group and self.config[self.owner_id].get("welcome_newbie"):
             if time.time() - self.robot.last_notice_timestamp < 1:
                 return
             self.robot.last_notice_timestamp = time.time()
             msg = self.event.user_name + " %WELCOME_NEWBIE%"
             if llm_chat:
-                msg = llm_chat(f"刚刚有新成员{self.event.user_name}加入了群聊{self.event.group_name}，现在请作为群友简短友好诙谐地欢迎，无需其他内容")
+                welcome = self.config[self.owner_id].get("welcome") or self.config.get("welcome")
+                welcome = welcome.format(
+                    self_name=self.robot.self_name,
+                    user_name=self.event.user_name,
+                    group_name=self.event.group_name)
+                msg = llm_chat(welcome)
             reply_id(self.robot, "group", self.event.group_id, msg)
 
     @via(lambda self: self.event.notice_type == "group_ban", success=False)
