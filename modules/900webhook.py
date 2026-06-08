@@ -144,10 +144,7 @@ class Webhook(Module):
             else:
                 self.warnf(f"{msg_type}已取消通告")
         elif msg_type == "library.new":
-            if not self.repeat(msg_type=msg_type):
-                self.emby_new(data)
-            else:
-                self.warnf(f"{msg_type}已取消通告")
+            self.emby_new(data)
         elif msg_type == "GRAFANA_ALERT":
             self.grafana_alert(data)
         self.msg_deque.append({"type": msg_type, "timestamp": int(time.time()), "msg": msg,})

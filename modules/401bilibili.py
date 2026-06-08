@@ -630,7 +630,7 @@ class Bilibili(Module):
                 fans = info["fans"]
                 avatar = info["avatar"]
                 past_fans = int(self.get_follow_list_info(uid, "fans"))
-                if past_fans == fans:
+                if past_fans == fans or fans == 0:
                     await asyncio.sleep(3)
                     continue
                 notice_list = self.get_notice_list("fans", uid)
