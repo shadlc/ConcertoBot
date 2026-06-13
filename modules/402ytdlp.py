@@ -86,14 +86,14 @@ class Ytdlp(Module):
         except DownloadError as e:
             nodes = self.node(f"{format_to_log(e.msg)}")
             return self.reply_forward(nodes, source="视频解析失败")
-        except Exception as e:
+        except Exception as e: # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             if "风控策略" in f"{e}":
                 return self.reply("412 由于触发哔哩哔哩安全风控策略，该次访问请求被拒绝", reply=True)
             nodes = self.node(f"{e}")
             self.robot.admin_notify(f"[{self.event.group_name or self.event.user_name}]视频处理失败", nodes)
             return self.reply_forward(nodes, source="视频处理失败")
-        except Exception as e:
+        except Exception as e: # pylint: disable=broad-exception-caught
             nodes = self.node(f"{e}")
             return self.reply_forward(nodes, source="视频解析失败")
 
@@ -204,7 +204,7 @@ class Ytdlp(Module):
         except DownloadError as e:
             nodes = self.node(f"{format_to_log(e.msg)}")
             return self.reply_forward(nodes, source="视频解析失败")
-        except Exception as e:
+        except Exception as e: # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             if "风控策略" in f"{e}":
                 return self.reply("412 由于触发哔哩哔哩安全风控策略，该次访问请求被拒绝", reply=True)
@@ -273,14 +273,14 @@ class Ytdlp(Module):
             req = urllib.request.Request(url, headers=self.config.get("headers"))
             with urllib.request.urlopen(req) as response:
                 url = response.url
-        except Exception as e:
+        except Exception as e: # pylint: disable=broad-exception-caught
             self.warnf(f"获取重定向url失败! {e}", level="DEBUG")
         info = {}
         for attempt in range(1, max_retries + 1):
             try:
                 with YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(url, download=False, process=False)
-            except Exception as e:
+            except Exception as e: # pylint: disable=broad-exception-caught
                 self.printf(f"第 {attempt} 次解析视频失败: {e}")
                 if attempt == max_retries:
                     return info
@@ -382,7 +382,7 @@ class Ytdlp(Module):
                     info_dict = ydl.extract_info(url, download=True)
                     filename = ydl.prepare_filename(info_dict)
                     return filename
-            except Exception as e:
+            except Exception as e: # pylint: disable=broad-exception-caught
                 self.printf(f"第 {attempt} 次下载视频失败: {e}")
                 if attempt == max_retries:
                     raise

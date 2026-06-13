@@ -1,7 +1,7 @@
 """抽老婆模块"""
 import base64
 import html
-import imghdr
+import imghdr # pylint: disable=deprecated-module
 import os
 import random
 import datetime
@@ -62,10 +62,10 @@ class Waifu(Module):
         """获取今天已分配的老婆列表"""
         today = datetime.date.today().strftime("%Y%m%d")
         waifu_data = self.conv_config["waifu"]
-        
+
         # 从waifu数据中筛选出今天分配的老婆
         today_waifus = []
-        for user_id, (waifu_name, date) in waifu_data.items():
+        for waifu_name, date in waifu_data.values():
             if date == today:
                 today_waifus.append(waifu_name)
 
@@ -83,7 +83,7 @@ class Waifu(Module):
         # 排除今天已经分配过的老婆
         today_waifus = self.get_today_waifus()
         available_waifus = [f for f in files if f not in today_waifus]
-        
+
         return available_waifus
 
     @handler(lambda self: self.au(2) and self.conv_config.get("enable") and self.match(r"^抽取?老婆$"))
@@ -93,24 +93,24 @@ class Waifu(Module):
         user_id = self.event.user_id
         config = self.conv_config
         waifu = None
-        
+
         # 检查用户今天是否已经抽过老婆
         if user_id in config["waifu"]:
             waifu_name, data_date = config["waifu"][user_id]
             if data_date == today:
                 waifu = waifu_name
-        
+
         if waifu is None:
             # 从可用老婆中随机选择
             available_waifus = self.get_available_waifus()
             if not available_waifus:
                 return self.reply("今天的老婆已经被抽光啦，明天再来吧!", reply=True)
-            
+
             waifu = random.choice(available_waifus)
             # 记录用户今天的老婆
             config["waifu"][user_id] = [waifu, today]
             self.save_config()
-        
+
         waifu_name = waifu.split(".")[0]
         waifu_img = self.get_waifu_file(waifu)
         result = self.reply(f"你今天的二次元老婆是{waifu_name}哒~\n[CQ:image,file=base64://{waifu_img}]", reply=True)
@@ -123,31 +123,31 @@ class Waifu(Module):
         """查询二次元老婆"""
         today = datetime.date.today().strftime("%Y%m%d")
         user_id = self.event.user_id
-        
+
         # 检查是否是查询用户老婆
         if match := re.search(r"\[CQ:at,qq=(.*?)\]", self.event.msg):
             user_id = match.group(1)
             user_name = get_user_name(self.robot, user_id)
             waives = self.conv_config["waifu"]
             waifu = None
-            
+
             if user_id in waives:
                 waifu_name, data_date = waives[user_id]
                 if data_date == today:
                     waifu = waifu_name
                 else:
                     return self.reply(f"{user_name}的老婆已过期!", reply=True)
-            
+
             if waifu is None:
                 return self.reply(f"未找到{user_name}的老婆信息!", reply=True)
-            
+
             waifu_name = waifu.split(".")[0]
             waifu_img = self.get_waifu_file(waifu)
             result = self.reply(f"{user_name}今天的二次元老婆是{waifu_name}哒~[CQ:image,file=base64://{waifu_img}]", reply=True)
             if not status_ok(result):
                 qq_url = get_img_url(self.robot, f"base64://{waifu_img}")
                 self.reply(f"{user_name}今天的二次元老婆是{waifu_name}哒~\n{qq_url}", reply=True)
-        
+
         # 检查是否是查询老婆是否存在
         else:
             # 提取老婆名称
@@ -192,20 +192,20 @@ class Waifu(Module):
                 return self.reply("请注明二次元老婆名称~", reply=True)
             elif not ret:
                 return self.reply("请附带二次元老婆图片~", reply=True)
-            
+
             url = html.unescape(ret.group(2))
             self.save_waifu(url, waifu_name)
-            
+
             # 添加成功后，检查该老婆名是否有多个版本
             pic_path = self.get_path()
             exts = (".jpg", ".jpeg", ".png")
             waifu_files = []
-            
+
             for ext in exts:
                 file_path = os.path.join(pic_path, f"{waifu_name}{ext}")
                 if os.path.exists(file_path):
                     waifu_files.append(f"{waifu_name}{ext}")
-            
+
             # 回复添加成功消息并显示所有版本
             if len(waifu_files) == 1:
                 self.reply(f"{waifu_name}已增加~", reply=True)
@@ -215,13 +215,13 @@ class Waifu(Module):
                     waifu_img = self.get_waifu_file(waifu_file)
                     reply_msg += f"\n{waifu_file} [CQ:image,file=base64://{waifu_img}]"
                 self.reply(reply_msg, reply=True)
-                
-        except Exception:
+
+        except Exception: # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             self.reply(f"{waifu_name}添加失败!", reply=True)
 
     @handler(lambda self: self.au(self.conv_config.get("add_auth"))
-        and self.conv_config.get("enable") 
+        and self.conv_config.get("enable")
         and self.match(r"^删(除)?老婆"))
     def del_waifu(self):
         """删除二次元老婆（必须指定格式）"""
@@ -258,8 +258,8 @@ class Waifu(Module):
                 self.reply(f"成功删除老婆 {waifu_name}{target_format}", reply=True)
             else:
                 self.reply(f"未找到老婆 {waifu_name}{target_format}", reply=True)
-                    
-        except Exception:
+
+        except Exception: # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             self.reply(f"{waifu_input}删除失败!", reply=True)
 
@@ -269,9 +269,9 @@ class Waifu(Module):
         if self.config["pic_path"].startswith("/"):
             path = self.config["pic_path"]
         else:
-            path = os.path.join(self.robot.config.data_path, self.config["pic_path"]) 
+            path = os.path.join(self.robot.config.data_path, self.config["pic_path"])
         os.makedirs(path, exist_ok=True)
-        return path       
+        return path
 
     def get_waifu_file(self, filename: str):
         """读取二次元老婆"""

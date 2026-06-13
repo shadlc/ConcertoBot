@@ -42,7 +42,7 @@ class API(Module):
             for idx, item in enumerate(data.get("data")):
                 msg += f"\n{idx + 1}. " + item.get("title")
             self.reply_forward(self.node(msg.strip()), title)
-        except Exception as e:
+        except Exception as e: # pylint: disable=broad-exception-caught
             return self.reply_forward(self.node(f"{e}"), source="今日热榜请求失败")
 
     @handler(lambda self: self.group_at() and self.au(2)
@@ -74,7 +74,7 @@ class API(Module):
             if not msg:
                 return self.reply("今日黄金价格获取为空", reply=True)
             self.reply_forward(self.node(msg.strip()), "今日金价")
-        except Exception as e:
+        except Exception as e: # pylint: disable=broad-exception-caught
             return self.reply_forward(self.node(f"{e}"), source="今日热榜请求失败")
 
     @handler(lambda self: self.group_at() and self.au(1)

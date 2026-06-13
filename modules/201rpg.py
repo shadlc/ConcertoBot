@@ -1,4 +1,5 @@
 """跑团功能模块"""
+
 import json
 import random
 import datetime
@@ -6,17 +7,17 @@ import sqlite3
 import re
 from src.utils import Module, handler, get_user_name
 
+
 class RPG(Module):
     """跑团功能模块"""
+
     ID = "RPG"
     NAME = "跑团功能模块"
     HELP = {
         0: [
             "本模块为CoC风格跑团模块，无需使用@，而是.开头调用",
         ],
-        2: [
-           "详细操作请输入.help获取" 
-        ]
+        2: ["详细操作请输入.help获取"],
     }
 
     # CoC 标准技能列表
@@ -38,7 +39,7 @@ class RPG(Module):
         "逃避行为：调查员会用任何的手段试图逃离当前所在之处。",
         "竭嘶底里：调查员表现出大笑，哭泣，嘶吼，害怕等的极端情绪表现。",
         "恐惧：调查员通过一次D100或者由守秘人选择，来从恐惧症状表中选择一个恐惧源。",
-        "躁狂：调查员通过一次D100或者由守秘人选择，来从躁狂症状表中选择一个躁狂的诱因。"
+        "躁狂：调查员通过一次D100或者由守秘人选择，来从躁狂症状表中选择一个躁狂的诱因。",
     ]
 
     GLOBAL_CONFIG = {
@@ -50,7 +51,7 @@ class RPG(Module):
         "battles": {},
         "users": {},
         "special_dice": {},
-        "logs": []  # 新增日志记录
+        "logs": [],  # 新增日志记录
     }
 
     def init_rpg_db(self, conn: sqlite3.Connection):
@@ -99,7 +100,7 @@ class RPG(Module):
             "user_id": user_id,
             "action": action,
             "details": details,
-            "timestamp": datetime.datetime.now().isoformat()
+            "timestamp": datetime.datetime.now().isoformat(),
         }
 
         # 内存中的日志记录
@@ -121,7 +122,13 @@ class RPG(Module):
 
         cur.execute(
             "INSERT INTO logs (owner_id, user_id, action, details, timestamp) VALUES (?, ?, ?, ?, ?)",
-            (self.owner_id, str(user_id), action, json.dumps(details), datetime.datetime.now().isoformat())
+            (
+                self.owner_id,
+                str(user_id),
+                action,
+                json.dumps(details),
+                datetime.datetime.now().isoformat(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -140,7 +147,7 @@ class RPG(Module):
 
         cur.execute(
             "SELECT data FROM characters WHERE owner_id=? AND user_id=?",
-            (self.owner_id, str(user_id))
+            (self.owner_id, str(user_id)),
         )
         row = cur.fetchone()
         conn.close()
@@ -165,7 +172,13 @@ class RPG(Module):
 
         cur.execute(
             "INSERT OR REPLACE INTO characters (owner_id, user_id, name, data, update_ts) VALUES (?, ?, ?, ?, ?)",
-            (self.owner_id, str(user_id), pc_data.get("Name", "未命名"), json.dumps(pc_data), datetime.datetime.now().isoformat())
+            (
+                self.owner_id,
+                str(user_id),
+                pc_data.get("Name", "未命名"),
+                json.dumps(pc_data),
+                datetime.datetime.now().isoformat(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -238,15 +251,22 @@ class RPG(Module):
     def calculate_db(self, str_val, siz_val):
         """计算伤害加值"""
         total = str_val + siz_val
-        if total <= 64: return "-2"
-        elif total <= 84: return "-1"
-        elif total <= 124: return "0"
-        elif total <= 164: return "+1D4"
-        elif total <= 204: return "+1D6"
-        else: return "+2D6"
+        if total <= 64:
+            return "-2"
+        elif total <= 84:
+            return "-1"
+        elif total <= 124:
+            return "0"
+        elif total <= 164:
+            return "+1D4"
+        elif total <= 204:
+            return "+1D6"
+        else:
+            return "+2D6"
 
     @handler(lambda self: self.au(2) and self.match(r"^\.help$"))
     def help(self):
+        """显示帮助信息"""
         help_list = [
             ".r | 掷6面骰",
             ".r[dice表达式] | 掷骰（如 r1d20+5, r3d6）",
@@ -296,15 +316,16 @@ class RPG(Module):
     @handler(lambda self: self.au(2) and self.match(r"^\.r[0-9dD\+\-\s]*$"))
     def roll(self):
         """掷骰子"""
+
         def process_dice_part(part, detail):
             """处理骰子表达式的一部分 (含正负号)"""
             if not part:
                 return 0
             sign = 1
-            if part.startswith('-'):
+            if part.startswith("-"):
                 sign = -1
                 part = part[1:]
-            elif part.startswith('+'):
+            elif part.startswith("+"):
                 part = part[1:]
             # 处理骰子表达式 (NdM)
             if "d" in part.lower():
@@ -316,7 +337,9 @@ class RPG(Module):
                 sides = min(sides, 1000)
                 rolls = [random.randint(1, sides) for _ in range(num)]
                 subtotal = sum(rolls) * sign
-                detail.append(f"{'-' if sign < 0 else ''}{num}d{sides}={rolls}->{subtotal}")
+                detail.append(
+                    f"{'-' if sign < 0 else ''}{num}d{sides}={rolls}->{subtotal}"
+                )
                 return subtotal
             else:
                 # 处理纯数字部分
@@ -334,18 +357,16 @@ class RPG(Module):
         try:
             detail = []
             # 用正则切割所有项 (包含符号)，保证每部分都有 ± 前缀
-            parts = re.findall(r'[+-]?\d*d?\d*', expr)
+            parts = re.findall(r"[+-]?\d*d?\d*", expr)
             parts = [p for p in parts if p]  # 去掉空串
             total = sum(process_dice_part(part, detail) for part in parts)
             user_name = get_user_name(self.robot, self.event.user_id)
             msg = f"🎲 {user_name} 掷骰: {total}\n({', '.join(detail)})"
             # 记录日志
-            self.add_log("roll", {
-                "expression": expr,
-                "result": total,
-                "details": detail
-            })
-        except Exception as e:
+            self.add_log(
+                "roll", {"expression": expr, "result": total, "details": detail}
+            )
+        except Exception as e:  # pylint: disable=broad-exception-caught
             msg = f"骰子表达式错误: {expr}\n错误: {str(e)}"
         self.reply(msg)
 
@@ -404,17 +425,22 @@ class RPG(Module):
                     result_text = "困难成功"
 
                 user_name = get_user_name(self.robot, self.event.user_id)
-                msg = f"🎲 {user_name} {event_desc}: {roll}/{probability} → {result_text}"
+                msg = (
+                    f"🎲 {user_name} {event_desc}: {roll}/{probability} → {result_text}"
+                )
 
                 # 记录日志
-                self.add_log("check", {
-                    "type": "event",
-                    "probability": probability,
-                    "roll": roll,
-                    "result": result_text
-                })
+                self.add_log(
+                    "check",
+                    {
+                        "type": "event",
+                        "probability": probability,
+                        "roll": roll,
+                        "result": result_text,
+                    },
+                )
 
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 msg = f"事件判定解析错误: {e}"
         else:
             # 技能检定模式
@@ -425,7 +451,7 @@ class RPG(Module):
             target = pc.get(skill)
             if target is None:
                 # 提供标准技能的默认值提示
-                for category, skills in self.COC_SKILLS.items():
+                for skills in self.COC_SKILLS.values():
                     if skill in skills:
                         target = 0  # 设置为0，提示用户需要设置
                         break
@@ -446,21 +472,24 @@ class RPG(Module):
                     result = "成功 ✔️"
                 else:
                     result = "失败 ❌"
-    
+
                 user_name = get_user_name(self.robot, self.event.user_id)
                 if target == 0:
                     msg = f"🎲 {user_name} {skill} 检定: {roll} (未设置{skill}，请使用 .st {skill} [数值] 设置)"
                 else:
                     msg = f"🎲 {user_name} {skill} 检定: {roll} / {target} → {result}"
-    
+
                 # 记录日志
-                self.add_log("check", {
-                    "type": "skill",
-                    "skill": skill,
-                    "target": target,
-                    "roll": roll,
-                    "result": result
-                })
+                self.add_log(
+                    "check",
+                    {
+                        "type": "skill",
+                        "skill": skill,
+                        "target": target,
+                        "roll": roll,
+                        "result": result,
+                    },
+                )
             else:
                 user_name = get_user_name(self.robot, self.event.user_id)
                 msg = f"🎲 {user_name} {skill} 检定: {roll}（未设置人物卡属性，无法判定成败）"
@@ -527,17 +556,22 @@ class RPG(Module):
             msg = f"🧠 {user_name} 理智检定: {roll}/{san} → {result}, 损失 {loss}点理智, 剩余 {new_san}{madness_msg}"
 
             # 记录日志
-            self.add_log("sanity_check", {
-                "roll": roll,
-                "original_san": san,
-                "new_san": new_san,
-                "loss": loss,
-                "result": result,
-                "madness": bool(madness),
-                "madness_type": "归零" if new_san == 0 else "临时" if madness else "无"
-            })
+            self.add_log(
+                "sanity_check",
+                {
+                    "roll": roll,
+                    "original_san": san,
+                    "new_san": new_san,
+                    "loss": loss,
+                    "result": result,
+                    "madness": bool(madness),
+                    "madness_type": (
+                        "归零" if new_san == 0 else "临时" if madness else "无"
+                    ),
+                },
+            )
 
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             msg = f"理智检定错误: {e}"
 
         self.reply(msg)
@@ -552,7 +586,7 @@ class RPG(Module):
             else:
                 skill = parts[0]
                 value = int(parts[1])
-    
+
                 if value < 0 or value > 100:
                     msg = "技能值必须在 0-100 之间"
                 else:
@@ -565,7 +599,7 @@ class RPG(Module):
 
         except ValueError:
             msg = "技能值必须是数字"
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             msg = f"设置技能错误: {e}"
 
         self.reply(msg)
@@ -605,11 +639,11 @@ class RPG(Module):
                 self.conv_config["special_dice"][user_id] = faces
                 self.save_config()
                 msg = f"✅ 特殊骰子设置成功: {faces}"
-    
+
                 # 记录日志
                 self.add_log("set_special_dice", {"faces": faces})
 
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             msg = f"设置特殊骰子时出错: {e}"
 
         self.reply(msg)
@@ -673,11 +707,9 @@ class RPG(Module):
             msg = f"🎲 {user_name} 特殊骰子掷出: {results[0]}"
 
         # 记录日志
-        self.add_log("roll_special_dice", {
-            "count": count,
-            "results": results,
-            "total": total
-        })
+        self.add_log(
+            "roll_special_dice", {"count": count, "results": results, "total": total}
+        )
 
         self.reply(msg)
 
@@ -707,7 +739,7 @@ class RPG(Module):
                 "name": user_name,
                 "roll": total,
                 "modifier": modifier,
-                "acted": False  # 标记是否已行动
+                "acted": False,  # 标记是否已行动
             }
             self.save_config()
 
@@ -716,11 +748,7 @@ class RPG(Module):
         msg = f"⚔️ {user_name} 先攻: {roll}{mod_str} = {total}"
 
         # 记录日志
-        self.add_log("initiative", {
-            "roll": roll,
-            "modifier": modifier,
-            "total": total
-        })
+        self.add_log("initiative", {"roll": roll, "modifier": modifier, "total": total})
 
         self.reply(msg)
 
@@ -732,11 +760,19 @@ class RPG(Module):
             msg = "当前没有进行中的战斗或无人掷先攻"
         else:
             initiatives = battle["initiatives"]
-            sorted_init = sorted(initiatives.items(), key=lambda x: x[1]["roll"], reverse=True)
+            sorted_init = sorted(
+                initiatives.items(), key=lambda x: x[1]["roll"], reverse=True
+            )
             msg = "⚔️ 先攻列表:\n"
-            for i, (user_id, data) in enumerate(sorted_init, 1):
+            for i, (user_id, data) in enumerate(
+                sorted_init, 1
+            ):  # pylint: disable=unused-variable
                 status = "✅" if data.get("acted", False) else "⏳"
-                mod_str = f"+{data['modifier']}" if data['modifier'] >= 0 else str(data['modifier'])
+                mod_str = (
+                    f"+{data['modifier']}"
+                    if data["modifier"] >= 0
+                    else str(data["modifier"])
+                )
                 msg += f"{i}. {status} {data['name']}: {data['roll']} (调整值: {mod_str})\n"
 
             # 显示当前回合信息
@@ -764,15 +800,13 @@ class RPG(Module):
             msg = f"❤️ {user_name} HP: {hp} {change_str} = {new_hp}"
 
             # 记录日志
-            self.add_log("hp_change", {
-                "change": change,
-                "old_hp": hp,
-                "new_hp": new_hp
-            })
+            self.add_log(
+                "hp_change", {"change": change, "old_hp": hp, "new_hp": new_hp}
+            )
 
         except ValueError:
             msg = "❌ HP变化值必须是数字"
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             msg = f"HP修改错误: {e}"
 
         self.reply(msg)
@@ -793,15 +827,13 @@ class RPG(Module):
             msg = f"💙 {user_name} MP: {mp} {change_str} = {new_mp}"
 
             # 记录日志
-            self.add_log("mp_change", {
-                "change": change,
-                "old_mp": mp,
-                "new_mp": new_mp
-            })
+            self.add_log(
+                "mp_change", {"change": change, "old_mp": mp, "new_mp": new_mp}
+            )
 
         except ValueError:
             msg = "❌ MP变化值必须是数字"
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             msg = f"MP修改错误: {e}"
 
         self.reply(msg)
@@ -857,7 +889,7 @@ class RPG(Module):
 
             cur.execute(
                 "DELETE FROM characters WHERE owner_id=? AND user_id=?",
-                (self.owner_id, str(self.event.user_id))
+                (self.owner_id, str(self.event.user_id)),
             )
             conn.commit()
             conn.close()
@@ -914,12 +946,18 @@ class RPG(Module):
         # 其他技能
         other_skills = []
         for skill, value in pc.items():
-            if (skill not in main_attrs and skill not in status_attrs and 
-                skill != "Name" and not any(skill in cat_skills for cat_skills in self.COC_SKILLS.values())):
+            if (
+                skill not in main_attrs
+                and skill not in status_attrs
+                and skill != "Name"
+                and not any(
+                    skill in cat_skills for cat_skills in self.COC_SKILLS.values()
+                )
+            ):
                 other_skills.append(f"{skill}:{value}")
 
         if other_skills:
-            msg += f"\n其他技能:\n"
+            msg += "\n其他技能:\n"
             msg += " ".join(other_skills)
 
         return msg
@@ -944,7 +982,7 @@ class RPG(Module):
             self.conv_config["teams"][team_name] = {
                 "leader": user_id,
                 "members": {str(user_id): user_name},
-                "created": datetime.datetime.now().isoformat()
+                "created": datetime.datetime.now().isoformat(),
             }
             self.save_config()
             msg = f"👥 队伍 {team_name} 创建成功，您是队长"
@@ -967,19 +1005,22 @@ class RPG(Module):
                         self.reply(msg)
                         return
 
-                self.conv_config["teams"][team_name]["members"][str(user_id)] = user_name
+                self.conv_config["teams"][team_name]["members"][
+                    str(user_id)
+                ] = user_name
                 self.save_config()
                 msg = f"👥 {user_name} 加入了队伍 {team_name}"
-    
+
                 # 记录日志
                 self.add_log("team_join", {"team_name": team_name})
-    
+
         elif self.match(r"^\.team leave$"):
             user_id = self.event.user_id
             user_name = get_user_name(self.robot, user_id)
 
             # 查找用户所在的队伍
             found = False
+            team_name = None
             for team_name, team in self.conv_config["teams"].items():
                 if str(user_id) in team["members"]:
                     # 如果是队长，解散队伍
@@ -999,7 +1040,7 @@ class RPG(Module):
             # 记录日志
             if found:
                 self.add_log("team_leave", {"team_name": team_name})
-    
+
         elif self.match(r"^\.team info$"):
             user_id = self.event.user_id
 
@@ -1009,7 +1050,9 @@ class RPG(Module):
                 if str(user_id) in team["members"]:
                     leader_name = get_user_name(self.robot, team["leader"])
                     members = ", ".join(team["members"].values())
-                    created_date = datetime.datetime.fromisoformat(team["created"]).strftime("%Y-%m-%d %H:%M")
+                    created_date = datetime.datetime.fromisoformat(
+                        team["created"]
+                    ).strftime("%Y-%m-%d %H:%M")
                     msg = f"👥 队伍 {team_name} 信息:\n创建时间: {created_date}\n队长: {leader_name}\n成员: {members}"
                     found = True
                     break
@@ -1025,7 +1068,9 @@ class RPG(Module):
                 for team_name, team in teams.items():
                     leader_name = get_user_name(self.robot, team["leader"])
                     member_count = len(team["members"])
-                    created_date = datetime.datetime.fromisoformat(team["created"]).strftime("%m-%d")
+                    created_date = datetime.datetime.fromisoformat(
+                        team["created"]
+                    ).strftime("%m-%d")
                     msg += f"{team_name} (队长: {leader_name}, 成员: {member_count}人, 创建: {created_date})\n"
         else:
             msg = "team 指令用法: create/join/leave/info/list"
@@ -1059,14 +1104,14 @@ class RPG(Module):
                         "initiatives": {},
                         "round": 0,
                         "current_turn": 0,
-                        "started": datetime.datetime.now().isoformat()
+                        "started": datetime.datetime.now().isoformat(),
                     }
                     self.save_config()
                     msg = f"⚔️ 战斗开始！队伍 {user_team} 进入战斗状态，请队员使用 .ri 命令掷先攻"
-        
+
                     # 记录日志
                     self.add_log("battle_start", {"team": user_team})
-        
+
         elif self.match(r"^\.battle end$"):
             user_id = self.event.user_id
 
@@ -1084,13 +1129,13 @@ class RPG(Module):
                     del self.conv_config["battles"]["current"]
                     self.save_config()
                     msg = f"⚔️ 战斗结束！队伍 {team_name} 退出战斗状态"
-        
+
                     # 记录日志
-                    self.add_log("battle_end", {
-                        "team": team_name,
-                        "rounds": battle.get("round", 0)
-                    })
-        
+                    self.add_log(
+                        "battle_end",
+                        {"team": team_name, "rounds": battle.get("round", 0)},
+                    )
+
         elif self.match(r"^\.battle status$"):
             if "current" not in self.conv_config["battles"]:
                 msg = "当前没有进行中的战斗"
@@ -1103,45 +1148,55 @@ class RPG(Module):
                 msg = f"⚔️ 战斗状态:\n队伍: {team_name}\n回合: {round_num}\n已掷先攻: {initiative_count}人"
 
                 if battle["initiatives"]:
-                    sorted_init = sorted(battle["initiatives"].items(), key=lambda x: x[1]["roll"], reverse=True)
+                    sorted_init = sorted(
+                        battle["initiatives"].items(),
+                        key=lambda x: x[1]["roll"],
+                        reverse=True,
+                    )
                     msg += "\n先攻顺序:"
                     for i, (user_id, data) in enumerate(sorted_init, 1):
                         status = "✅" if data.get("acted", False) else "⏳"
                         msg += f"\n{i}. {status} {data['name']}: {data['roll']}"
-            
+
                     # 显示当前回合信息
                     if round_num > 0:
                         current_turn = battle.get("current_turn", 0)
                         if current_turn < len(sorted_init):
                             current_player = sorted_init[current_turn][1]["name"]
-                            msg += f"\n\n🔄 第{round_num}回合 - 当前行动: {current_player}"
+                            msg += (
+                                f"\n\n🔄 第{round_num}回合 - 当前行动: {current_player}"
+                            )
 
         elif self.match(r"^\.battle next$"):
             if "current" not in self.conv_config["battles"]:
                 msg = "❌ 当前没有进行中的战斗"
             else:
                 battle = self.conv_config["battles"]["current"]
-    
+
                 if not battle["initiatives"]:
                     msg = "❌ 无人掷先攻，无法开始回合"
                 else:
-                    sorted_init = sorted(battle["initiatives"].items(), key=lambda x: x[1]["roll"], reverse=True)
+                    sorted_init = sorted(
+                        battle["initiatives"].items(),
+                        key=lambda x: x[1]["roll"],
+                        reverse=True,
+                    )
                     current_turn = battle.get("current_turn", 0)
                     round_num = battle.get("round", 0)
-        
+
                     if current_turn == 0 and round_num == 0:
                         # 开始第一回合
                         battle["round"] = 1
-                        msg = f"🔄 第1回合开始！"
+                        msg = "🔄 第1回合开始！"
                     else:
                         # 标记当前玩家已行动
                         if current_turn < len(sorted_init):
                             user_id, data = sorted_init[current_turn]
                             battle["initiatives"][user_id]["acted"] = True
-            
+
                         # 移动到下一个玩家
                         current_turn += 1
-            
+
                         if current_turn >= len(sorted_init):
                             # 回合结束
                             current_turn = 0
@@ -1149,14 +1204,14 @@ class RPG(Module):
                             # 重置所有玩家的行动状态
                             for user_id in battle["initiatives"]:
                                 battle["initiatives"][user_id]["acted"] = False
-                
+
                             msg = f"🔄 第{battle['round']}回合开始！"
                         else:
-                            msg = f"⏭️ 轮到下一位玩家行动"
-        
+                            msg = "⏭️ 轮到下一位玩家行动"
+
                     battle["current_turn"] = current_turn
                     self.save_config()
-        
+
                     # 添加当前行动者信息
                     if current_turn < len(sorted_init):
                         current_player = sorted_init[current_turn][1]["name"]
@@ -1229,7 +1284,9 @@ class RPG(Module):
         else:
             msg = "📋 最近活动记录:\n"
             for log in logs[-10:]:  # 显示最近10条记录
-                timestamp = datetime.datetime.fromisoformat(log["timestamp"]).strftime("%H:%M")
+                timestamp = datetime.datetime.fromisoformat(log["timestamp"]).strftime(
+                    "%H:%M"
+                )
                 user_name = get_user_name(self.robot, log["user_id"])
                 msg += f"{timestamp} {user_name}: {log['action']}\n"
 

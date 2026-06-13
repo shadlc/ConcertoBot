@@ -2,7 +2,6 @@
 
 import asyncio
 import base64
-import html
 import io
 import json
 import random
@@ -15,10 +14,21 @@ from urllib.parse import quote
 import httpx
 from PIL import Image
 
-from src.utils import MiniCron, Module, calc_time, get_img_url, reply_back, set_emoji, handler, listener
+from src.utils import (
+    MiniCron,
+    Module,
+    calc_time,
+    get_img_url,
+    reply_back,
+    set_emoji,
+    handler,
+    listener,
+)
+
 
 class Picture(Module):
     """图片处理模块"""
+
     ID = "Picture"
     NAME = "图片处理模块"
     HELP = {
@@ -50,7 +60,7 @@ class Picture(Module):
     }
     AUTO_INIT = True
 
-    def __init__(self, event, auth = 0):
+    def __init__(self, event, auth=0):
         super().__init__(event, auth)
         if self.ID in self.robot.persist_mods:
             return
@@ -69,8 +79,14 @@ class Picture(Module):
             crontab = config["cron"]
             if not crontab or prob == 0:
                 continue
-            cron = MiniCron(crontab, lambda o=owner,c=config: self.jiandan_msg_task(o, c), loop=self.robot.loop)
-            self.printf(f"已为[{owner}]开启煎蛋无聊图定时任务[{crontab}]，概率{prob:.2%}")
+            cron = MiniCron(
+                crontab,
+                lambda o=owner, c=config: self.jiandan_msg_task(o, c),
+                loop=self.robot.loop,
+            )
+            self.printf(
+                f"已为[{owner}]开启煎蛋无聊图定时任务[{crontab}]，概率{prob:.2%}"
+            )
             asyncio.run_coroutine_threadsafe(cron.run(), self.robot.loop)
 
     async def jiandan_msg_task(self, owner: str, config: dict) -> None:
@@ -78,7 +94,9 @@ class Picture(Module):
         ran_int = random.random()
         prob = config["probability"]
         if ran_int > prob:
-            return self.printf(f"[煎蛋无聊图][{owner}]因概率未达而取消({ran_int:.2}>{prob:.2})")
+            return self.printf(
+                f"[煎蛋无聊图][{owner}]因概率未达而取消({ran_int:.2}>{prob:.2})"
+            )
         data_list = await self.get_jiandan()
         if not data_list:
             return self.printf(f"[煎蛋无聊图][{owner}]因无有效数据而取消")
@@ -94,13 +112,18 @@ class Picture(Module):
         self.save_config()
         msg = data.get("content").strip()
         msg = msg.replace("/mw600/", "/large/").replace("/thumb180/", "/large/")
-        msg = re.sub(r"""<img\s+src="([^"]+)"\s*/?>""", r"[CQ:image,sub_type=0,file=\1]", msg)
+        msg = re.sub(
+            r"""<img\s+src="([^"]+)"\s*/?>""", r"[CQ:image,sub_type=0,file=\1]", msg
+        )
         reply_back(self.robot, owner, msg)
         if notify_maisaka := self.robot.func.get("notify_maisaka"):
             notify_maisaka(msg, owner[1:])
 
-    @handler(lambda self: self.au(2) and self.at_or_private()
-         and self.match(r"^(来|发)(张|个)(无聊|屌|弔|吊|梗)图$"))
+    @handler(
+        lambda self: self.au(2)
+        and self.at_or_private()
+        and self.match(r"^(来|发)(张|个)(无聊|屌|弔|吊|梗)图$")
+    )
     def jiandan_msg(self):
         """获取煎蛋无聊图"""
         if not self.is_private():
@@ -123,8 +146,11 @@ class Picture(Module):
         msg = re.sub(r"""<img\s+src="([^"]+)"\s*/?>""", r"[CQ:image,file=\1]", msg)
         self.reply(msg)
 
-    @listener(lambda self: self.au(2) and self.at_or_private()
-         and self.match(r"^(\[.*\])?\s*?(打分|评分)(\[.*\])?$"))
+    @listener(
+        lambda self: self.au(2)
+        and self.at_or_private()
+        and self.match(r"^(\[.*\])?\s*?(打分|评分)(\[.*\])?$")
+    )
     def nsfw(self):
         """对图片色气度进行打分"""
         api_url = "https://nsfwtag.azurewebsites.net/api/nsfw?url="
@@ -168,9 +194,15 @@ class Picture(Module):
         except (ValueError, KeyError):
             return self.reply("解析API响应失败", reply=True)
 
-    @handler(lambda self: self.au(2) and self.at_or_private()
-         and self.match(r"^我?(要|来|发|看|给|有没有){0,3}?(更|超|超级|很|再|无敌|最强|大){0,3}?(来|发|看|给|瑟|涩|色|se)\S{0,10}(图|瑟|涩|色|se|好看|好康|可爱)的?"))
+    @handler(
+        lambda self: self.au(2)
+        and self.at_or_private()
+        and self.match(
+            r"^我?(要|来|发|看|给|有没有){0,3}?(更|超|超级|很|再|无敌|最强|大){0,3}?(来|发|看|给|瑟|涩|色|se)\S{0,10}(图|瑟|涩|色|se|好看|好康|可爱)的?"
+        )
+    )
     def lolicon(self):
+        """调用Lolicon API获取图片"""
         tags = []
         r18_mode = 0
         if len(self.event.text.split(" ")) > 1:
@@ -207,13 +239,18 @@ class Picture(Module):
                     self.reply(f"[CQ:image,file={url}]")
             else:
                 return self.reply(f"未找到标签[{tags}]的图片", reply=True)
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             self.reply(f"Lolicon API调用失败! {e}", reply=True)
 
-    @handler(lambda self: self.au(2) and self.at_or_private()
-         and self.conv_config.get("animate_search")
-         and self.match(r"^(\[.*\])?\s*?(搜索|搜|查询|查|找)(番|剧|番剧|动画|动漫)\s*?(\[.*\])?$"))
+    @handler(
+        lambda self: self.au(2)
+        and self.at_or_private()
+        and self.conv_config.get("animate_search")
+        and self.match(
+            r"^(\[.*\])?\s*?(搜索|搜|查询|查|找)(番|剧|番剧|动画|动漫)\s*?(\[.*\])?$"
+        )
+    )
     def search_animate(self):
         """搜番"""
         url = ""
@@ -230,14 +267,18 @@ class Picture(Module):
             self.printf(f"正在使用TraceMoe搜索图片[{url}]...")
             msg = self.retry(lambda: self.search_animate_tracemoe(url))
             return self.reply(msg, reply=True)
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             self.reply(f"TraceMoe调用失败! {e}", reply=True)
 
-    @handler(lambda self: self.au(2) and self.at_or_private()
-         and self.conv_config.get("image_search")
-         and self.match(r"^(\[.*\])?\s*?(搜索|搜|查询|查|找|识)(图|图片)\s*?(\[.*\])?$"))
+    @handler(
+        lambda self: self.au(2)
+        and self.at_or_private()
+        and self.conv_config.get("image_search")
+        and self.match(r"^(\[.*\])?\s*?(搜索|搜|查询|查|找|识)(图|图片)\s*?(\[.*\])?$")
+    )
     def search_image(self):
+        """谷歌搜图"""
         url = ""
         if match := self.match(r"\[CQ:image,.*url=([^,\]]+?),.*\]"):
             url = match.group(1)
@@ -261,14 +302,17 @@ class Picture(Module):
             if not self.is_private():
                 set_emoji(self.robot, self.event.msg_id, 66)
             self.reply_forward(nodes, source="谷歌搜图结果")
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             self.reply(f"谷歌搜图调用失败! {e}", reply=True)
 
-    @listener(lambda self: self.au(2)
-         and self.conv_config.get("saucenao")
-         and self.match(r"^(\[.*\])?\s*?(s|S)auce(n|N)(a|A)(o|O)"))
+    @listener(
+        lambda self: self.au(2)
+        and self.conv_config.get("saucenao")
+        and self.match(r"^(\[.*\])?\s*?(s|S)auce(n|N)(a|A)(o|O)")
+    )
     def saucenao(self):
+        """SauceNAO搜图"""
         url = ""
         if match := self.match(r"\[CQ:image,.*url=([^,\]]+?),.*\]"):
             url = match.group(1)
@@ -291,13 +335,15 @@ class Picture(Module):
             if not self.is_private():
                 set_emoji(self.robot, self.event.msg_id, 66)
             self.reply_forward(nodes, source="SauceNAO搜索结果")
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             self.reply(f"SauceNAO调用失败! {e}", reply=True)
 
-    @listener(lambda self: self.au(2)
-         and self.conv_config.get("enhance")
-         and self.match(r"清晰术"))
+    @listener(
+        lambda self: self.au(2)
+        and self.conv_config.get("enhance")
+        and self.match(r"清晰术")
+    )
     def enhance_img(self):
         """清晰术"""
         url = ""
@@ -340,11 +386,13 @@ class Picture(Module):
                 set_emoji(self.robot, self.event.msg_id, 124)
             self.printf("正在从HuggingFace调用Real-CUGAN模型")
             enhanced_image = self.realCUGAN(resp.content, scale, con)
-            enhanced_image_url = re.sub(r"data:image/.*;base64,", "base64://", enhanced_image)
+            enhanced_image_url = re.sub(
+                r"data:image/.*;base64,", "base64://", enhanced_image
+            )
             if not self.is_private():
                 set_emoji(self.robot, self.event.msg_id, 66)
             return self.reply(f"[CQ:image,url={enhanced_image_url}]", reply=True)
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             self.reply(f"{e}", reply=True)
 
@@ -364,20 +412,22 @@ class Picture(Module):
             payload = {"data": [encoded_image, model_name, 2]}
             headers = {"Content-Type": "application/json"}
             response = httpx.post(
-                predict_url, 
-                json=payload, 
+                predict_url,
+                json=payload,
                 headers=headers,
                 timeout=300,
-                follow_redirects=True
+                follow_redirects=True,
             )
             response.raise_for_status()
             result = response.json()
             enhanced_image = result["data"][0]
             return enhanced_image
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             raise RuntimeError(f"群星之路被遮蔽，星辉无法汇聚: {str(e)}") from e
 
-    def get_lolicon_image(self, r18: int = 0, tags: list = None, ai: bool = False) -> dict | None:
+    def get_lolicon_image(
+        self, r18: int = 0, tags: list = None, ai: bool = False
+    ) -> dict | None:
         """
         获取LoliconAPI图片
         :param r18: 是否获取R18图片
@@ -396,12 +446,14 @@ class Picture(Module):
         original_url = data.get("data")[0].get("urls", {}).get("original")
         qq_url = get_img_url(self.robot, original_url)
         if url == qq_url:
-            raise Exception("尝试多次，图片链接均已失效，请重新获取")
+            raise RuntimeError("尝试多次，图片链接均已失效，请重新获取")
         data["data"][0]["urls"]["url"] = qq_url
         img = data["data"][0]
         return img
 
-    def search_image_saucenao(self, image_url: str, proxies: str = None) -> Tuple[bool, str | list]:
+    def search_image_saucenao(
+        self, image_url: str, proxies: str = None
+    ) -> Tuple[bool, str | list]:
         """
         SauceNAO搜图
         :param image_url: 图片URL
@@ -417,11 +469,14 @@ class Picture(Module):
             "url": image_url,
             "api_key": saucenao_key,
             "output_type": 2,
-            "numres": 3
+            "numres": 3,
         }
         resp = httpx.get(saucenao_url, params=params, timeout=10, proxy=proxies)
-        if results :=resp.json().get("results"):
-            self.printf(f"SauceNAO搜图结果:\n{json.dumps(results, ensure_ascii=False)}", level="DEBUG")
+        if results := resp.json().get("results"):
+            self.printf(
+                f"SauceNAO搜图结果:\n{json.dumps(results, ensure_ascii=False)}",
+                level="DEBUG",
+            )
             msg_list = []
             for _, image in enumerate(results):
                 header = image.get("header")
@@ -443,7 +498,11 @@ class Picture(Module):
                     msg += f"\n原图地址: {urls[0]}"
                 if source:
                     if "i.pximg.net" in source:
-                        source = re.sub(r"i\.pximg\.net.*/(\d{5,})", r"www.pixiv.net/artworks/\1", source)
+                        source = re.sub(
+                            r"i\.pximg\.net.*/(\d{5,})",
+                            r"www.pixiv.net/artworks/\1",
+                            source,
+                        )
                     msg += f"\n来源: {source}"
                 msg += f"\n[CQ:image,file={thumbnail}]"
                 msg_list.append(msg)
@@ -455,7 +514,9 @@ class Picture(Module):
         else:
             return False, "SauceNAO返回无结果~"
 
-    def search_image_google(self, image_url: str, proxies: str = None) -> Tuple[bool, str | list]:
+    def search_image_google(
+        self, image_url: str, proxies: str = None
+    ) -> Tuple[bool, str | list]:
         """
         谷歌搜图
         :param image_url: 图片URL
@@ -474,10 +535,12 @@ class Picture(Module):
             "url": image_url,
         }
         resp = httpx.get(api_url, params=params, timeout=10, proxy=proxies)
-        self.printf(f"谷歌搜图结果:\n{json.dumps(resp.text, ensure_ascii=False)}", level="DEBUG")
+        self.printf(
+            f"谷歌搜图结果:\n{json.dumps(resp.text, ensure_ascii=False)}", level="DEBUG"
+        )
         success = False
         result = ""
-        if matches :=resp.json().get("visual_matches"):
+        if matches := resp.json().get("visual_matches"):
             msg_list = []
             for _, data in enumerate(matches[:10]):
                 title = data.get("title", "")
@@ -504,13 +567,16 @@ class Picture(Module):
             result = "谷歌搜图返回无结果~"
         return success, result
 
-    def get_google_ai_overview(self, page_token: str, proxies: str = None) -> Tuple[bool, str | list]:
+    def get_google_ai_overview(
+        self, page_token: str, proxies: str = None
+    ) -> Tuple[bool, str | list]:
         """
         谷歌AI总结
         :param page_token: 页面令牌
         :param proxies: 代理配置
         :return: [搜索是否成功, 搜索结果]
         """
+
         def extract_snippets(obj):
             """提取snippets"""
             result = []
@@ -536,10 +602,13 @@ class Picture(Module):
             "page_token": page_token,
         }
         resp = httpx.get(api_url, params=params, timeout=10, proxy=proxies)
-        self.printf(f"谷歌AI总结结果:\n{json.dumps(resp.text, ensure_ascii=False)}", level="DEBUG")
+        self.printf(
+            f"谷歌AI总结结果:\n{json.dumps(resp.text, ensure_ascii=False)}",
+            level="DEBUG",
+        )
         success = False
         result = ""
-        if ai_overview :=resp.json().get("ai_overview"):
+        if ai_overview := resp.json().get("ai_overview"):
             success = True
             snippets = extract_snippets(ai_overview)
             result = "\n".join(snippets)
@@ -558,7 +627,10 @@ class Picture(Module):
         resp.raise_for_status()
         data = resp.json()
         if results := data.get("result"):
-            self.printf(f"TraceMoe搜番结果:\n{json.dumps(results, ensure_ascii=False)}", level="DEBUG")
+            self.printf(
+                f"TraceMoe搜番结果:\n{json.dumps(results, ensure_ascii=False)}",
+                level="DEBUG",
+            )
             res = results[0]
             ani = res.get("anilist", {})
             similarity = res.get("similarity", 0) * 100
@@ -580,7 +652,7 @@ class Picture(Module):
         else:
             return "TraceMoe返回无结果~"
 
-    async def get_jiandan(self, page=0, page_num=3, raise_error = False) -> str | None:
+    async def get_jiandan(self, page=0, page_num=3, raise_error=False) -> str | None:
         """获取一张煎蛋无聊图"""
         page_str = f"第{page}页" if page else "最新一页"
         try:
@@ -597,13 +669,19 @@ class Picture(Module):
             if page == 0 and page_num > 0:
                 for i in range(1, page_num + 1):
                     data += await self.get_jiandan(current_page - i)
-            data = sorted(data, key=lambda x: x["vote_positive"]-x["vote_negative"], reverse=True)
+            data = sorted(
+                data,
+                key=lambda x: x["vote_positive"] - x["vote_negative"],
+                reverse=True,
+            )
             result = []
             for item in data:
-                if (item["vote_positive"] > item["vote_negative"]
+                if (
+                    item["vote_positive"] > item["vote_negative"]
                     and item["vote_positive"] > 0
                     and item["vote_negative"] < 30
-                    and item["vote_positive"] < 100):
+                    and item["vote_positive"] < 100
+                ):
                     # 排除煎蛋本平台相关帖子，宁缺毋滥
                     if "蛋" in item.get("content"):
                         continue
@@ -612,19 +690,21 @@ class Picture(Module):
             return result
         except httpx.ConnectTimeout as e:
             self.errorf(f"获取煎蛋无聊图{page_str}时网络请求超时 {e}")
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(f"获取煎蛋无聊图{page_str}失败 {traceback.format_exc()}")
             if raise_error:
                 raise e
             return []
 
-    def retry(self, func: Callable[..., Any], name="", max_retries=3, delay=1, failed_ok=False) -> Any:
+    def retry(
+        self, func: Callable[..., Any], name="", max_retries=3, delay=1, failed_ok=False
+    ) -> Any:
         """多次尝试执行"""
         for attempt in range(1, max_retries + 1):
             try:
                 result = func()
                 return result
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 func_name = name if name else func.__name__
                 self.printf(f"第 {attempt} 次执行 {func_name} 失败: {e}")
                 if attempt == max_retries:

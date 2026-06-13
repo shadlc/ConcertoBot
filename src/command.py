@@ -25,6 +25,7 @@ from src.utils import (
     set_model_show,
     status_ok,
     get_forward_msg,
+    get_handler_amount,
     get_stranger_info,
     get_group_info,
     send_msg,
@@ -60,13 +61,13 @@ class ExecuteCmd(object):
             "exit": "退出机器人",
             "get": "获取用户或群的信息",
             "group": "修改对接群列表",
-            "groupmsg": "发送群聊消息",
-            "groupvoice": "发送群语音消息",
+            "gmsg": "发送群聊消息",
+            "gvoice": "发送群语音消息",
             "help": "打开帮助菜单",
             "history": "查看历史消息",
             "info": "查看API版本和相关信息",
             "like": "对用户主页点赞",
-            "llm": "调用首个配置的大语言模型生成文本(如果可以)",
+            "llm": "调用首个配置的大语言模型进行对话(如果可以)",
             "msg": "发送私聊消息",
             "notice": "发送群公告",
             "ocr": "识别图片中的文字",
@@ -79,7 +80,7 @@ class ExecuteCmd(object):
             "request": "手动调用API",
             "reply": "回复上一条消息",
             "qreply": "快捷回复上一条消息(不支持快捷撤回)",
-            "say": "向主对接群发送消息",
+            "say": "快捷向主对接群发送消息",
             "set": "设置变量",
             "sign": "进行群打卡",
             "silence": "静默模式",
@@ -99,10 +100,11 @@ class ExecuteCmd(object):
                         method(argv[1])
                     else:
                         method()
-            except Exception:
+            except Exception:  # pylint: disable=broad-exception-caught
                 self.errorf(Fore.RED + traceback.format_exc())
 
     def add(self, argv=""):
+        """同意或拒绝好友/群添加请求"""
         if re.search(r"(agree|deny)\s?(.*)", argv):
             inputs = re.search(r"(agree|deny)\s?(.*)", argv).groups()
             if len(self.robot.past_request) == 0:
@@ -123,7 +125,8 @@ class ExecuteCmd(object):
         else:
             self.printf(f"请使用 {Fore.CYAN}add agree/deny 备注{Fore.RESET} 同意或拒绝申请")
 
-    def api(self, argv=""):
+    def api(self, argv=""): # pylint: disable=unused-argument
+        """查看向API请求的历史记录"""
         self.printf(f"向 {Fore.GREEN}{self.robot.config.api_base}{Fore.RESET} {Fore.YELLOW}{self.robot.api_name}{Fore.RESET} 请求的历史记录:")
         for request in self.robot.request_list:
             if re.search(r"^GET", request):
@@ -131,7 +134,8 @@ class ExecuteCmd(object):
             else:
                 self.printf(f"{Fore.MAGENTA}[POST]{Fore.RESET} {request.replace("POST", "")}{Fore.MAGENTA}{Fore.RESET}")
 
-    def debug(self, argv=""):
+    def debug(self, argv=""): # pylint: disable=unused-argument
+        """开关调试模式"""
         self.robot.config.is_debug = not self.robot.config.is_debug
         self.robot.config.save("is_debug", self.robot.config.is_debug)
         if self.robot.config.is_debug:
@@ -140,6 +144,7 @@ class ExecuteCmd(object):
             self.warnf("DEBUG模式已关闭")
 
     def deop(self, argv=""):
+        """取消管理员权限"""
         if re.search(r"(\d+)", argv):
             user_id = re.search(r"^(\d+)", argv).group(1)
             user_name = get_user_name(self.robot, user_id)
@@ -153,6 +158,7 @@ class ExecuteCmd(object):
             self.printf(f"请使用 {Fore.CYAN}deop 用户QQ{Fore.RESET} 取消管理员")
 
     def device(self, argv=""):
+        """设置在线机型"""
         if re.search(r"(.+)", argv):
             device = re.search(r"(.+)", argv).group(1)
             result = set_model_show(self.robot, device, device)
@@ -164,6 +170,7 @@ class ExecuteCmd(object):
             self.printf(f"请使用 {Fore.CYAN}device 型号{Fore.RESET} 设置登陆设备型号")
 
     def emoji(self, argv=""):
+        """对某条消息ID贴表情(默认❤)(默认上一条消息)"""
         if re.search(r"^(\d+)", argv):
             inputs = re.search(r"(\d+)\s?(\d+)", argv).groups()
             msg_id = inputs[0]
@@ -190,14 +197,16 @@ class ExecuteCmd(object):
         else:
             self.printf(f"请使用 {Fore.CYAN}emoji 消息ID{Fore.RESET} 进行贴表情")
 
-    def exit(self, argv=""):
+    def exit(self, argv=""): # pylint: disable=unused-argument
+        """退出机器人"""
         result = bot_exit(self.robot)
         if status_ok(result):
-            self.printf(f"账号已退出")
+            self.printf("账号已退出")
         else:
-            self.warnf(f"账号退出失败")
+            self.warnf("账号退出失败")
 
-    def get(self, argv=""):
+    def get(self, argv=""): # pylint: disable=unused-argument
+        """获取用户或群的信息"""
         if re.search(r"user\s+(\d+)", argv):
             user_id = re.search(r"user\s+(\d+)", argv).group(1)
             result = get_stranger_info(self.robot, user_id)
@@ -237,6 +246,7 @@ class ExecuteCmd(object):
             self.printf(f"请使用 {Fore.CYAN}get user/group QQ号/群号{Fore.RESET} 获取信息")
 
     def group(self, argv=""):
+        """修改对接群列表"""
         if re.search(r"add\s+(\d+)", argv):
             group_id = re.search(r"\s+(\d+)", argv).group(1).strip()
             group_name = get_group_name(self.robot, group_id)
@@ -267,7 +277,8 @@ class ExecuteCmd(object):
             self.printf(f"请使用 {Fore.CYAN}group add/remove 群号{Fore.RESET} 增加或删除对接群")
             self.printf(f"请使用 {Fore.CYAN}group main 群号{Fore.RESET} 设置主对接群")
 
-    def groupmsg(self, argv=""):
+    def gmsg(self, argv=""):
+        """发送群聊消息"""
         if re.search(r"(\d+)\s+(.+)", argv):
             inputs = re.search(r"(\d+)\s+(.+)", argv).groups()
             group_id = inputs[0]
@@ -281,7 +292,8 @@ class ExecuteCmd(object):
         else:
             self.printf(f"请使用 {Fore.CYAN}groupmsg 群号 消息内容{Fore.RESET} 发送消息")
 
-    def group_voice(self, argv=""):
+    def gvoice(self, argv=""):
+        """发送群语音消息"""
         if re.search(r"(\d+)\s+(.+)", argv):
             inputs = re.search(r"(\d+)\s+(.+)", argv).groups()
             group_id = inputs[0]
@@ -296,6 +308,7 @@ class ExecuteCmd(object):
             self.printf(f"请使用 {Fore.CYAN}groupvoice 群号 文本{Fore.RESET} 发送文本转语音")
 
     def aivoice(self, argv=""):
+        """发送AI声聊消息"""
         if re.search(r"(\S+)\s+(\d+)\s?(\S+)?", argv):
             match = re.search(r"(\S+)\s+(\d+)\s?(\S+)?", argv).groups()
             text = match[0]
@@ -311,13 +324,14 @@ class ExecuteCmd(object):
             self.printf(f"请使用 {Fore.CYAN}aivoice 文本 群号 声色{Fore.RESET} 发送AI声聊")
 
     def help(self, argv=""):
+        """打开帮助菜单"""
         all_page = int(len(self.robot.cmd) / 10 + 1)
         page = 1
         if re.search(r"(\d+)", argv):
             page = sorted([1, int(re.search(r"(\d+)", argv).group(1)), all_page])[1]
         if re.search(r"^(all)$", argv):
             page = 0
-        self.printf(f"============帮助============")
+        self.printf("============帮助============")
         if page == 0:
             for cmd in list(self.robot.cmd.keys()):
                 self.printf(f"{Fore.CYAN}{cmd}{Fore.RESET}：{self.robot.cmd[cmd]}")
@@ -327,9 +341,10 @@ class ExecuteCmd(object):
             self.printf(f"========第{page}页|共{all_page}页========")
 
     def history(self, argv=""):
+        """查看历史消息"""
         if re.search(r"(\d+)$", argv):
             uid = re.search(r"(\d+)$", argv).group(1)
-            if ("u" + uid) in self.robot.data:
+            if "u" + uid in self.robot.data:
                 self.printf(f"与{Fore.MAGENTA}{get_user_name(self.robot, uid)}{uid}{Fore.RESET}的历史消息:")
                 past_msg = self.robot.data["u" + uid].past_message
                 for one_msg in past_msg:
@@ -373,10 +388,15 @@ class ExecuteCmd(object):
         else:
             self.printf(f"请使用 {Fore.CYAN}history QQ号/群号/self{Fore.RESET} 获取历史消息")
 
-    def info(self, argv=""):
+    def info(self, argv=""): # pylint: disable=unused-argument
+        """查看API版本和相关信息"""
         info = get_version_info(self.robot)
-        modules = [f"{i.NAME}({i.ID})" for i in self.robot.modules.values()]
-        image_range = f"({self.robot.config.min_image_width}:{self.robot.config.max_image_width})"
+        module_count = len(self.robot.modules)
+        modules = [i.ID for i in self.robot.modules.values()]
+        handler_amount = get_handler_amount(self.robot)
+        image_range = (
+            f"({self.robot.config.min_image_width}:{self.robot.config.max_image_width})"
+        )
         self.printf("=======API版本信息=======")
         self.printf(f"应用名：{Fore.YELLOW}{info["app_name"]}{Fore.RESET}")
         self.printf(f"版本号：{Fore.YELLOW}{info["app_version"]}{Fore.RESET}")
@@ -392,7 +412,8 @@ class ExecuteCmd(object):
         self.printf(f"黑名单列表：{Fore.YELLOW}{self.robot.config.blacklist}{Fore.RESET}")
         self.printf(f"对接群列表：{Fore.YELLOW}{self.robot.config.rev_group}{Fore.RESET}")
         self.printf(f"显示全部群消息：{Fore.YELLOW}{self.robot.config.is_show_all_msg}{Fore.RESET}")
-        self.printf(f"已安装模块：{Fore.YELLOW}{modules}{Fore.RESET}")
+        self.printf(f"已安装模块({module_count}个)：{Fore.YELLOW}{modules}{Fore.RESET}")
+        self.printf(f"已注册处理函数：{Fore.YELLOW}{handler_amount}{Fore.RESET}")
         self.printf("=========字符画信息=========")
         self.printf(f"显示字符画：{Fore.YELLOW}{self.robot.config.is_show_image}{Fore.RESET}")
         self.printf(f"彩色显示模式：{Fore.YELLOW}{self.robot.config.image_color}{Fore.RESET}")
@@ -404,6 +425,7 @@ class ExecuteCmd(object):
         self.printf("============================")
 
     def like(self, argv=""):
+        """对用户主页点赞"""
         if re.search(r"([^\s]+)\s?(\d+)?", argv):
             inputs = re.search(r"([^\s]+)\s?(\d+)?", argv).groups()
             user_id = inputs[0]
@@ -418,20 +440,22 @@ class ExecuteCmd(object):
             self.printf(f"请使用 {Fore.CYAN}like 用户QQ (次数){Fore.RESET} 进行点赞")
 
     def llm(self, argv=""):
+        """调用首个配置的大语言模型进行对话"""
         if argv == "":
-            self.printf(f"请使用 {Fore.CYAN}llm 文本内容{Fore.RESET} 调用首个配置的大语言模型生成文本(如果可以)")
+            self.printf(f"请使用 {Fore.CYAN}llm 文本内容{Fore.RESET} 调用首个配置的大语言模型进行对话(如果可以)")
         elif llm_chat := self.robot.func.get("llm_chat"):
             try:
                 self.printf("LLM: ", end="", console=False)
                 for chunk in llm_chat(argv, stream=True):
                     self.printf(chunk, end="", console=False, flush=True)
                 self.printf("", flush=True)
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 self.printf(f"LLM调用失败! {e}")
         else:
             self.printf("LLM模块未导入或未启用!")
 
     def msg(self, argv=""):
+        """发送私聊消息"""
         if re.search(r"(\d+)\s+(.+)", argv):
             inputs = re.search(r"(\d+)\s+(.+)", argv).groups()
             user_id = inputs[0]
@@ -446,6 +470,7 @@ class ExecuteCmd(object):
             self.printf(f"请使用 {Fore.CYAN}msg QQ号 消息内容{Fore.RESET} 发送消息")
 
     def tmpmsg(self, argv=""):
+        """发送临时消息"""
         if re.search(r"(\d+)\s+(\d+)\s+(.+)", argv):
             inputs = re.search(r"(\d+)\s+(\d+)\s+(.+)", argv).groups()
             user_id = inputs[0]
@@ -462,6 +487,7 @@ class ExecuteCmd(object):
             self.printf(f"请使用 {Fore.CYAN}tmpmsg 群号 QQ号 消息内容{Fore.RESET} 发送群临时消息")
 
     def notice(self, argv=""):
+        """发送群公告"""
         if re.search(r"(\d+)\s+(.+)$", argv):
             inputs = re.search(r"(\d+)\s+(.+)$", argv).groups()
             group_id = inputs[0]
@@ -476,6 +502,7 @@ class ExecuteCmd(object):
             self.printf(f"请使用 {Fore.CYAN}notice 群号 公告{Fore.RESET} 发布公告")
 
     def ocr(self, argv=""):
+        """识别图片中的文字"""
         if re.search(r"(\d+)", argv):
             img_id = re.search(r"(.+)", argv).group(1)
             result = ocr_image(self.robot, img_id)
@@ -483,17 +510,18 @@ class ExecuteCmd(object):
                 result = result["data"]
                 self.printf(f"图片{Fore.MAGENTA}({img_id}){Fore.RESET}识别结果")
                 self.printf(f"文字语音：{result["language"]}")
-                self.printf(f"-------------------------------------")
+                self.printf("-------------------------------------")
                 for i in result["texts"]:
                     self.printf(f"文字内容：{i["text"]}")
                     self.printf(f"结果置信度：{i["confidence"]}%")
-                    self.printf(f"-------------------------------------")
+                    self.printf("-------------------------------------")
             else:
                 self.printf(f"调用OCR失败！结果为：{result}")
         else:
             self.printf(f"未识别到文字！请使用 {Fore.CYAN}ocr 图片ID{Fore.RESET} 识别图片内文字(图片ID即为[CQ:image,file=XXX]中的XXX)")
 
-    def op(self, argv=""):
+    def op(self, argv=""): # pylint: disable=unused-argument
+        """增加管理员权限"""
         if re.search(r"(\d+)", argv):
             user_id = re.search(r"(\d+)", argv).group(1)
             user_name = get_user_name(self.robot, user_id)
@@ -507,6 +535,7 @@ class ExecuteCmd(object):
             self.printf(f"请使用 {Fore.CYAN}op 用户QQ{Fore.RESET} 设置管理员")
 
     def read(self, argv=""):
+        """读取转发消息内容"""
         if re.search(r"(.+)", argv):
             msg_id = re.search(r"(.+)", argv).group(1)
             data = get_forward_msg(self.robot, msg_id).get("data", {})
@@ -524,11 +553,12 @@ class ExecuteCmd(object):
             elif message := data.get("message"):
                 self.printf(message)
             else:
-                self.printf(f"读取转发消息失败或仅支持读取群聊转发")
+                self.printf("读取转发消息失败或仅支持读取群聊转发")
         else:
             self.printf(f"请使用 {Fore.CYAN}read message_id{Fore.RESET} 读取转发消息")
 
     def poke(self, argv=""):
+        """戳一戳用户(默认上一条消息的发送者)"""
         if re.search(r"(.+)", argv):
             user_id = re.search(r"(.+)", argv).group(1)
             user_name = get_user_name(self.robot, user_id)
@@ -554,6 +584,7 @@ class ExecuteCmd(object):
             self.printf(f"请使用 {Fore.CYAN}poke 用户QQ{Fore.RESET} 发送戳一戳")
 
     def recall(self, argv=""):
+        """撤回消息(默认撤回上一条自己发送的消息)"""
         if re.search(r"(.+)", argv):
             msg_id = re.search(r"(.+)", argv).group(1)
             msg = ""
@@ -581,17 +612,20 @@ class ExecuteCmd(object):
             self.warnf(f"未寻找到上一条可撤回的信息记录！请使用 {Fore.CYAN}recall (消息ID){Fore.RESET} 快速撤回或撤回指定消息")
 
     def restart(self, argv=""):
+        """重启程序"""
         if argv == "":
             self.printf("正在重启程序...")
             self.robot.restart()
         else:
             self.printf(f"请使用 {Fore.CYAN}restart{Fore.RESET} 重启本程序")
 
-    def reload(self, argv=""):
+    def reload(self, argv=""): # pylint: disable=unused-argument
+        """重载配置文件"""
         self.robot.config.read()
         self.printf("重载配置文件成功！")
 
     def reply(self, argv=""):
+        """回复上一条消息"""
         if (
             len(self.robot.data) == 0
             or self.robot.latest_data not in self.robot.data
@@ -624,6 +658,7 @@ class ExecuteCmd(object):
             self.printf(f"请使用 {Fore.CYAN}reply 消息内容{Fore.RESET} 回复上一段信息")
 
     def qreply(self, argv=""):
+        """快捷回复上一条消息"""
         if (
             len(self.robot.data) == 0
             or self.robot.latest_data not in self.robot.data
@@ -652,6 +687,7 @@ class ExecuteCmd(object):
             self.printf(f"请使用 {Fore.CYAN}reply 消息内容{Fore.RESET} 回复上一段信息")
 
     def request(self, argv=""):
+        """向API发送请求"""
         if re.search(r"(get|GET)\s+(.+)", argv):
             url = re.search(r"\s+(.+)", argv).group(1)
             result = get(self.robot, url)
@@ -675,6 +711,7 @@ class ExecuteCmd(object):
             )
 
     def say(self, argv=""):
+        """快捷向主对接群发送消息"""
         if self.robot.config.rev_group:
             if re.search(r"(.+)", argv):
                 msg = re.search(r"(.+)", argv).group(1)
@@ -691,6 +728,7 @@ class ExecuteCmd(object):
             self.printf(f"请使用 {Fore.CYAN}group main 群号{Fore.RESET} 设置主对接群")
 
     def set(self, argv=""):
+        """设置机器人相关信息和配置"""
         if re.search(r"self\s+(\S+)$", argv):
             if re.search(r"self\s+(\d+)$", argv):
                 self.robot.self_id = re.search(r"self\s(\d+)$", argv).group(1)
@@ -738,9 +776,7 @@ class ExecuteCmd(object):
             elif re.search(r"(false|False)", argv):
                 self.robot.config.is_error_reply = False
             else:
-                self.robot.config.is_error_reply = (
-                    not self.robot.config.is_error_reply
-                )
+                self.robot.config.is_error_reply = not self.robot.config.is_error_reply
             self.robot.config.save("is_error_reply", self.robot.config.is_error_reply)
             if self.robot.config.is_error_reply:
                 self.warnf("报错消息反馈已开启")
@@ -840,7 +876,8 @@ class ExecuteCmd(object):
             self.printf(f"{Fore.CYAN}set reply (true/false){Fore.RESET} 设置回复消息是否强制引用原文")
             self.printf(f"{Fore.CYAN}set error_reply (true/false){Fore.RESET} 设置报错消息是否在QQ反馈")
 
-    def silence(self, argv=""):
+    def silence(self, argv=""): # pylint: disable=unused-argument
+        """切换静默模式（开启后将不再输出任何消息到控制台，除非是错误消息且error_reply开启）"""
         self.robot.config.is_silence = not self.robot.config.is_silence
         self.robot.config.save("is_silence", self.robot.config.is_silence)
         if self.robot.config.is_silence:
@@ -849,6 +886,7 @@ class ExecuteCmd(object):
             self.warnf("静默模式已关闭")
 
     def sign(self, argv=""):
+        """群签到"""
         if re.search(r"(\d+)", argv):
             group_id = re.search(r"(\d+)", argv).group(1)
             group_name = get_group_name(self.robot, group_id)
@@ -863,11 +901,13 @@ class ExecuteCmd(object):
         else:
             self.printf(f"请使用 {Fore.CYAN}sign 群聊ID{Fore.RESET} 进行群签到")
 
-    def stop(self, argv=""):
+    def stop(self, argv=""): # pylint: disable=unused-argument
+        """关闭程序"""
         self.printf("正在关闭程序...")
         self.robot.stop()
 
     def test(self, argv=""):
+        """测试指令，用于测试API调用和错误反馈等功能"""
         if re.search(r"(错误|error|ERROR)", argv):
             raise RuntimeError("手动触发了一个运行时错误")
         else:
@@ -878,6 +918,7 @@ class ExecuteCmd(object):
         self.printf(msg)
 
     def voice(self, argv=""):
+        """发送文本转语音消息"""
         if re.search(r"(\d+)\s+(.+)", argv):
             inputs = re.search(r"(\d+)\s+(.+)", argv).groups()
             user_id = inputs[0]
@@ -891,7 +932,8 @@ class ExecuteCmd(object):
         else:
             self.printf(f"请使用 {Fore.CYAN}voice QQ号 文本{Fore.RESET} 发送文本转语音消息")
 
-    def unknown(self, argv=""):
+    def unknown(self, argv=""): # pylint: disable=unused-argument
+        """未知指令"""
         self.warnf(f"未知指令！请输入 {Fore.CYAN}help{Fore.RESET} 获取帮助！")
 
     def printf(self, msg, end="\n", console=True, flush=False):
@@ -912,7 +954,9 @@ class ExecuteCmd(object):
         :param end: 末尾字符
         :param console: 是否增加一行<console>
         """
-        self.robot.warnf(f"{Fore.CYAN}[CMD]{Fore.RESET} {msg}", end=end, console=console)
+        self.robot.warnf(
+            f"{Fore.CYAN}[CMD]{Fore.RESET} {msg}", end=end, console=console
+        )
 
     def errorf(self, msg, end="\n", console=True):
         """

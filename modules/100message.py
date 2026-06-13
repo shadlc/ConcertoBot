@@ -53,7 +53,7 @@ class Message(Module):
                 config = import_json(config_file)
                 if config.get(self.owner_id, {}).get("enable") is False:
                     continue
-            except Exception:
+            except Exception: # pylint: disable=broad-exception-caught
                 pass
             help_text = ""
             max_level = 0
@@ -288,7 +288,7 @@ class Message(Module):
         else:
             result = send_group_ai_record(self.robot, self.event.group_id, "lucy-voice-xueling", text)
         if not status_ok(result):
-            self.reply(f"语音消息发送失败 {result.get("message")}", reply=True)        
+            self.reply(f"语音消息发送失败 {result.get("message")}", reply=True)
 
     @handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(在吗|你好)$"))
     def reply_msg(self):

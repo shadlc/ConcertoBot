@@ -23,6 +23,7 @@ from src.utils import (
     Event,
     Module,
     format_to_log,
+    get_handler_amount,
     handle_placeholder,
     msg_img2char,
     reply_event,
@@ -38,7 +39,7 @@ from src.command import ExecuteCmd
 logger = logging.getLogger()
 
 class Memory(object):
-    """独立聊天记录存储"""  
+    """独立聊天记录存储"""
     def __init__(self):
         self.past_message = deque(maxlen=20)
         self.past_notice = deque(maxlen=20)
@@ -113,6 +114,7 @@ class Concerto:
         self.import_modules()
         threading.Thread(target=self.listening_msg, daemon=True, name="消息监听").start()
         threading.Thread(target=self.listening_console, daemon=True, name="键盘监听").start()
+        self.printf(f"已成功唤醒{self.self_name}, 加载模块{len(self.modules)}个, 注册处理函数{get_handler_amount(self)}个!")
         return connected
 
     def stop(self):
@@ -257,7 +259,7 @@ class Concerto:
                     if mod.HANDLE_EVENT:
                         if mod(event, auth).handled:
                             break
-        except Exception:
+        except Exception: # pylint: disable=broad-exception-caught
             if not self.config.is_error_reply:
                 return
             error_msg = f"%FATAL_ERROR%\n{simplify_traceback(traceback.format_exc())}"
@@ -366,8 +368,9 @@ class Concerto:
 
     def import_modules(self):
         """导入 modules 目录及其子目录内的模块"""
-        def import_classes(folder_path):
+        def import_classes(folder_path: str):
             py_files = []
+            os.makedirs(folder_path, exist_ok=True)
             for root, _, files in os.walk(folder_path):
                 py_files += [os.path.join(root, f) for f in files if f.endswith(".py")]
             py_files.sort(key=os.path.basename)
@@ -413,6 +416,7 @@ class Concerto:
             self.printf(f"{Fore.CYAN}[{module.ID}]{Fore.RESET} {module.NAME}({module_file})已接入✔️")
 
     def sync(self, func: Callable) -> Any:
+        """在主线程中同步执行异步函数并返回结果"""
         future = asyncio.run_coroutine_threadsafe(func, self.loop)
         result = future.result()
         return result

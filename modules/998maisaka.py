@@ -108,7 +108,7 @@ def _patch_log_queue_processor_shutdown() -> None:
             return
         except queue.Empty:
             pass
-        except Exception:
+        except Exception: # pylint: disable=broad-exception-caught
             pass
 
         if batch:
@@ -205,7 +205,7 @@ class MaimClientRuntime:
         try:
             await client.stop()
             self._owner.printf(f"已从 {self._owner.config['url']} 断开连接")
-        except Exception:
+        except Exception: # pylint: disable=broad-exception-caught
             self._owner.errorf(f"停止麦麦客户端失败:\n{traceback.format_exc()}")
 
 class ConcertoToMaimCodec:
@@ -369,7 +369,7 @@ class ConcertoToMaimCodec:
                         target_name = _safe_str(member.get("card") or member.get("nickname"))
                 if not target_name:
                     target_name = get_user_name(self.owner.robot, target_user_id)
-            except Exception:
+            except Exception: # pylint: disable=broad-exception-caught
                 self.owner.warnf(f"解析@目标失败: {target_user_id}")
 
         if target_user_id == "all":
@@ -425,7 +425,7 @@ class ConcertoToMaimCodec:
                     binary_base64 = await self._resolve_binary_content(file_url)
                     if binary_base64:
                         return Seg(type="voice", data=binary_base64)
-        except Exception:
+        except Exception: # pylint: disable=broad-exception-caught
             self.owner.warnf("获取语音内容失败")
 
         return Seg(type="text", data="[语音消息]")
@@ -523,7 +523,7 @@ class ConcertoToMaimCodec:
         if url_or_file.startswith("http://") or url_or_file.startswith("https://"):
             try:
                 return await async_get_content_base64(self.owner.robot, url_or_file)
-            except Exception:
+            except Exception: # pylint: disable=broad-exception-caught
                 self.owner.warnf(f"下载资源失败: {url_or_file}")
                 return ""
         return ""
@@ -713,7 +713,7 @@ class MaimToConcertoCodec:
                 case _:
                     self.owner.warnf(f"收到未知命令: {command}")
                     return
-        except Exception:
+        except Exception: # pylint: disable=broad-exception-caught
             self.owner.errorf(f"执行麦麦命令 {command} 失败:\n{traceback.format_exc()}")
             return
 
@@ -828,7 +828,7 @@ class MaimToConcertoCodec:
                 try:
                     if get_image_format(emoji_base64) != "gif":
                         emoji_base64 = self.owner.convert_image_to_gif(emoji_base64)
-                except Exception:
+                except Exception: # pylint: disable=broad-exception-caught
                     self.owner.warnf("转换动画表情失败")
             return {
                 "type": "message",
@@ -901,7 +901,7 @@ class MaimToConcertoCodec:
             elif isinstance(item, Mapping):
                 try:
                     coerced.append(Seg.from_dict(dict(item)))
-                except Exception:
+                except Exception: # pylint: disable=broad-exception-caught
                     continue
         return coerced
 
@@ -971,7 +971,7 @@ class MaiSaka(Module):
     async def handle_api_message(self, message: APIMessageBase, metadata: dict) -> None:
         try:
             await self.codec_in.dispatch(message, metadata)
-        except Exception:
+        except Exception: # pylint: disable=broad-exception-caught
             self.errorf(f"处理来自麦麦的消息失败:\n{traceback.format_exc()}")
 
     async def construct_message(self, event: Event | None = None, *, content_override: str | None = None) -> APIMessageBase | None:
@@ -1030,7 +1030,7 @@ class MaiSaka(Module):
         try:
             ok = asyncio.run_coroutine_threadsafe(self.runtime.reconnect(), self.robot.loop).result()
             self.reply("已重置连接麦麦服务" if ok else "重连失败，请检查麦麦服务状态")
-        except Exception:
+        except Exception: # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             self.reply("重连失败，请检查日志")
 
@@ -1045,7 +1045,7 @@ class MaiSaka(Module):
                 message = await self.construct_message()
                 if message is not None:
                     await self.send_to_maim(message)
-            except Exception:
+            except Exception: # pylint: disable=broad-exception-caught
                 self.errorf(traceback.format_exc())
 
         asyncio.run_coroutine_threadsafe(send_task(), self.robot.loop)
@@ -1079,7 +1079,7 @@ class MaiSaka(Module):
                 message = await self.construct_message(fake_event, content_override=content)
                 if message is not None:
                     await self.send_to_maim(message)
-            except Exception:
+            except Exception: # pylint: disable=broad-exception-caught
                 self.errorf(traceback.format_exc())
 
         asyncio.run_coroutine_threadsafe(send_task(), self.robot.loop)

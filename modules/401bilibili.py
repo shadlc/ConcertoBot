@@ -10,13 +10,16 @@ import traceback
 
 from bilibili_api import Credential, NetworkException, search, user, sync
 from bilibili_api.exceptions.ResponseCodeException import ResponseCodeException
+
 try:
     from playwright.async_api import async_playwright
+
     HAS_PLAYWRIGHT = True
 except ImportError:
     HAS_PLAYWRIGHT = False
 
 from src.utils import MiniCron, Module, send_forward_msg, send_msg, set_emoji, handler
+
 
 class Bilibili(Module):
     """哔哩哔哩模块"""
@@ -48,7 +51,7 @@ class Bilibili(Module):
             "ac_time_value": "",
             "user_agent": "",
             "proxy": None,
-            "cron": "0 8 * * *"
+            "cron": "0 8 * * *",
         }
     }
     CONV_CONFIG = {
@@ -102,27 +105,37 @@ class Bilibili(Module):
             while True:
                 try:
                     await self.dynamic_check(interval)
-                except Exception:
+                except Exception:  # pylint: disable=broad-exception-caught
                     self.warnf(f"动态轮询异常!\n{traceback.format_exc()}")
                 await asyncio.sleep(interval)
+
         asyncio.run_coroutine_threadsafe(dynamic_loop(), self.robot.loop)
+
         async def fans_loop():
-            cron = MiniCron(self.config["env"]["cron"], lambda: sync(self.fans_check()), loop=self.robot.loop)
+            cron = MiniCron(
+                self.config["env"]["cron"],
+                lambda: sync(self.fans_check()),
+                loop=self.robot.loop,
+            )
             while True:
                 try:
                     await cron.run()
-                except Exception:
+                except Exception:  # pylint: disable=broad-exception-caught
                     self.warnf(f"粉丝数轮询异常!\n{traceback.format_exc()}")
                 await asyncio.sleep(interval)
+
         asyncio.run_coroutine_threadsafe(fans_loop(), self.robot.loop)
+
         async def live_loop():
             while True:
                 try:
                     await self.live_check()
-                except Exception:
+                except Exception:  # pylint: disable=broad-exception-caught
                     self.warnf(f"直播轮询异常!\n{traceback.format_exc()}")
                 await asyncio.sleep(interval)
+
         asyncio.run_coroutine_threadsafe(live_loop(), self.robot.loop)
+
         async def credential_refresh():
             while True:
                 if await self.credential.check_refresh():
@@ -136,10 +149,13 @@ class Bilibili(Module):
                     self.robot.persist_mods[self.ID].config = self.config.copy()
                     self.save_config()
                 await asyncio.sleep(interval * 1000)
+
         asyncio.run_coroutine_threadsafe(credential_refresh(), self.robot.loop)
 
-    @handler(lambda self: self.at_or_private() and self.au(3) and self.match(r"^关注列表$"))
-    async def show_follow_list(self):
+    @handler(
+        lambda self: self.at_or_private() and self.au(3) and self.match(r"^关注列表$")
+    )
+    def show_follow_list(self):
         """显示关注列表"""
         title = ""
         nodes = []
@@ -150,7 +166,7 @@ class Bilibili(Module):
             else:
                 title = "你的关注列表"
             for uid, info in follow_list.items():
-                user_info =  await self.get_user_simple_info(uid, fans=True)
+                user_info = self.robot.sync(self.robot.get_user_simple_info(uid, fans=True))
                 if user_info:
                     info["name"] = user_info["name"]
                     info["fans"] = user_info["fans"]
@@ -161,11 +177,15 @@ class Bilibili(Module):
             self.reply(msg)
         self.reply_forward(nodes, title, "哔哩哔哩")
 
-    @handler(lambda self: self.at_or_private() and self.au(2) and self.match(r"^关注\s?(\S+)$"))
-    async def subscribe(self):
+    @handler(
+        lambda self: self.at_or_private()
+        and self.au(2)
+        and self.match(r"^关注\s?(\S+)$")
+    )
+    def subscribe(self):
         """关注UP主"""
         user_match = self.match(r"^关注\s?(\S+)$").group(1)
-        info = await self.get_info(user_match)
+        info = self.robot.sync(self.get_info(user_match))
         if info:
             uid = info["uid"]
             name = info["name"]
@@ -193,11 +213,15 @@ class Bilibili(Module):
             msg = "查无此人"
         self.reply(msg)
 
-    @handler(lambda self: self.at_or_private() and self.au(2) and self.match(r"^取关\s?(\S+)$"))
-    async def unsubscribe(self):
+    @handler(
+        lambda self: self.at_or_private()
+        and self.au(2)
+        and self.match(r"^取关\s?(\S+)$")
+    )
+    def unsubscribe(self):
         """取关UP主"""
         user_match = self.match(r"^取关\s?(\S+)$").group(1)
-        info = await self.get_info(user_match)
+        info = self.robot.sync(self.get_info(user_match))
         if info:
             uid = info["uid"]
             name = info["name"]
@@ -212,11 +236,15 @@ class Bilibili(Module):
             msg = "查无此人"
         self.reply(msg)
 
-    @handler(lambda self: self.at_or_private() and self.au(2) and self.match(r"^(\S+)\s?反?向?通知关键词\s+(\S+)?$"))
-    async def set_keywords(self):
+    @handler(
+        lambda self: self.at_or_private()
+        and self.au(2)
+        and self.match(r"^(\S+)\s?反?向?通知关键词\s+(\S+)?$")
+    )
+    def set_keywords(self):
         """设置通知关键词"""
         user_match, pattern = self.match(r"^(\S+)\s?反?向?通知关键词\s+(\S+)$").groups()
-        info = await self.get_info(user_match)
+        info = self.robot.sync(self.get_info(user_match))
         if info:
             uid = info["uid"]
             name = info["name"]
@@ -235,21 +263,29 @@ class Bilibili(Module):
             msg = "查无此人"
         self.reply(msg)
 
-    @handler(lambda self: self.at_or_private() and self.au(3) and self.match(r"^(开启|关闭)?\s?(\S+?)\s?最?新?动态(通知)?$"))
-    async def dynamic_control(self):
+    @handler(
+        lambda self: self.at_or_private()
+        and self.au(3)
+        and self.match(r"^(开启|关闭)?\s?(\S+?)\s?最?新?动态(通知)?$")
+    )
+    def dynamic_control(self):
         """动态控制"""
-        flag, user_match, _ = self.match(r"^(开启|关闭)?\s?(\S+?)\s?最?新?动态(通知)?$").groups()
-        info = await self.get_info(user_match)
+        flag, user_match, _ = self.match(
+            r"^(开启|关闭)?\s?(\S+?)\s?最?新?动态(通知)?$"
+        ).groups()
+        info = self.robot.sync(self.get_info(user_match))
         if info:
             uid = info["uid"]
             name = info["name"]
             if not flag:
                 set_emoji(self.robot, self.event.msg_id, 124)
-                dyn = await self.get_latest_dynamic(int(uid))
+                dyn = self.robot.sync(self.get_latest_dynamic(int(uid)))
                 if dyn:
                     d_type = dyn["dynamic_type"]
                     if HAS_PLAYWRIGHT:
-                        screenshot_base64 = await self.get_dynamic_screenshot(dyn["dynamic_id"])
+                        screenshot_base64 = self.robot.sync(self.get_dynamic_screenshot(
+                            dyn["dynamic_id"]
+                        ))
                         if screenshot_base64:
                             msg += f"\n[CQ:image,file=base64://{screenshot_base64}]"
                             self.reply(msg)
@@ -294,16 +330,22 @@ class Bilibili(Module):
             msg = "查无此人"
         self.reply(msg)
 
-    @handler(lambda self: self.at_or_private() and self.au(3) and self.match(r"^(开启|关闭)?\s?(\S+)\s?直播(通知)?$"))
-    async def live_control(self):
+    @handler(
+        lambda self: self.at_or_private()
+        and self.au(3)
+        and self.match(r"^(开启|关闭)?\s?(\S+)\s?直播(通知)?$")
+    )
+    def live_control(self):
         """直播控制"""
-        flag, user_match, _ = self.match(r"^(开启|关闭)?\s?(\S+)\s?直播(通知)?$").groups()
-        info = await self.get_info(user_match)
+        flag, user_match, _ = self.match(
+            r"^(开启|关闭)?\s?(\S+)\s?直播(通知)?$"
+        ).groups()
+        info = self.robot.sync(self.get_info(user_match))
         if info:
             uid = info["uid"]
             name = info["name"]
             if not flag:
-                user_info = await self.get_user_simple_info(uid)
+                user_info = self.robot.sync(self.get_user_simple_info(uid))
                 if info:
                     status = user_info["live_room"].get("liveStatus")
                     title = user_info["live_room"].get("title")
@@ -331,11 +373,17 @@ class Bilibili(Module):
             msg = "查无此人"
         self.reply(msg)
 
-    @handler(lambda self: self.at_or_private() and self.au(3) and self.match(r"^(开启|关闭)?(\S+)\s?粉丝数(通知)?$"))
-    async def fans_control(self):
+    @handler(
+        lambda self: self.at_or_private()
+        and self.au(3)
+        and self.match(r"^(开启|关闭)?(\S+)\s?粉丝数(通知)?$")
+    )
+    def fans_control(self):
         """粉丝数控制"""
-        flag, user_match, _ = self.match(r"^(开启|关闭)?(\S+)\s?粉丝数(通知)?$").groups()
-        info = await self.get_info(user_match)
+        flag, user_match, _ = self.match(
+            r"^(开启|关闭)?(\S+)\s?粉丝数(通知)?$"
+        ).groups()
+        info = self.robot.sync(self.get_info(user_match))
         if info:
             uid = info["uid"]
             name = info["name"]
@@ -356,7 +404,11 @@ class Bilibili(Module):
             msg = "查无此人"
         self.reply(msg)
 
-    @handler(lambda self: self.at_or_private() and self.au(2) and self.match(r"^(开启|关闭)[b|B|哔]站通知$"))
+    @handler(
+        lambda self: self.at_or_private()
+        and self.au(2)
+        and self.match(r"^(开启|关闭)[b|B|哔]站通知$")
+    )
     def toggle(self):
         """通知控制"""
         flag = self.match(r"(开启|关闭)").group(1)
@@ -395,24 +447,26 @@ class Bilibili(Module):
         browser = await self.init_browser()
         if not browser:
             return
-            
+
         context = await browser.new_context(
             device_scale_factor=2,
             user_agent=self.config["user_agent"],
             viewport={"width": 500, "height": 800},
         )
 
-        await context.add_cookies([
-            {
-                "name": "SESSDATA",
-                "value": self.config["sessdata"],
-                "domain": ".bilibili.com",
-                "path": "/",
-                "httpOnly": True,
-                "secure": True,
-                "sameSite": "Lax"
-            }
-        ])
+        await context.add_cookies(
+            [
+                {
+                    "name": "SESSDATA",
+                    "value": self.config["sessdata"],
+                    "domain": ".bilibili.com",
+                    "path": "/",
+                    "httpOnly": True,
+                    "secure": True,
+                    "sameSite": "Lax",
+                }
+            ]
+        )
 
         page = await context.new_page()
         try:
@@ -453,7 +507,7 @@ class Bilibili(Module):
                 if clip:
                     screenshot = await page.screenshot(clip=clip, full_page=True)
                     return base64.b64encode(screenshot).decode("utf-8")
-        except Exception as e:
+        except Exception:  # pylint: disable=broad-exception-caught
             self.errorf(f"截取动态【{url}】时发生错误：{traceback.format_exc()}")
         finally:
             await page.close()
@@ -465,23 +519,25 @@ class Bilibili(Module):
         browser = await self.init_browser()
         if not browser:
             return
-            
+
         context = await browser.new_context(
             viewport={"width": 2560, "height": 1080},
             device_scale_factor=2,
         )
 
-        await context.add_cookies([
-            {
-                "name": "SESSDATA",
-                "value": self.config["sessdata"],
-                "domain": ".bilibili.com",
-                "path": "/",
-                "httpOnly": True,
-                "secure": True,
-                "sameSite": "Lax"
-            }
-        ])
+        await context.add_cookies(
+            [
+                {
+                    "name": "SESSDATA",
+                    "value": self.config["sessdata"],
+                    "domain": ".bilibili.com",
+                    "path": "/",
+                    "httpOnly": True,
+                    "secure": True,
+                    "sameSite": "Lax",
+                }
+            ]
+        )
 
         page = await context.new_page()
         try:
@@ -493,14 +549,14 @@ class Bilibili(Module):
             if card:
                 clip = await card.bounding_box()
                 if clip:
-                    bar = await page.query_selector(".bili-dyn-action__icon")
-                    if bar:
-                        bar_bound = await bar.bounding_box()
+                    action_bar = await page.query_selector(".bili-dyn-action__icon")
+                    if action_bar:
+                        bar_bound = await action_bar.bounding_box()
                         if bar_bound:
                             clip["height"] = bar_bound["y"] - clip["y"]
                     screenshot = await page.screenshot(clip=clip, full_page=True)
                     return base64.b64encode(screenshot).decode("utf-8")
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             self.errorf(f"截取动态【{url}】时发生错误：{traceback.format_exc()}")
         finally:
             await context.close()
@@ -533,13 +589,17 @@ class Bilibili(Module):
                 dyn = self.parse_dynamic(item)
                 d_type = dyn["dynamic_type"]
                 if HAS_PLAYWRIGHT:
-                    screenshot_base64 = await self.get_dynamic_screenshot(dyn["dynamic_id"])
+                    screenshot_base64 = await self.get_dynamic_screenshot(
+                        dyn["dynamic_id"]
+                    )
                     if screenshot_base64:
                         msg += f"\n[CQ:image,file=base64://{screenshot_base64}]"
                         for owner_id in notice_list:
                             pattern = self.config[owner_id]["sub"][uid].get("keyword")
                             if pattern and re.search(pattern, msg):
-                                anti_pattern = self.config[owner_id]["sub"][uid].get("anti_keyword")
+                                anti_pattern = self.config[owner_id]["sub"][uid].get(
+                                    "anti_keyword"
+                                )
                                 if anti_pattern and re.search(anti_pattern, msg):
                                     continue
                                 self.reply_back(owner_id, msg)
@@ -571,7 +631,9 @@ class Bilibili(Module):
                 for owner_id in notice_list:
                     pattern = self.config[owner_id]["sub"][uid].get("keyword")
                     if pattern == "" or re.search(pattern, msg):
-                        anti_pattern = self.config[owner_id]["sub"][uid].get("anti_keyword")
+                        anti_pattern = self.config[owner_id]["sub"][uid].get(
+                            "anti_keyword"
+                        )
                         if anti_pattern and re.search(anti_pattern, msg):
                             continue
                         self.reply_forward_back(owner_id, nodes, title, dyn["author"])
@@ -654,24 +716,24 @@ class Bilibili(Module):
                         msg += f"\n相比上次记录，粉丝数增加了{diff}，"
                         if diff > 10000 or diff > fans:
                             msg += f"{name}的涨粉太浮夸啦！"
-                        elif diff > 1000 or (1000 < fans < 10000 and diff > fans/10):
+                        elif diff > 1000 or (1000 < fans < 10000 and diff > fans / 10):
                             msg += "成为百大指日可待~"
-                        elif diff > 100 or diff > fans/40:
+                        elif diff > 100 or diff > fans / 40:
                             msg += "很棒棒啦，继续加把劲~"
-                        elif diff > 10 or diff > fans/100:
+                        elif diff > 10 or diff > fans / 100:
                             msg += "继续加油哦~"
                         else:
                             msg += "聊胜于无嘛(oﾟvﾟ)ノ"
                     elif diff < 0:
                         diff = abs(diff)
                         msg += f"\n相比上次记录，粉丝数减少了了{diff}，"
-                        if diff > 10000 or diff > fans/2:
+                        if diff > 10000 or diff > fans / 2:
                             msg += "仿佛只在次贷危机看过类似的场景..."
-                        elif diff > 1000 or (fans > 10000 and diff > fans/10):
+                        elif diff > 1000 or (fans > 10000 and diff > fans / 10):
                             msg += "大危机！(っ °Д °;)っ"
-                        elif diff > 200 or (fans > 10000 and diff > fans/50):
+                        elif diff > 200 or (fans > 10000 and diff > fans / 50):
                             msg += "哦吼，不太妙哦~(#｀-_ゝ-)"
-                        elif diff > 25 or diff > fans/100:
+                        elif diff > 25 or diff > fans / 100:
                             msg += "一点小失误...(￣﹃￣)"
                         else:
                             msg += "统计学上来说这很正常"
@@ -693,7 +755,7 @@ class Bilibili(Module):
                 return self.conv_config["sub"][uid].get(key, "")
         return ""
 
-    def update_follow_list_info(self, uid: str, data: dict, owner_id: str=None):
+    def update_follow_list_info(self, uid: str, data: dict, owner_id: str = None):
         """更新关注列表信息"""
         if not owner_id:
             owner_id = self.owner_id
@@ -702,7 +764,7 @@ class Bilibili(Module):
                 if owner_id == "env":
                     continue
                 if uid in self.config[owner_id]["sub"]:
-        
+
                     self.config[owner_id]["sub"][uid][key] = value
         self.robot.persist_mods[self.ID].config = self.config.copy()
         self.save_config()
@@ -726,7 +788,7 @@ class Bilibili(Module):
             self.warnf(f"获取{name}({uid})的动态超时")
         except ResponseCodeException as e:
             self.warnf(f"获取{name}({uid})的动态返回码异常 {e.code} {e.msg}")
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             self.warnf(f"用户{name}({uid})的动态获取失败: {traceback.format_exc()}")
         return []
 
@@ -782,7 +844,7 @@ class Bilibili(Module):
             self.warnf(f"获取{name}({uid})的用户信息超时")
         except ResponseCodeException as e:
             self.warnf(f"获取{name}({uid})的用户信息返回码异常 {e.code} {e.msg}")
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             self.warnf(f"查询{name}({uid})的用户信息请求失败: {traceback.format_exc()}")
 
     def get_local_uid(self, user_match: str) -> int | None:
@@ -822,7 +884,7 @@ class Bilibili(Module):
                         "avatar": avatar,
                     }
             return
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             self.warnf(f"查询用户信息请求失败: {traceback.format_exc()}")
             return
 
@@ -835,11 +897,10 @@ class Bilibili(Module):
         else:
             info = await self.get_info_by_name(user_match)
         if info:
-            self.update_follow_list_info(info["uid"], {
-                "name": info["name"],
-                "fans": info["fans"],
-                "avatar": info["avatar"]
-            })
+            self.update_follow_list_info(
+                info["uid"],
+                {"name": info["name"], "fans": info["fans"], "avatar": info["avatar"]},
+            )
         return info
 
     def get_uid_list(self, get_type: str) -> list:
@@ -966,11 +1027,17 @@ class Bilibili(Module):
             user_id = int(owner_id[1:])
             return send_msg(self.robot, "private", user_id, msg)
 
-    def reply_forward_back(self, owner_id: str, nodes: list, source=None, summary=None) -> dict:
+    def reply_forward_back(
+        self, owner_id: str, nodes: list, source=None, summary=None
+    ) -> dict:
         """回复消息"""
         if owner_id.startswith("g"):
             group_id = int(owner_id[1:])
-            return send_forward_msg(self.robot, nodes, group_id=group_id, source=source, summary=summary)
+            return send_forward_msg(
+                self.robot, nodes, group_id=group_id, source=source, summary=summary
+            )
         else:
             user_id = int(owner_id[1:])
-            return send_forward_msg(self.robot, nodes, user_id=user_id, source=source, summary=summary)
+            return send_forward_msg(
+                self.robot, nodes, user_id=user_id, source=source, summary=summary
+            )

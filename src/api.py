@@ -18,7 +18,11 @@ def get(robot: Concerto, url, timeout=60):
         robot.request_list.append(f"GET{url}")
         data = httpx.get(get_url, timeout=timeout)
         rev_json = data.json()
-        robot.printf(f"{Fore.YELLOW}[DATA]{Fore.RESET} GET请求{Fore.MAGENTA}[{get_url}]{Fore.RESET}后返回{Fore.YELLOW}{rev_json}{Fore.RESET}", level="DEBUG")
+        robot.printf(
+            f"{Fore.YELLOW}[DATA]{Fore.RESET} GET请求{Fore.MAGENTA}[{get_url}]{Fore.RESET}"
+            f"后返回{Fore.YELLOW}{rev_json}{Fore.RESET}",
+            level="DEBUG"
+        )
         return rev_json
     except httpx.DecodingError:
         robot.errorf("数据解析错误！")
@@ -36,7 +40,11 @@ def post(robot: Concerto, url, data, timeout=60):
         header = {"Content-Type": "application/json"}
         data = httpx.post(post_url, headers=header, data=data, timeout=timeout)
         rev_json = data.json()
-        robot.printf(f"{Fore.YELLOW}[DATA]{Fore.RESET} POST请求{Fore.MAGENTA}[{post_url}]{Fore.RESET}后返回{Fore.YELLOW}{rev_json}{Fore.RESET}", level="DEBUG")
+        robot.printf(
+            f"{Fore.YELLOW}[DATA]{Fore.RESET} POST请求{Fore.MAGENTA}[{post_url}]{Fore.RESET}"
+            f"后返回{Fore.YELLOW}{rev_json}{Fore.RESET}",
+            level="DEBUG"
+        )
         return rev_json
     except httpx.DecodingError:
         robot.errorf("数据解析错误！")
@@ -46,6 +54,7 @@ def post(robot: Concerto, url, data, timeout=60):
         return {}
 
 def send_msg(robot: Concerto, resp: dict):
+    """发送消息"""
     msg_type = resp.get("msg_type")  # 回复类型（群聊/私聊）
     number = resp.get("number")  # 回复账号（群号/好友号）
     group_id = resp.get("group_id")  # 临时会话群号（群号）
@@ -63,46 +72,57 @@ def send_msg(robot: Concerto, resp: dict):
     return result
 
 def del_msg(robot: Concerto, resp: dict):
+    """撤回消息"""
     message_id = resp["message_id"]  # 消息ID
     url = "/delete_msg?message_id=" + str(message_id)
     return get(robot, url)
 
 def get_msg(robot: Concerto, resp: dict):
+    """获取消息内容"""
     message_id = resp["message_id"]  # 消息ID
     url = "/get_msg?message_id=" + str(message_id)
     return get(robot, url)
 
 def get_forward_msg(robot: Concerto, resp: dict):
+    """获取合并转发消息内容"""
     return post(robot, "/get_forward_msg", resp)
 
 def send_forward_msg(robot: Concerto, resp: dict):
+    """发送合并转发消息"""
     return post(robot, "/send_forward_msg", resp)
 
 def send_private_forward_msg(robot: Concerto, resp: dict):
+    """发送私聊合并转发消息"""
     return post(robot, "/send_private_forward_msg", resp)
 
 def send_group_forward_msg(robot: Concerto, resp: dict):
+    """发送群聊合并转发消息"""
     return post(robot, "/send_group_forward_msg", resp)
 
 def send_group_notice(robot: Concerto, resp: dict):
+    """发送群公告"""
     group_id = resp["group_id"]  # 群号
     content = resp["content"]  # 公告内容
     url = "/_send_group_notice?group_id=" + str(group_id) + "&content=" + content
     return get(robot, url)
 
 def send_group_ai_record(robot: Concerto, resp: dict):
+    """发送群聊AI消息记录"""
     url = "/send_group_ai_record"
     return post(robot, url, resp)
 
 def get_image(robot: Concerto, resp: dict):
+    """获取图片URL"""
     url = "/get_image"
     return post(robot, url, resp)
 
 def get_record(robot: Concerto, resp: dict):
+    """获取消息记录"""
     url = "/get_record"
     return post(robot, url, resp, timeout=5)
 
 def handle_quick_operation(robot: Concerto, resp: dict):
+    """处理快速操作事件"""
     context = resp["context"]  # 事件数据对象
     operation = resp["operation"]  # 快速操作对象
     url = "/.handle_quick_operation"
@@ -110,57 +130,70 @@ def handle_quick_operation(robot: Concerto, resp: dict):
     return post(robot, url, operation)
 
 def ocr_image(robot: Concerto, resp: dict):
+    """识别图片中的文字"""
     image = resp["image"]  # 图片ID
     url = "/.ocr_image?image=" + image
     return get(robot, url)
 
 def upload_private_file(robot: Concerto, resp: dict):
+    """上传私聊文件"""
     url = "/upload_private_file"
     return post(robot, url, resp)
 
 def upload_group_file(robot: Concerto, resp: dict):
+    """上传群文件"""
     url = "/upload_group_file"
     return post(robot, url, resp)
 
 def del_group_file(robot: Concerto, resp: dict):
+    """删除群文件"""
     url = "/delete_group_file"
     return post(robot, url, resp)
 
 def get_group_msg_history(robot: Concerto, resp: dict):
+    """获取群消息历史记录"""
     url = "/get_group_msg_history"
     return post(robot, url, resp)
 
 def get_stranger_info(robot: Concerto, resp: dict):
+    """获取陌生人信息"""
     user_id = resp["user_id"]  # 目标QQ号
     url = "/get_stranger_info?user_id=" + str(user_id)
     return get(robot, url)
 
 def get_group_info(robot: Concerto, resp: dict):
+    """获取群信息"""
     group_id = resp["group_id"]  # 目标群号
     url = "/get_group_info?group_id=" + str(group_id)
     return get(robot, url)
 
 def set_group_ban(robot: Concerto, resp: dict):
+    """设置群禁言"""
     url = "/set_group_ban"
     return post(robot, url, resp)
 
 def set_group_whole_ban(robot: Concerto, resp: dict):
+    """设置群全员禁言"""
     url = "/set_group_whole_ban"
     return post(robot, url, resp)
 
 def set_group_kick(robot: Concerto, resp: dict):
+    """设置群踢人"""
     url = "/set_group_kick"
     return post(robot, url, resp)
 
 def get_group_member_list(robot: Concerto, resp: dict):
+    """获取群成员列表"""
     url = "/get_group_member_list"
     return post(robot, url, resp)
 
 def set_model_show(robot: Concerto, resp: dict):
+    """设置模型展示"""
     url = "/_set_model_show"
     return post(robot, url, resp)
 
 def get_version_info(robot: Concerto):
+    """获取API版本和相关信息"""
     result = get(robot, "/get_version_info")
     if result.get("status") == "ok":
         return {
@@ -210,7 +243,7 @@ def set_group_sign(robot: Concerto, resp: dict):
     return post(robot, url, resp)
 
 def send_like(robot: Concerto, resp: dict):
-    """群签到"""
+    """发送点赞"""
     url = "/send_like"
     return post(robot, url, resp)
 

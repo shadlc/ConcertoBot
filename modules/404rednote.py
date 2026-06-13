@@ -45,7 +45,7 @@ class Rednote(Module):
                 set_emoji(self.robot, self.event.msg_id, 66)
             msg = f"[CQ:video,file={play_url}]"
             self.reply(msg)
-        except Exception as e:
+        except Exception as e: # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             return self.reply_forward(self.node(f"{e}"), source="小红书视频处理失败")
 
@@ -65,7 +65,7 @@ class Rednote(Module):
             try:
                 result = func()
                 return result
-            except Exception as e:
+            except Exception as e: # pylint: disable=broad-exception-caught
                 func_name = name if name else func.__name__
                 self.printf(f"第 {attempt} 次执行 {func_name} 失败: {e}")
                 if attempt == max_retries:

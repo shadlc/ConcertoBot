@@ -30,7 +30,8 @@ from src import api
 if TYPE_CHECKING:
     from src.robot import Concerto
 
-def listening(host: str, port: int, timeout: int=5) -> tuple[dict|str]:
+
+def listening(host: str, port: int, timeout: int = 5) -> tuple[dict | str]:
     """监听指定地址与端口"""
     try:
         server = socket.socket()
@@ -84,13 +85,14 @@ def listening(host: str, port: int, timeout: int=5) -> tuple[dict|str]:
                 while len(buffer) < chunk_size + 2:
                     buffer.extend(client.recv(1024))
                 body.extend(buffer[:chunk_size])
-                buffer = buffer[chunk_size+2:]
+                buffer = buffer[chunk_size + 2 :]
         client.sendall(b"HTTP/1.1 200 OK\r\n\r\n")
         body = body.decode("utf-8")
     finally:
         client.close()
         server.close()
     return headers, body
+
 
 def receive_msg(robot: Concerto):
     """接收数据"""
@@ -106,11 +108,14 @@ def receive_msg(robot: Concerto):
         robot.errorf(f"端口{robot.config.port}已被占用，程序终止！ {e}")
         robot.stop()
     except socket.gaierror as e:
-        robot.errorf(f"绑定地址有误！ {robot.config.host} 不是一个正确的可绑定地址，程序终止！ {e}")
+        robot.errorf(
+            f"绑定地址有误！ {robot.config.host} 不是一个正确的可绑定地址，程序终止！ {e}"
+        )
         robot.stop()
     except json.JSONDecodeError as e:
         robot.warnf(f"{body} JSON数据解析失败！ {traceback.format_exc()}")
         return {}
+
 
 def import_json(file: str):
     """导入json"""
@@ -124,10 +129,12 @@ def import_json(file: str):
     except json.JSONDecodeError as e:
         raise e
 
+
 def save_json(file_name: str, data: str):
     """导出json"""
     with open(file_name, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+
 
 def merge(d1: dict, d2: dict) -> dict:
     """简单字典合并"""
@@ -139,9 +146,13 @@ def merge(d1: dict, d2: dict) -> dict:
             result[key] = value
     return result
 
+
 def apply_formatter(logger: logging.Logger, mid: str):
     """给传入的 logger 应用彩色格式化器"""
+
     class ColorFormatter(logging.Formatter):
+        """日志格式化器，添加颜色"""
+
         COLORS = {
             logging.DEBUG: Fore.BLUE,
             logging.WARNING: Fore.YELLOW,
@@ -156,6 +167,7 @@ def apply_formatter(logger: logging.Logger, mid: str):
             record.levelname = f"{color}{record.levelname}{reset}"
             record.msg = f"{color}{record.msg}{reset}"
             return super().format(record)
+
     fmt = f"\r[%(asctime)s %(levelname)s] {Fore.CYAN}[{mid}]{Fore.RESET} %(message)s"
     fmt += f"\n\r{Fore.GREEN}<console> {Fore.RESET}"
     formatter = ColorFormatter(fmt=fmt, datefmt="%H:%M:%S")
@@ -170,6 +182,7 @@ def apply_formatter(logger: logging.Logger, mid: str):
         logger.handlers[0].setFormatter(formatter)
     return logger
 
+
 def calc_time(sec: int) -> str:
     """格式化时间"""
     units = [("天", 86400), ("小时", 3600), ("分", 60), ("秒", 1)]
@@ -179,6 +192,7 @@ def calc_time(sec: int) -> str:
             parts.append(f"{int(sec//div)}{name}")
             sec %= div
     return "".join(parts) or "0秒"
+
 
 def calc_size(byte: int) -> str:
     """格式化文件大小"""
@@ -191,8 +205,9 @@ def calc_size(byte: int) -> str:
     for s in reversed(symbols):
         if int(byte) >= prefix[s]:
             value = float(byte) / prefix[s]
-            return "%.2f%s" % (value, s)
-    return ".%sB" % byte
+            return f"{value:.2f}{s}"
+    return f".{byte}B"
+
 
 def format_to_log(text: str) -> str:
     """
@@ -203,6 +218,7 @@ def format_to_log(text: str) -> str:
     text = re.sub(r"(\s?█+\s*)+", "[图片]", text)
     return text.strip()
 
+
 def char_colorama(char: str, rgb: list):
     """
     为字符添加标准8色
@@ -210,35 +226,36 @@ def char_colorama(char: str, rgb: list):
     :param rgb: (R, G, B) 取值 0–255
     :return: 彩色字符（Standard 8 色）
     """
-    R, G, B = rgb
-    max_c = max(R, G, B)
-    min_c = min(R, G, B)
+    r, g, b = rgb
+    max_c = max(r, g, b)
+    min_c = min(r, g, b)
     diff = max_c - min_c
     if diff <= 50:
         return char
     color = ""
-    if R == max_c:
-        if G > B:
+    if r == max_c:
+        if g > b:
             color = Fore.YELLOW
-        elif B > G:
+        elif b > g:
             color = Fore.MAGENTA
         else:
             color = Fore.RED
-    elif G == max_c:
-        if R > B:
+    elif g == max_c:
+        if r > b:
             color = Fore.YELLOW
-        elif B > R:
+        elif b > r:
             color = Fore.CYAN
         else:
             color = Fore.GREEN
-    elif B == max_c:
-        if R > G:
+    elif b == max_c:
+        if r > g:
             color = Fore.MAGENTA
-        elif G > R:
+        elif g > r:
             color = Fore.BLUE
         else:
             color = Fore.BLUE
     return color + char + Fore.RESET
+
 
 def char_ansi_256(char: str, rgb: list):
     """
@@ -254,6 +271,7 @@ def char_ansi_256(char: str, rgb: list):
     color_code = 16 + 36 * r_ + 6 * g_ + b_
     return f"\033[38;5;{color_code}m{char}\033[0m"
 
+
 def char_true_color(char: str, rgb: list):
     """
     使用 TrueColor 输出字符
@@ -264,7 +282,8 @@ def char_true_color(char: str, rgb: list):
     r, g, b = rgb
     return f"\033[38;2;{r};{g};{b}m{char}\033[0m"
 
-def msg_img2char(robot: Concerto, msg: str, show_url = False):
+
+def msg_img2char(robot: Concerto, msg: str, show_url=False):
     """
     检测CQ码中有图片并转化为字符画
     :param robot: 机器人类
@@ -281,7 +300,9 @@ def msg_img2char(robot: Concerto, msg: str, show_url = False):
             img = Image.open(io.BytesIO(data.content)).convert("RGB")
             w, h = img.size
             ratio = h / float(w)
-            target_w = sorted([robot.config.min_image_width, w, robot.config.max_image_width])[1]
+            target_w = sorted(
+                [robot.config.min_image_width, w, robot.config.max_image_width]
+            )[1]
             target_h = int(target_w * ratio * 0.5)
             img = img.resize((target_w, target_h))
             pixels = img.getdata()
@@ -310,14 +331,15 @@ def msg_img2char(robot: Concerto, msg: str, show_url = False):
             if show_url:
                 char = f"{url}{char}"
             msg = msg.replace(cq, char)
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             robot.errorf(f"图片转字符画失败!\n{traceback.format_exc()}", level="DEBUG")
     return msg
 
-def resize_image(image: bytes, size=(640, 360), format: str = "JPEG") -> bytes:
+
+def resize_image(image: bytes, size=(640, 360), file_format: str = "JPEG") -> bytes:
     """
     缩放图片
-    :param img: 原始图片
+    :param image: 原始图片
     :param size: 目标大小，默认(640, 360)
     :return: 输出图片
     """
@@ -328,10 +350,13 @@ def resize_image(image: bytes, size=(640, 360), format: str = "JPEG") -> bytes:
         offset_y = (size[1] - img.height) // 2
         new_img.paste(img, (offset_x, offset_y))
     buf = io.BytesIO()
-    new_img.save(buf, format=format)
+    new_img.save(buf, format=file_format)
     return buf.getvalue()
 
-async def async_get_content_base64(robot : Concerto, url: str, timeout: str=3, max_retries: str=3) -> str:
+
+async def async_get_content_base64(
+    robot: Concerto, url: str, timeout: str = 3, max_retries: str = 3
+) -> str:
     """获取url所指内容的Base64"""
     for attempt in range(max_retries):
         try:
@@ -344,7 +369,10 @@ async def async_get_content_base64(robot : Concerto, url: str, timeout: str=3, m
             if attempt + 1 == max_retries:
                 raise
 
-def get_content_base64(robot : Concerto, url: str, timeout: str=3, max_retries: str=3) -> str:
+
+def get_content_base64(
+    robot: Concerto, url: str, timeout: str = 3, max_retries: str = 3
+) -> str:
     """获取url所指内容的Base64"""
     if not url:
         return ""
@@ -359,6 +387,7 @@ def get_content_base64(robot : Concerto, url: str, timeout: str=3, max_retries: 
             if attempt + 1 == max_retries:
                 raise
 
+
 def get_image_format(data: str) -> str:
     """
     从Base64编码的数据中确定图片的格式
@@ -369,6 +398,7 @@ def get_image_format(data: str) -> str:
     """
     image_bytes = base64.b64decode(data)
     return Image.open(io.BytesIO(image_bytes)).format.lower()
+
 
 def status_ok(response: dict):
     """
@@ -381,6 +411,7 @@ def status_ok(response: dict):
     else:
         return False
 
+
 def handle_placeholder(text: str, placeholder_dict: dict):
     """替换标记的字符串"""
     pattern = re.compile(r"(%\S+?%)")
@@ -392,15 +423,12 @@ def handle_placeholder(text: str, placeholder_dict: dict):
             text = handle_placeholder(text, placeholder_dict)
     return text
 
+
 def build_msg(text: str):
     """生成一个消息节点"""
-    data = {
-            "type": "text",
-            "data": {
-                "text": text
-            }
-        }
+    data = {"type": "text", "data": {"text": text}}
     return data
+
 
 def build_node(*args, **kwargs) -> dict:
     """
@@ -410,28 +438,20 @@ def build_node(*args, **kwargs) -> dict:
     content = args[0] if len(args) == 1 else list(args)
     user_id = kwargs.get("user_id")
     nickname = kwargs.get("nickname")
-    if user_id  is None and nickname is None:
+    if user_id is None and nickname is None:
         nickname = " "
     data = {
-            "type": "node",
-            "data": {
-                "user_id": user_id,
-                "nickname": nickname,
-                "content": content
-            }
-        }
+        "type": "node",
+        "data": {"user_id": user_id, "nickname": nickname, "content": content},
+    }
     return data
+
 
 def build_forward(text: str, user_id: str):
     """生成一个聊天记录节点"""
-    data = {
-            "type": "forward",
-            "data": {
-                "id": user_id,
-                "content": text
-            }
-        }
+    data = {"type": "forward", "data": {"id": user_id, "content": text}}
     return data
+
 
 def reply_event(robot: Concerto, event: Event, msg: str, reply=False, force=False):
     """
@@ -450,15 +470,20 @@ def reply_event(robot: Concerto, event: Event, msg: str, reply=False, force=Fals
         if event.msg_type == "group":
             group_id = event.group_id
             group_name = get_group_name(robot, group_id)
-            robot.printf(f"{Fore.GREEN}[SEND] {Fore.RESET}向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送消息：{simple_msg}")
+            robot.printf(
+                f"{Fore.GREEN}[SEND] {Fore.RESET}向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送消息：{simple_msg}"
+            )
             resp_dict = {"msg_type": "group", "number": group_id, "msg": msg}
             return api.send_msg(robot, resp_dict)
         else:
             user_id = event.user_id
             user_name = get_user_name(robot, user_id)
-            robot.printf(f"{Fore.GREEN}[SEND] {Fore.RESET}向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送消息：{simple_msg}")
+            robot.printf(
+                f"{Fore.GREEN}[SEND] {Fore.RESET}向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送消息：{simple_msg}"
+            )
             resp_dict = {"msg_type": "private", "number": user_id, "msg": msg}
             return api.send_msg(robot, resp_dict)
+
 
 def reply_id(robot: Concerto, msg_type: str, uid: str, msg: str, force=False):
     """
@@ -470,16 +495,23 @@ def reply_id(robot: Concerto, msg_type: str, uid: str, msg: str, force=False):
     :return: 发送消息后返回的json信息
     """
     msg = handle_placeholder(str(msg), robot.placeholder_dict)
-    simple_msg = re.sub(r"\[CQ:(.*?),(file|url)=base64.*\]", r"[CQ:\1,file=Base64]", msg)
+    simple_msg = re.sub(
+        r"\[CQ:(.*?),(file|url)=base64.*\]", r"[CQ:\1,file=Base64]", msg
+    )
     if not robot.config.is_silence or force:
         if msg_type == "group":
-            robot.printf(f"{Fore.GREEN}[SEND] {Fore.RESET}向群{Fore.MAGENTA}{get_group_name(robot, uid)}({uid}){Fore.RESET}发送消息：{simple_msg}")
+            robot.printf(
+                f"{Fore.GREEN}[SEND] {Fore.RESET}向群{Fore.MAGENTA}{get_group_name(robot, uid)}({uid}){Fore.RESET}发送消息：{simple_msg}"
+            )
             resp_dict = {"msg_type": "group", "number": uid, "msg": msg}
             return api.send_msg(robot, resp_dict)
         else:
-            robot.printf(f"{Fore.GREEN}[SEND] {Fore.RESET}向{Fore.MAGENTA}{get_user_name(robot, uid)}({uid}){Fore.RESET}发送消息：{simple_msg}")
+            robot.printf(
+                f"{Fore.GREEN}[SEND] {Fore.RESET}向{Fore.MAGENTA}{get_user_name(robot, uid)}({uid}){Fore.RESET}发送消息：{simple_msg}"
+            )
             resp_dict = {"msg_type": "private", "number": uid, "msg": msg}
             return api.send_msg(robot, resp_dict)
+
 
 def reply_back(robot: Concerto, owner_id: str, msg: str):
     """
@@ -492,6 +524,7 @@ def reply_back(robot: Concerto, owner_id: str, msg: str):
         reply_id(robot, "private", owner_id[1:], msg)
     else:
         reply_id(robot, "group", owner_id[1:], msg)
+
 
 def quick_reply(robot: Concerto, raw: dict, msg: str):
     """
@@ -506,7 +539,10 @@ def quick_reply(robot: Concerto, raw: dict, msg: str):
         resp_dict = {"context": raw, "operation": {"reply": msg}}
         return api.handle_quick_operation(robot, resp_dict)
 
-def send_msg(robot: Concerto, msg_type: str, number: str, msg: str, group_id: str=None):
+
+def send_msg(
+    robot: Concerto, msg_type: str, number: str, msg: str, group_id: str = None
+):
     """
     发送消息
     :param robot: 机器人类
@@ -516,9 +552,15 @@ def send_msg(robot: Concerto, msg_type: str, number: str, msg: str, group_id: st
     :return: 消息内容
     """
     msg = handle_placeholder(str(msg), robot.placeholder_dict)
-    resp_dict = {"msg_type": msg_type, "number": number, "msg": msg, "group_id": group_id}
+    resp_dict = {
+        "msg_type": msg_type,
+        "number": number,
+        "msg": msg,
+        "group_id": group_id,
+    }
     result = api.send_msg(robot, resp_dict)
     return result
+
 
 def get_msg(robot: Concerto, msg_id: str):
     """
@@ -530,6 +572,7 @@ def get_msg(robot: Concerto, msg_id: str):
     resp_dict = {"message_id": msg_id}
     return api.get_msg(robot, resp_dict)
 
+
 def del_msg(robot: Concerto, msg_id: str):
     """
     撤回消息
@@ -538,6 +581,7 @@ def del_msg(robot: Concerto, msg_id: str):
     """
     resp_dict = {"message_id": msg_id}
     return api.del_msg(robot, resp_dict)
+
 
 def get_forward_msg(robot: Concerto, msg_id: str):
     """
@@ -551,7 +595,10 @@ def get_forward_msg(robot: Concerto, msg_id: str):
     resp_dict = {"message_id": msg_id}
     return api.get_forward_msg(robot, resp_dict)
 
-def send_forward_msg(robot: Concerto, nodes: list, group_id=None, user_id=None, source=None, summary=None):
+
+def send_forward_msg(
+    robot: Concerto, nodes: list, group_id=None, user_id=None, source=None, summary=None
+):
     """
     发送转发消息
     :param robot: 机器人类
@@ -564,12 +611,20 @@ def send_forward_msg(robot: Concerto, nodes: list, group_id=None, user_id=None, 
     if not summary:
         summary = "ConcertBot"
     resp_dict = {"messages": nodes, "source": source, "summary": summary}
-    simple_msg = re.sub(r"\[CQ:(.*?),(file|url)=base64.*\]", r"[CQ:\1,file=Base64]", json.dumps(nodes, ensure_ascii=False))
+    simple_msg = re.sub(
+        r"\[CQ:(.*?),(file|url)=base64.*\]",
+        r"[CQ:\1,file=Base64]",
+        json.dumps(nodes, ensure_ascii=False),
+    )
     if group_id:
-        robot.printf(f"{Fore.GREEN}[SEND] {Fore.RESET}向群{Fore.MAGENTA}{get_group_name(robot, group_id)}({group_id}){Fore.RESET}发送消息：{simple_msg}")
+        robot.printf(
+            f"{Fore.GREEN}[SEND] {Fore.RESET}向群{Fore.MAGENTA}{get_group_name(robot, group_id)}({group_id}){Fore.RESET}发送消息：{simple_msg}"
+        )
         resp_dict["group_id"] = group_id
     elif user_id:
-        robot.printf(f"{Fore.GREEN}[SEND] {Fore.RESET}向{Fore.MAGENTA}{get_user_name(robot, user_id)}({user_id}){Fore.RESET}发送消息：{simple_msg}")
+        robot.printf(
+            f"{Fore.GREEN}[SEND] {Fore.RESET}向{Fore.MAGENTA}{get_user_name(robot, user_id)}({user_id}){Fore.RESET}发送消息：{simple_msg}"
+        )
         resp_dict["user_id"] = user_id
     else:
         return
@@ -587,6 +642,7 @@ def send_private_forward_msg(robot: Concerto, node: dict, user_id: str):
     resp_dict = {"user_id": user_id, "messages": node}
     return api.send_private_forward_msg(robot, resp_dict)
 
+
 def send_group_forward_msg(robot: Concerto, node: dict, group_id: str):
     """
     发送群聊转发消息
@@ -598,6 +654,7 @@ def send_group_forward_msg(robot: Concerto, node: dict, group_id: str):
     resp_dict = {"group_id": group_id, "messages": node}
     return api.send_group_forward_msg(robot, resp_dict)
 
+
 def get_group_msg_history(robot: Concerto, group_id: str):
     """
     获取群消息历史
@@ -607,6 +664,7 @@ def get_group_msg_history(robot: Concerto, group_id: str):
     """
     resp_dict = {"group_id": group_id}
     return api.get_group_msg_history(robot, resp_dict)
+
 
 def reply_add(robot: Concerto, raw: dict, accept: str, msg: str):
     """
@@ -618,12 +676,14 @@ def reply_add(robot: Concerto, raw: dict, accept: str, msg: str):
     :return: 发送消息后返回的json信息
     """
     if raw["post_type"] == "request":
-        return api.handle_quick_operation(robot,
+        return api.handle_quick_operation(
+            robot,
             {
                 "context": raw,
                 "operation": {"approve": accept, "remark": msg, "reason": msg},
-            }
+            },
         )
+
 
 def get_user_name(robot: Concerto, uid: str):
     """
@@ -646,6 +706,7 @@ def get_user_name(robot: Concerto, uid: str):
             return name
         return ""
 
+
 def get_user_id(robot: Concerto, user_name: str, group_id: str = None) -> str:
     """使用用户名获取用户ID"""
     if group_id:
@@ -657,6 +718,7 @@ def get_user_id(robot: Concerto, user_name: str, group_id: str = None) -> str:
         if name == user_name:
             return uid
 
+
 def get_group_info(robot: Concerto, group_id: str):
     """
     获取群信息
@@ -667,6 +729,7 @@ def get_group_info(robot: Concerto, group_id: str):
     resp_dict = {"group_id": group_id}
     return api.get_group_info(robot, resp_dict)
 
+
 def set_group_ban(robot: Concerto, group_id: str, user_id: str, duration: int):
     """
     设置群禁言
@@ -675,8 +738,13 @@ def set_group_ban(robot: Concerto, group_id: str, user_id: str, duration: int):
     :param user_id: 用户
     :param duration: 时长
     """
-    resp_dict = {"group_id": int(group_id), "user_id": int(user_id), "duration": int(duration)}
+    resp_dict = {
+        "group_id": int(group_id),
+        "user_id": int(user_id),
+        "duration": int(duration),
+    }
     return api.set_group_ban(robot, resp_dict)
+
 
 def set_group_whole_ban(robot: Concerto, group_id: str, enable: bool):
     """
@@ -689,6 +757,7 @@ def set_group_whole_ban(robot: Concerto, group_id: str, enable: bool):
     resp_dict = {"group_id": int(group_id), "enable": enable}
     return api.set_group_whole_ban(robot, resp_dict)
 
+
 def set_group_kick(robot: Concerto, group_id: str, user_id: str):
     """
     设置群禁言
@@ -698,6 +767,7 @@ def set_group_kick(robot: Concerto, group_id: str, user_id: str):
     """
     resp_dict = {"group_id": int(group_id), "user_id": int(user_id)}
     return api.set_group_kick(robot, resp_dict)
+
 
 def get_group_member_list(robot: Concerto, group_id: str):
     """
@@ -709,6 +779,7 @@ def get_group_member_list(robot: Concerto, group_id: str):
         return
     resp_dict = {"group_id": group_id, "no_cache": False}
     return api.get_group_member_list(robot, resp_dict)
+
 
 def get_group_name(robot: Concerto, group_id: str) -> str:
     """
@@ -730,6 +801,7 @@ def get_group_name(robot: Concerto, group_id: str) -> str:
         else:
             return ""
 
+
 def get_image(robot: Concerto, file: str) -> dict:
     """
     获取图片
@@ -738,6 +810,7 @@ def get_image(robot: Concerto, file: str) -> dict:
     """
     resp_dict = {"file": file}
     return api.get_image(robot, resp_dict)
+
 
 def get_record(robot: Concerto, file_id: str, out_format: str = "mp3") -> dict:
     """
@@ -750,7 +823,8 @@ def get_record(robot: Concerto, file_id: str, out_format: str = "mp3") -> dict:
     resp_dict = {"file_id": file_id, "out_format": out_format}
     return api.get_record(robot, resp_dict)
 
-def poke(robot: Concerto, user_id: str, group_id: str | None=None):
+
+def poke(robot: Concerto, user_id: str, group_id: str | None = None):
     """
     戳一戳
     :param robot: 机器人类
@@ -762,6 +836,7 @@ def poke(robot: Concerto, user_id: str, group_id: str | None=None):
     else:
         return api.friend_poke(robot, {"user_id": user_id})
 
+
 def set_model_show(robot: Concerto, device: str, model_show: str):
     """
     贴表情
@@ -771,6 +846,7 @@ def set_model_show(robot: Concerto, device: str, model_show: str):
     """
     resp_dict = {"model": device, "model_show": model_show}
     return api.set_model_show(robot, resp_dict)
+
 
 def set_emoji(robot: Concerto, message_id: str, emoji_id: str, is_set=True):
     """
@@ -782,6 +858,7 @@ def set_emoji(robot: Concerto, message_id: str, emoji_id: str, is_set=True):
     resp_dict = {"message_id": message_id, "emoji_id": emoji_id, "set": is_set}
     return api.set_msg_emoji_like(robot, resp_dict)
 
+
 def group_sign(robot: Concerto, group_id: str):
     """
     贴表情
@@ -790,6 +867,7 @@ def group_sign(robot: Concerto, group_id: str):
     """
     resp_dict = {"group_id": group_id}
     return api.set_group_sign(robot, resp_dict)
+
 
 def send_group_notice(robot: Concerto, group_id: str, notice: str):
     """
@@ -801,6 +879,7 @@ def send_group_notice(robot: Concerto, group_id: str, notice: str):
     resp_dict = {"group_id": group_id, "content": notice}
     return api.send_group_notice(robot, resp_dict)
 
+
 def send_like(robot: Concerto, user_id: str, times: int):
     """
     贴表情
@@ -811,7 +890,15 @@ def send_like(robot: Concerto, user_id: str, times: int):
     resp_dict = {"user_id": user_id, "times": times}
     return api.send_like(robot, resp_dict)
 
-def upload_file(robot: Concerto, file: str, name: str, user_id: str | None=None, group_id: str | None=None, folder_id: str | None=None):
+
+def upload_file(
+    robot: Concerto,
+    file: str,
+    name: str,
+    user_id: str | None = None,
+    group_id: str | None = None,
+    folder_id: str | None = None,
+):
     """
     上传文件
     :param file: 文件路径
@@ -820,9 +907,15 @@ def upload_file(robot: Concerto, file: str, name: str, user_id: str | None=None,
     :param group_id: 群ID
     """
     if group_id:
-        return api.upload_group_file(robot, {"group_id": group_id, "file": file, "name": name, "folder_id": folder_id})
+        return api.upload_group_file(
+            robot,
+            {"group_id": group_id, "file": file, "name": name, "folder_id": folder_id},
+        )
     else:
-        return api.upload_private_file(robot, {"user_id": user_id, "file": file, "name": name})
+        return api.upload_private_file(
+            robot, {"user_id": user_id, "file": file, "name": name}
+        )
+
 
 def del_file(robot: Concerto, file_id: str, group_id: str):
     """
@@ -831,6 +924,7 @@ def del_file(robot: Concerto, file_id: str, group_id: str):
     :param group_id: 群ID
     """
     return api.del_group_file(robot, {"file_id": file_id, "group_id": group_id})
+
 
 def send_group_ai_record(robot: Concerto, group_id: str, character: str, text: str):
     """
@@ -843,6 +937,7 @@ def send_group_ai_record(robot: Concerto, group_id: str, character: str, text: s
     resp_dict = {"group_id": group_id, "character": character, "text": text}
     return api.send_group_ai_record(robot, resp_dict)
 
+
 def group_member_info(robot: Concerto, group_id: str, user_id: str):
     """
     获取群成员信息
@@ -853,14 +948,22 @@ def group_member_info(robot: Concerto, group_id: str, user_id: str):
     resp_dict = {"group_id": group_id, "user_id": user_id}
     return api.get_group_member_info(robot, resp_dict)
 
-def group_special_title(robot: Concerto, group_id: str, user_id: str, special_title: str):
+
+def group_special_title(
+    robot: Concerto, group_id: str, user_id: str, special_title: str
+):
     """
     设置群成员专属头衔
     :param robot: 机器人类
     :param group_id: 群ID
     """
-    resp_dict = {"group_id": group_id, "user_id": user_id, "special_title": special_title}
+    resp_dict = {
+        "group_id": group_id,
+        "user_id": user_id,
+        "special_title": special_title,
+    }
     return api.set_group_special_title(robot, resp_dict)
+
 
 def get_stranger_info(robot: Concerto, user_id: int):
     """
@@ -870,6 +973,7 @@ def get_stranger_info(robot: Concerto, user_id: int):
     """
     resp_dict = {"user_id": user_id}
     return api.get_stranger_info(robot, resp_dict)
+
 
 def ocr_image(robot: Concerto, img_id: str):
     """
@@ -892,13 +996,27 @@ def get_img_url(robot: Concerto, url: str) -> str:
         result = get_msg(robot, msg_id)
         if not status_ok(result):
             return url
-        msg =  html.unescape(result.get("data").get("message"))
+        msg = html.unescape(result.get("data").get("message"))
         if match := re.search(r"\[CQ:image,.*url=([^,\]]+?),.*\]", msg):
             url = match.group(1)
         return url
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         robot.errorf(f"获取腾讯图床链接失败 {traceback.format_exc()}")
         return url
+
+def get_handler_amount(robot: Concerto):
+    """
+    获取事件的处理方法数量
+    :param robot: 机器人类
+    :return: 处理方法数量
+    """
+    count = 0
+    for module in robot.modules.values():
+        for attr_name in dir(module):
+            attr = getattr(module, attr_name)
+            if callable(attr) and hasattr(attr, "_is_handler"):
+                count += 1
+    return count
 
 def simplify_traceback(tb: str):
     """
@@ -921,12 +1039,14 @@ def simplify_traceback(tb: str):
     result += f"导致最终错误为“{tb[-1]}”"
     return result
 
+
 def get_error():
     """
     获取错误原因
     :return: 直接的错误原因
     """
     return traceback.format_exc().strip().rsplit("\n", maxsplit=1)[-1]
+
 
 def scan_missing_modules(file_path: str):
     """
@@ -965,16 +1085,20 @@ def scan_missing_modules(file_path: str):
                         missing.add(e.name)
     return missing
 
+
 def handler(condition):
     """竞争执行方法装饰器"""
     return _register_handler(condition, handled=True)
+
 
 def listener(condition):
     """监听执行方法装饰器"""
     return _register_handler(condition, handled=False)
 
+
 def _register_handler(condition, handled=True):
     """模块方法装饰器"""
+
     def decorator(func):
         @wraps(func)
         def wrapper(self: Module, *args, **kwargs):
@@ -982,22 +1106,32 @@ def _register_handler(condition, handled=True):
             if not condition(self):
                 # self.robot.printf(f"未满足[{method_name}]的执行条件", level="DEBUG")
                 return None
-            self.printf(f"执行{Fore.YELLOW}[{method_name}]{Fore.RESET}方法", level="DEBUG")
+            self.printf(
+                f"执行{Fore.YELLOW}[{method_name}]{Fore.RESET}方法", level="DEBUG"
+            )
             try:
                 self.handled = handled
                 result = func(self, *args, **kwargs)
                 if asyncio.iscoroutine(result):
                     return run_coroutine_sync(result)
                 if handled:
-                    self.printf(f"{Fore.YELLOW}[{method_name}]{Fore.RESET}方法已处理该事件", level="DEBUG")
+                    self.printf(
+                        f"{Fore.YELLOW}[{method_name}]{Fore.RESET}方法已处理该事件",
+                        level="DEBUG",
+                    )
                 return result
-            except Exception:
-                self.errorf(f"{Fore.RED}执行{Fore.YELLOW}[{method_name}]{Fore.RED}方法发生错误！")
+            except Exception:  # pylint: disable=broad-exception-caught
+                self.errorf(
+                    f"{Fore.RED}执行{Fore.YELLOW}[{method_name}]{Fore.RED}方法发生错误！"
+                )
                 self.errorf(Fore.RED + traceback.format_exc())
                 self.handled = False
-        wrapper._is_handler = True # pylint: disable=protected-access
+
+        wrapper._is_handler = True  # pylint: disable=protected-access
         return wrapper
+
     return decorator
+
 
 def run_coroutine_sync(coroutine: Coroutine):
     """在同步上下文中安全执行协程"""
@@ -1007,10 +1141,16 @@ def run_coroutine_sync(coroutine: Coroutine):
         return asyncio.run(coroutine)
     raise RuntimeError("当前事件循环正在运行，无法在同步装饰器中阻塞执行协程")
 
+
 class MiniCron:
     """简单Crontab，支持同步和异步函数"""
-    
-    def __init__(self, expr: str, task: Union[Callable[[], None], Callable[[], Coroutine]], loop=None) -> None:
+
+    def __init__(
+        self,
+        expr: str,
+        task: Union[Callable[[], None], Callable[[], Coroutine]],
+        loop=None,
+    ) -> None:
         """
         expr: crontab 表达式 (如 "0 8-12/1 * * *" 表示8点到12点每小时执行)
         task: 要执行的函数，无参数，可以是同步函数或异步函数
@@ -1068,18 +1208,24 @@ class MiniCron:
     def next_time(self, from_time: Optional[datetime] = None) -> datetime:
         """计算下一个匹配 cron 表达式的时间点"""
         if from_time is None:
-            from_time = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=1)
+            from_time = datetime.now().replace(second=0, microsecond=0) + timedelta(
+                minutes=1
+            )
         else:
-            from_time = from_time.replace(second=0, microsecond=0) + timedelta(minutes=1)
+            from_time = from_time.replace(second=0, microsecond=0) + timedelta(
+                minutes=1
+            )
         max_attempts = 100000  # 防止无限循环
         attempts = 0
         while attempts < max_attempts:
             attempts += 1
-            if (from_time.minute in self.cron_fields["minute"] and
-                from_time.hour in self.cron_fields["hour"] and
-                from_time.day in self.cron_fields["day"] and
-                from_time.month in self.cron_fields["month"] and
-                from_time.weekday() in self.cron_fields["weekday"]):
+            if (
+                from_time.minute in self.cron_fields["minute"]
+                and from_time.hour in self.cron_fields["hour"]
+                and from_time.day in self.cron_fields["day"]
+                and from_time.month in self.cron_fields["month"]
+                and from_time.weekday() in self.cron_fields["weekday"]
+            ):
                 return from_time
             from_time += timedelta(minutes=1)
         raise ValueError("无法找到下一个执行时间, 请检查cron表达式")
@@ -1109,9 +1255,11 @@ class MiniCron:
         """停止任务执行"""
         self.running = False
 
+
 class Event:
-    """基础事件结构"""  
-    def __init__(self, robot: Concerto, raw = None):
+    """基础事件结构"""
+
+    def __init__(self, robot: Concerto, raw=None):
         # 机器人本类
         self.robot = robot
         # 原始数据结构
@@ -1155,15 +1303,21 @@ class Event:
         # 目标QQ号
         self.target_id = str(raw.get("target_id", ""))
         # 目标昵称
-        self.target_name = get_user_name(robot, self.target_id) if self.msg_type == "private" else get_group_name(robot, self.group_id)
+        self.target_name = (
+            get_user_name(robot, self.target_id)
+            if self.msg_type == "private"
+            else get_group_name(robot, self.group_id)
+        )
         # 操作者QQ号
         self.operator_id = str(raw.get("operator_id", ""))
         # 操作者昵称
         self.operator_name = get_user_name(robot, self.operator_id)
         self.operator_nick = raw.get("operator_nick", "")
 
+
 class Module:
     """模块基类"""
+
     ID = None
     NAME = None
     HELP = None
@@ -1178,7 +1332,7 @@ class Module:
     HANDLE_REQUEST = False
     HANDLE_META_EVENT = False
 
-    def __init__(self, event: Event, auth: int=0):
+    def __init__(self, event: Event, auth: int = 0):
         self.name = self.__class__.NAME
         self.handled = False
         self.event = event
@@ -1203,9 +1357,9 @@ class Module:
         for attr_name in dir(self):
             if self.handled:
                 return
-            func = getattr(self, attr_name)
-            if callable(func) and getattr(func, "_is_handler", False):
-                func()
+            attr = getattr(self, attr_name)
+            if callable(attr) and hasattr(attr, "_is_handler"):
+                attr()
 
     def au(self, max_level=3, min_level=0):
         """检查权限等级"""
@@ -1254,21 +1408,23 @@ class Module:
             return
         config_name = self.CONFIG
         if config_name is None:
-            config_name  = f"{str(self.ID).lower()}.json"
+            config_name = f"{str(self.ID).lower()}.json"
         self.config_file = os.path.join(self.robot.config.data_path, config_name)
         try:
             self.config = import_json(self.config_file)
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             self.config = {}
-            self.errorf(f"配置文件 {self.config_file} 解析发生错误!\n{traceback.format_exc()}")
-        self.GLOBAL_CONFIG = self.GLOBAL_CONFIG or {}
+            self.errorf(
+                f"配置文件 {self.config_file} 解析发生错误!\n{traceback.format_exc()}"
+            )
+        self.GLOBAL_CONFIG = self.GLOBAL_CONFIG or {} # pylint: disable=invalid-name
         self.config = merge(self.GLOBAL_CONFIG, self.config)
         if self.CONV_CONFIG is None:
             self.save_config()
             return
         if self.owner_id not in self.config:
             self.config[self.owner_id] = {}
-        self.CONV_CONFIG = self.CONV_CONFIG or {}
+        self.CONV_CONFIG = self.CONV_CONFIG or {} # pylint: disable=invalid-name
         self.config[self.owner_id] = merge(self.CONV_CONFIG, self.config[self.owner_id])
         self.conv_config = self.config[self.owner_id]
         self.save_config()
@@ -1283,8 +1439,10 @@ class Module:
             return
         try:
             save_json(self.config_file, self.config)
-        except Exception:
-            self.errorf(f"配置文件 {self.config_file} 保存失败!\n{traceback.format_exc()}")
+        except Exception:  # pylint: disable=broad-exception-caught
+            self.errorf(
+                f"配置文件 {self.config_file} 保存失败!\n{traceback.format_exc()}"
+            )
 
     def get_data_path(self, *paths: str) -> str:
         """获取配置文件夹"""
@@ -1315,12 +1473,16 @@ class Module:
 
     def reply_forward(self, nodes: list, source=None, summary=None):
         """快捷回复转发消息"""
-        result = send_forward_msg(self.robot, nodes, self.event.group_id, self.event.user_id, source, summary)
+        result = send_forward_msg(
+            self.robot, nodes, self.event.group_id, self.event.user_id, source, summary
+        )
         if not status_ok(result):
             self.errorf(result.get("message"))
         return result
 
-    def get_reply(self, ) -> str | None:
+    def get_reply(
+        self,
+    ) -> str | None:
         """读取可能存在的回复消息"""
         reply_match = self.is_reply()
         if not reply_match:
@@ -1329,7 +1491,7 @@ class Module:
         reply_msg = get_msg(self.robot, msg_id)
         if not status_ok(reply_msg):
             return
-        msg =  html.unescape(reply_msg["data"]["message"])
+        msg = html.unescape(reply_msg["data"]["message"])
         msg = re.sub(r"[\\\r\n]+", "", msg)
         return msg
 
@@ -1353,7 +1515,12 @@ class Module:
         """
         if level == "DEBUG" and not self.robot.config.is_debug:
             return
-        self.robot.warnf(f"{Fore.CYAN}[{self.ID}]{Fore.YELLOW} {msg}", end=end, console=console, level=level)
+        self.robot.warnf(
+            f"{Fore.CYAN}[{self.ID}]{Fore.YELLOW} {msg}",
+            end=end,
+            console=console,
+            level=level,
+        )
 
     def errorf(self, msg, end="\n", console=True, level="INFO"):
         """
@@ -1364,4 +1531,9 @@ class Module:
         """
         if level == "DEBUG" and not self.robot.config.is_debug:
             return
-        self.robot.errorf(f"{Fore.CYAN}[{self.ID}]{Fore.RED} {msg}", end=end, console=console, level=level)
+        self.robot.errorf(
+            f"{Fore.CYAN}[{self.ID}]{Fore.RED} {msg}",
+            end=end,
+            console=console,
+            level=level,
+        )

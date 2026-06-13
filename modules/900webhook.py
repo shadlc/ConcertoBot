@@ -58,17 +58,18 @@ class Webhook(Module):
         threading.Thread(target=self.hooking, daemon=True, name=self.NAME).start()
 
     def hooking(self):
+        """监听外部请求"""
         self.printf(f"正在监听: {Fore.GREEN}{self.config["host"]}:{self.config["port"]}{Fore.RESET}")
         while True:
             try:
                 data = self.receive_msg()
-            except Exception:
-                self.errorf(f"加载失败, 模块已停止运行!")
+            except Exception: # pylint: disable=broad-exception-caught
+                self.errorf("加载失败, 模块已停止运行!")
                 return
             try:
                 threading.Thread(target=self.handle_msg, args=(data,), daemon=True).start()
                 time.sleep(0.01)
-            except Exception:
+            except Exception: # pylint: disable=broad-exception-caught
                 msg = f"[{self.NAME}]出现致命错误\n{traceback.format_exc()}"
                 self.errorf(msg)
                 if self.config["admin_id"] and (
@@ -83,6 +84,7 @@ class Webhook(Module):
                 time.sleep(5)
 
     def receive_msg(self):
+        """接收外部请求并返回数据字典"""
         try:
             header, body = listening(self.config["host"], self.config["port"])
             if "application/json" not in header.get("Content-Type"):
@@ -106,6 +108,7 @@ class Webhook(Module):
             return {}
 
     def handle_msg(self, data: dict):
+        """处理外部请求数据字典并进行相应的通知"""
         msg_type = ""
         for type_name in data:
             if type_name in ["type", "Event"]:

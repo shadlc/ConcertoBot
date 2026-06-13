@@ -44,7 +44,7 @@ class KFC(Module):
             self.reply(msg)
             self.conv_config["last_date"] = datetime.now().strftime("%Y%m%d")
             self.save_config()
-        except Exception as e:
+        except Exception as e: # pylint: disable=broad-exception-caught
             self.errorf(f"KFC模块请求失败: {e}")
 
     @handler(lambda self: self.group_at() and self.au(2)
@@ -57,7 +57,7 @@ class KFC(Module):
                 return self.reply(f"KFC模块请求失败: 状态码 {resp.status_code}", reply=True)
             msg = resp.text.replace(r"\\n", "\n")
             self.reply(msg, reply=True)
-        except Exception as e:
+        except Exception as e: # pylint: disable=broad-exception-caught
             return self.reply_forward(self.node(f"{e}"), source="KFC模块请求失败")
 
     @handler(lambda self: self.group_at() and self.au(1)

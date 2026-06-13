@@ -9,8 +9,10 @@ import httpx
 
 from src.utils import Module, set_emoji, status_ok, handler, listener
 
+
 class YUJN(Module):
     """遇见API模块"""
+
     ID = "Yujn"
     NAME = "遇见API模块"
     HELP = {
@@ -42,7 +44,7 @@ class YUJN(Module):
     # 视频类API
     URL_MAP = {
         # 图片类API
-        "写真": f"https://cyapi.top/API/wdxz.php",
+        "写真": "https://cyapi.top/API/wdxz.php",
         # 视频类API
         "小姐姐": f"{YUJN_URL}/api/xjj.php?type=video",
         "黑丝": f"{YUJN_URL}/api/heisis.php?type=video",
@@ -79,30 +81,36 @@ class YUJN(Module):
         "active_func": [],
     }
 
-    @listener(lambda self: self.au(2)
-         and self.conv_config["enable"]
-         and self.conv_config.get("probability", 0)
-         and len(self.conv_config.get("active_func", []))
-         and random.random() < self.conv_config.get("probability", 0)
-         and self.match(r".*"))
+    @listener(
+        lambda self: self.au(2)
+        and self.conv_config["enable"]
+        and self.conv_config.get("probability", 0)
+        and len(self.conv_config.get("active_func", []))
+        and random.random() < self.conv_config.get("probability", 0)
+        and self.match(r".*")
+    )
     def prob_msg(self):
         """概率触发遇见API"""
         try:
             func = random.choice(self.conv_config.get("active_func", []))
             api_url = self.URL_MAP[func]
+
             def api_req():
                 resp = httpx.get(api_url, timeout=5, follow_redirects=True)
                 resp.raise_for_status()
                 b64 = base64.b64encode(resp.content).decode("utf-8")
                 return f"base64://{b64}"
+
             b64 = self.retry(api_req)
             self.reply(f"[CQ:video,file={b64}]")
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             self.errorf(f"遇见API请求失败: {e}")
 
-    @handler(lambda self: self.au(2)
-         and self.match(rf"^(来|发)(点|只|张|个|位){self.PICTURE_PATTERN}$"))
+    @handler(
+        lambda self: self.au(2)
+        and self.match(rf"^(来|发)(点|只|张|个|位){self.PICTURE_PATTERN}$")
+    )
     def picture_handler(self):
         """图片类功能处理"""
         try:
@@ -113,12 +121,14 @@ class YUJN(Module):
                 return self.reply(f"未知命令: {cmd}")
             api_url = self.URL_MAP[cmd]
             return self.reply(f"[CQ:image,file={api_url}]")
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             self.errorf(f"遇见API请求失败: {e}")
 
-    @handler(lambda self: self.au(2)
-         and self.match(rf"^(来|发)(点|只|张|个|位){self.VIDEO_PATTERN}$"))
+    @handler(
+        lambda self: self.au(2)
+        and self.match(rf"^(来|发)(点|只|张|个|位){self.VIDEO_PATTERN}$")
+    )
     def video_handler(self):
         """视频类功能处理"""
         try:
@@ -128,21 +138,25 @@ class YUJN(Module):
             if cmd not in self.URL_MAP:
                 return self.reply(f"未知命令: {cmd}")
             video_url = self.URL_MAP[cmd]
+
             def api_req():
                 resp = httpx.get(video_url, timeout=5, follow_redirects=True)
                 resp.raise_for_status()
                 b64 = base64.b64encode(resp.content).decode("utf-8")
                 return f"base64://{b64}"
+
             b64 = self.retry(api_req)
             result = self.reply(f"[CQ:video,file={b64}]")
             if not status_ok(result):
                 self.reply("视频失效了~请再试一次吧~")
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             self.errorf(f"遇见API请求失败: {e}")
 
-    @handler(lambda self: self.au(2)
-         and self.match(rf"^(来|发)(点|只|个|位|句){self.VOICE_PATTERN}(语音|声音)?$"))
+    @handler(
+        lambda self: self.au(2)
+        and self.match(rf"^(来|发)(点|只|个|位|句){self.VOICE_PATTERN}(语音|声音)?$")
+    )
     def voice_handler(self):
         """语音类功能处理"""
         try:
@@ -152,19 +166,24 @@ class YUJN(Module):
             if cmd not in self.URL_MAP:
                 return self.reply(f"未知命令: {cmd}")
             voice_url = self.URL_MAP[cmd]
+
             def api_req():
                 resp = httpx.get(voice_url, timeout=5, follow_redirects=True)
                 resp.raise_for_status()
                 b64 = base64.b64encode(resp.content).decode("utf-8")
                 return f"base64://{b64}"
+
             b64 = self.retry(api_req)
             self.reply(f"[CQ:record,file={b64}]")
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             self.errorf(f"遇见API请求失败: {e}")
 
-    @handler(lambda self: self.group_at() and self.au(1)
-         and self.match(r"^(开启|关闭)遇见API$"))
+    @handler(
+        lambda self: self.group_at()
+        and self.au(1)
+        and self.match(r"^(开启|关闭)遇见API$")
+    )
     def toggle(self):
         """开启关闭模块"""
         flag = self.conv_config.get("enable", True)
@@ -180,13 +199,15 @@ class YUJN(Module):
         self.save_config()
         self.reply(msg, reply=True)
 
-    def retry(self, func: Callable[..., Any], name="", max_retries=5, delay=1, failed_ok=True) -> Any:
+    def retry(
+        self, func: Callable[..., Any], name="", max_retries=5, delay=1, failed_ok=True
+    ) -> Any:
         """多次尝试执行"""
         for attempt in range(1, max_retries + 1):
             try:
                 result = func()
                 return result
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 func_name = name if name else func.__name__
                 self.printf(f"第 {attempt} 次执行 {func_name} 失败: {e}")
                 if attempt == max_retries:

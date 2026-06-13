@@ -125,7 +125,7 @@ class Chat(Module):
                 url = self.generate_statistics(rows)
                 msg += f"[CQ:image,file={url}]"
             reply_back(self.robot, owner_id, msg)
-        except Exception:
+        except Exception: # pylint: disable=broad-exception-caught
             self.errorf(f"任务执行失败 {traceback.format_exc()}")
 
     @listener(lambda self: self.at_or_private() and self.au(2) and self.match(r"词云"))
@@ -198,7 +198,7 @@ class Chat(Module):
                 try:
                     url = self.generate_wordcloud(text)
                     msg = f"[CQ:image,file={url}]"
-                except Exception:
+                except Exception: # pylint: disable=broad-exception-caught
                     self.errorf(traceback.format_exc())
                     msg = "词云生成错误！\n" + get_error()
             elif not self.conv_config["record"]["enable"]:
@@ -276,7 +276,7 @@ class Chat(Module):
                 try:
                     url = self.generate_statistics(rows)
                     msg = f"[CQ:image,file={url}]"
-                except Exception:
+                except Exception: # pylint: disable=broad-exception-caught
                     self.errorf(traceback.format_exc())
                     msg = "发言排行生成错误！\n" + get_error()
             elif not self.conv_config["record"]["enable"]:
@@ -397,13 +397,13 @@ class Chat(Module):
                         if qq_data := self.config["qq_data"]:
                             file_path = file_path.replace("/app/.config/QQ", qq_data) + ".mp3"
                         record = open(file_path, "rb").read()
-                        text = llm_stt(file = {"file": ("r.mp3", record, "audio/mpeg") })
+                        record_text = llm_stt(file = {"file": ("r.mp3", record, "audio/mpeg") })
                         b64 = base64.b64encode(record).decode()
                         nodes.append(self.node(
                             f"[CQ:file,name=语音.mp3,file=base64://{b64}]",
                             user_id=user_id, nickname=nickname
                         ))
-                    except Exception:
+                    except Exception: # pylint: disable=broad-exception-caught
                         self.errorf(traceback.format_exc())
                 content = re.sub(r"\[CQ:record.*\]", f"[语音:{record_text.strip()}]", content)
                 content = re.sub(r"\[CQ:forward.*\]", "[转发消息(不支持防撤回)]", content)
@@ -601,7 +601,7 @@ class Chat(Module):
                 )
             conn.commit()
             conn.close()
-        except Exception:
+        except Exception: # pylint: disable=broad-exception-caught
             self.errorf("保存消息记录失败:\n" + traceback.format_exc())
 
     def read_tally(self, gen_type: str, owner_id: str, user_id: str = None) -> list:
@@ -639,7 +639,7 @@ class Chat(Module):
             if not rows:
                 return []
             return rows
-        except Exception:
+        except Exception: # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             return
 
@@ -672,7 +672,7 @@ class Chat(Module):
                 )
             conn.commit()
             conn.close()
-        except Exception:
+        except Exception: # pylint: disable=broad-exception-caught
             self.errorf("保存消息记录失败:\n" + traceback.format_exc())
 
     def read_chat(self, gen_type: str, owner_id: str, user_id: str = None) -> list:
@@ -710,7 +710,7 @@ class Chat(Module):
             if not rows:
                 return []
             return rows
-        except Exception:
+        except Exception: # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             return ""
 
@@ -804,7 +804,7 @@ class Chat(Module):
             "collocations": False,
             "prefer_horizontal": 0.9,
         }
-        
+
         # 主题
         colormap = self.conv_config["record"]["colormap"]
         if colormap:
@@ -860,7 +860,7 @@ class Chat(Module):
         ax.spines["left"].set_color("gray")
         ax.tick_params(axis="both", which="both", length=0)
         ax.set_xticks([])
-        
+
         sorted_dates = sorted(dates, key=lambda x: datetime.datetime.strptime(str(x), "%Y%m%d"))
 
         # 场景1：单群多用户（一个群，多个用户）
@@ -1095,7 +1095,7 @@ class Chat(Module):
             )
             conn.commit()
             conn.close()
-        except Exception:
+        except Exception: # pylint: disable=broad-exception-caught
             self.errorf("保存复读记录失败:\n" + traceback.format_exc())
 
     def get_repeat_record(self, gen_type: str, owner_id: str):
