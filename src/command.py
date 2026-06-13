@@ -1,5 +1,7 @@
 """命令实现"""
 
+from __future__ import annotations
+
 import re
 import time
 import json
@@ -39,13 +41,13 @@ from src.api import (
 )
 
 if TYPE_CHECKING:
-    from robot import Concerto
+    from src.robot import Concerto
 
 
 class ExecuteCmd(object):
     """执行命令"""
 
-    def __init__(self, cmd, robot: "Concerto"):
+    def __init__(self, cmd, robot: Concerto):
         self.robot = robot
         self.robot.cmd = {
             "add": "对添加请求进行操作",

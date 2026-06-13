@@ -4,7 +4,7 @@ from urllib.parse import quote
 
 import httpx
 
-from src.utils import Module, set_emoji, via
+from src.utils import Module, set_emoji, handler
 
 class API(Module):
     """简单API模块"""
@@ -23,7 +23,7 @@ class API(Module):
         ],
     }
 
-    @via(lambda self: self.group_at() and self.au(2)
+    @handler(lambda self: self.group_at() and self.au(2)
          and self.match(r"^(\S{2,16})(热搜|热榜|trending|hot)$"))
     def trending(self):
         """今日热榜"""
@@ -45,7 +45,7 @@ class API(Module):
         except Exception as e:
             return self.reply_forward(self.node(f"{e}"), source="今日热榜请求失败")
 
-    @via(lambda self: self.group_at() and self.au(2)
+    @handler(lambda self: self.group_at() and self.au(2)
          and self.match(r"^(金价|黄金价格)$"))
     def gold_price(self):
         """今日黄金价格"""
@@ -77,12 +77,12 @@ class API(Module):
         except Exception as e:
             return self.reply_forward(self.node(f"{e}"), source="今日热榜请求失败")
 
-    @via(lambda self: self.group_at() and self.au(1)
+    @handler(lambda self: self.group_at() and self.au(1)
          and self.match(r"^(开启|打开|启用|允许|关闭|禁止|取消)?简单API$"))
     def toggle(self):
         """开启关闭模块"""
-        flag = self.config[self.owner_id]["enable"]
-        text = "开启" if self.config[self.owner_id]["enable"] else "关闭"
+        flag = self.conv_config["enable"]
+        text = "开启" if self.conv_config["enable"] else "关闭"
         if self.match(r"(开启|打开|启用|允许)"):
             flag = True
             text = "开启"
@@ -90,6 +90,6 @@ class API(Module):
             flag = False
             text = "关闭"
         msg = f"简单API已{text}"
-        self.config[self.owner_id]["enable"] = flag
+        self.conv_config["enable"] = flag
         self.save_config()
         self.reply(msg, reply=True)

@@ -7,7 +7,7 @@ import time
 from colorama import Fore
 import httpx
 from src.api import del_msg, get_version_info, send_msg
-from src.utils import Module, get_group_name, get_user_name, reply_id, send_group_ai_record, import_json, status_ok, via
+from src.utils import Module, get_group_name, get_user_name, reply_id, send_group_ai_record, import_json, status_ok, handler
 
 
 class Message(Module):
@@ -36,7 +36,7 @@ class Message(Module):
         ]
     }
 
-    @via(lambda self: self.at_or_private() and self.au(3) and self.match(r"^帮助\d?$"))
+    @handler(lambda self: self.at_or_private() and self.au(3) and self.match(r"^帮助\d?$"))
     def help(self):
         auth_level = self.auth
         if result := self.match(r"帮助(\d)"):
@@ -70,7 +70,7 @@ class Message(Module):
         nodes = help_list
         self.reply_forward(nodes, source="ConcertBot HELP")
 
-    @via(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(增加|添加|删除|取消)?\s?管理员"))
+    @handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(增加|添加|删除|取消)?\s?管理员"))
     def admin(self):
         if self.match(r"^(增加|添加)\s?管理员\s?[0-9]+"):
             user_id = self.match(r"^(增加|添加)\s?管理员\s?([0-9]+)").group(2)
@@ -99,7 +99,7 @@ class Message(Module):
             msg = "请使用 [增加|删除]管理员 [QQ号] 进行增添管理员"
         self.reply(msg)
 
-    @via(lambda self: self.at_or_private() and self.match(r"^权限(等级)?$"))
+    @handler(lambda self: self.at_or_private() and self.match(r"^权限(等级)?$"))
     def authority(self):
         if self.au(0):
             auth_level = "后台权限"
@@ -114,7 +114,7 @@ class Message(Module):
         msg = f"您的权限等级为: {auth_level}"
         self.reply(msg)
 
-    @via(lambda self: self.group_at() and self.au(1)
+    @handler(lambda self: self.group_at() and self.au(1)
          and self.match(r"^(对接|监听|添加|增加|记录|删除|取消|移除)(本群|此群|该群|这个群|这群|群)?$"))
     def connect(self):
         group_id = str(self.event.group_id)
@@ -140,7 +140,7 @@ class Message(Module):
                 msg = "本群不在对接列表！"
         self.reply(msg, True)
 
-    @via(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(开启|关闭)?调试(模式)?$"))
+    @handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(开启|关闭)?调试(模式)?$"))
     def debug(self):
         if self.match(r"^开启"):
             self.robot.config.is_debug = True
@@ -157,7 +157,7 @@ class Message(Module):
             self.warnf("调试模式已关闭")
         self.reply(msg, True)
 
-    @via(lambda self: self.at_or_private() and self.match(r"^计时[0-9]+"))
+    @handler(lambda self: self.at_or_private() and self.match(r"^计时[0-9]+"))
     def delay(self):
         sleep_time = int(self.match(r"([0-9]+)").group(1))
         msg = f"计时{sleep_time}秒开始"
@@ -166,7 +166,7 @@ class Message(Module):
         msg = f"计时{sleep_time}秒结束"
         self.reply(msg)
 
-    @via(lambda self: self.at_or_private() and self.au(1) and self.match(r"^信息$"))
+    @handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^信息$"))
     def info(self):
         info = get_version_info(self.robot)
         msg = "=======API版本信息======="
@@ -176,7 +176,7 @@ class Message(Module):
         msg += f"\n已安装模块：{[f"{i.NAME}({i.ID})" for i in self.robot.modules.values()]}"
         self.reply(msg)
 
-    @via(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(撤回|闭嘴|嘘)(！|，)?(懂？)?$"))
+    @handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(撤回|闭嘴|嘘)(！|，)?(懂？)?$"))
     def recall(self):
         if len(self.robot.self_message):
             rev = self.robot.self_message[-1]
@@ -193,12 +193,12 @@ class Message(Module):
             msg = "暂无可撤回的历史消息"
             self.reply(msg)
 
-    @via(lambda self: self.at_or_private() and self.au(1) and self.match(r"^重启$"))
+    @handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^重启$"))
     def restart(self):
         self.reply("%REBOOTING%")
         self.robot.restart()
 
-    @via(lambda self: self.at_or_private() and self.au(1) and self.match(r"说\s(.*)$"))
+    @handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"说\s(.*)$"))
     def say(self):
         if self.match(r"^向"):
             inputs = self.match(r"([0-9]+)说\s?(\S*)").groups()
@@ -221,7 +221,7 @@ class Message(Module):
             msg = self.match(r"说\s?(\S*)").group(1)
         self.reply(msg)
 
-    @via(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(开启|关闭)?静默(模式)?$"))
+    @handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(开启|关闭)?静默(模式)?$"))
     def silence(self):
         if self.match(r"^开启"):
             self.robot.is_silence = True
@@ -237,7 +237,7 @@ class Message(Module):
         self.warnf(msg)
         self.reply(msg, True)
 
-    @via(lambda self: self.at_or_private() and self.au(1) and self.match(r"^测试"))
+    @handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^测试"))
     def test(self):
         if self.match(r"^测试错误"):
             raise RuntimeError("测试错误")
@@ -262,7 +262,7 @@ class Message(Module):
             msg = f"测试{thing}OK!"
         self.reply(msg)
 
-    @via(lambda self: self.at_or_private() and self.au(2) and self.match(r"(语音|读)\s(.*)$"))
+    @handler(lambda self: self.at_or_private() and self.au(2) and self.match(r"(语音|读)\s(.*)$"))
     def voice(self):
         text = "后面加上需要让我读出来的字嘛"
         match = self.match(r"向?(\d+)?发?送?(语音|读)\s?(.*)")
@@ -290,6 +290,6 @@ class Message(Module):
         if not status_ok(result):
             self.reply(f"语音消息发送失败 {result.get("message")}", reply=True)        
 
-    @via(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(在吗|你好)$"))
+    @handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(在吗|你好)$"))
     def reply_msg(self):
         self.reply("%MENTIONED%\n请@我并发送“帮助”来让我帮助您~")

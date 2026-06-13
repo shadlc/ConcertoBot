@@ -11,7 +11,7 @@ import traceback
 import urllib
 from yt_dlp import YoutubeDL, DownloadError
 
-from src.utils import Module, calc_size, calc_time, format_to_log, get_content_base64, set_emoji, via
+from src.utils import Module, calc_size, calc_time, format_to_log, get_content_base64, set_emoji, handler, listener
 
 class Ytdlp(Module):
     """视频下载模块"""
@@ -57,9 +57,9 @@ class Ytdlp(Module):
         self.video_pattern = r"(https?://[^\s&;,\[]*(b23.tv|bilibili.com/video|youtu.be|x.com|youtube.com|v.qq.com)[^\s&;,\"\u4e00-\u9fff\[]*)"
         super().__init__(event, auth)
 
-    @via(lambda self: self.at_or_private() and self.au(2)
-            and self.config[self.owner_id]["enable"]
-            and self.match("视频详情"), success=False)
+    @listener(lambda self: self.at_or_private() and self.au(2)
+            and self.conv_config["enable"]
+            and self.match("视频详情"))
     def video_info(self):
         """获取视频详情"""
         url = ""
@@ -72,7 +72,7 @@ class Ytdlp(Module):
             return
         elif not self.match("视频详情"):
             return
-        self.success = True
+        self.handled = True
         opts = self.get_options(url)
         try:
             set_emoji(self.robot, self.event.msg_id, 124)
@@ -97,9 +97,9 @@ class Ytdlp(Module):
             nodes = self.node(f"{e}")
             return self.reply_forward(nodes, source="视频解析失败")
 
-    @via(lambda self: self.at_or_private() and self.au(2)
-            and self.config[self.owner_id]["enable"]
-            and (self.is_reply() or self.match(rf"(【.*】\s)?{self.video_pattern}")), success=False)
+    @listener(lambda self: self.at_or_private() and self.au(2)
+            and self.conv_config["enable"]
+            and (self.is_reply() or self.match(rf"(【.*】\s)?{self.video_pattern}")))
     def video_download(self):
         """下载视频"""
         url = ""
@@ -112,9 +112,9 @@ class Ytdlp(Module):
             return
         elif self.match("视频详情"):
             return
-        self.success = True
+        self.handled = True
         file_path = ""
-        tasks = self.config[self.owner_id]["tasks"]
+        tasks = self.conv_config["tasks"]
         opts = self.get_options(url)
         try:
             if not self.is_private():
@@ -130,7 +130,7 @@ class Ytdlp(Module):
                 return self.reply(msg, reply=True)
             user_id = self.event.user_id
             user_task = tasks.get(user_id)
-            cool_down = self.config[self.owner_id]["cool_down"]
+            cool_down = self.conv_config["cool_down"]
             if self.event.user_id in self.robot.config.admin_list:
                 pass
             elif user_task and time.time() - int(user_task[-1][2]) < cool_down:
@@ -215,7 +215,7 @@ class Ytdlp(Module):
             if os.path.exists(file_path):
                 os.remove(file_path)
 
-    @via(
+    @handler(
         lambda self: self.at_or_private() and self.au(1)
         and self.match(r"^(开启|启用|打开|记录|启动|关闭|禁用|取消)视频(解析|下载)?(功能)?$")
     )
@@ -223,20 +223,20 @@ class Ytdlp(Module):
         """启用视频模块功能"""
         msg = ""
         if self.match(r"(开启|启用|打开|记录|启动)"):
-            self.config[self.owner_id]["enable"] = True
+            self.conv_config["enable"] = True
             msg = "视频解析功能已开启"
             self.save_config()
         elif self.match(r"(关闭|禁用|取消)"):
-            self.config[self.owner_id]["enable"] = False
+            self.conv_config["enable"] = False
             msg = "视频解析功能已关闭"
             self.save_config()
         self.reply(msg)
 
     def record_download(self, user_id: str, url: str):
-        if user_id not in self.config[self.owner_id]["tasks"]:
-            self.config[self.owner_id]["tasks"][user_id] = []
-        self.config[self.owner_id]["tasks"][user_id] = self.config[self.owner_id]["tasks"][user_id][:10]
-        self.config[self.owner_id]["tasks"][user_id].append([
+        if user_id not in self.conv_config["tasks"]:
+            self.conv_config["tasks"][user_id] = []
+        self.conv_config["tasks"][user_id] = self.conv_config["tasks"][user_id][:10]
+        self.conv_config["tasks"][user_id].append([
             url, user_id, int(time.time())
         ])
         self.save_config()

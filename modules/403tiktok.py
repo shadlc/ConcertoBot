@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 import httpx
 
-from src.utils import Module, set_emoji, via
+from src.utils import Module, set_emoji, listener
 
 class Tiktok(Module):
     """抖音视频模块"""
@@ -24,8 +24,8 @@ class Tiktok(Module):
         self.video_pattern = r"(https?://[^\s&;,\[]*(douyin.com|tiktok.com)/[^\s&;,\"\u4e00-\u9fff\[]*)"
         super().__init__(event, auth)
 
-    @via(lambda self: self.at_or_private() and self.au(2)
-            and (self.is_reply() or self.match(self.video_pattern)), success=False)
+    @listener(lambda self: self.at_or_private() and self.au(2)
+            and (self.is_reply() or self.match(self.video_pattern)))
     def tiktok_download(self):
         """下载视频"""
         url = ""
@@ -36,7 +36,7 @@ class Tiktok(Module):
                 url = match.group(1)
         if url == "":
             return
-        self.success = True
+        self.handled = True
         try:
             if not self.is_private():
                 set_emoji(self.robot, self.event.msg_id, 124)

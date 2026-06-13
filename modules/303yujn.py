@@ -7,7 +7,7 @@ import traceback
 from typing import Callable, Any
 import httpx
 
-from src.utils import Module, set_emoji, status_ok, via
+from src.utils import Module, set_emoji, status_ok, handler, listener
 
 class YUJN(Module):
     """遇见API模块"""
@@ -79,16 +79,16 @@ class YUJN(Module):
         "active_func": [],
     }
 
-    @via(lambda self: self.au(2)
-         and self.config[self.owner_id]["enable"]
-         and self.config[self.owner_id].get("probability", 0)
-         and len(self.config[self.owner_id].get("active_func", []))
-         and random.random() < self.config[self.owner_id].get("probability", 0)
-         and self.match(r".*"), success=False)
+    @listener(lambda self: self.au(2)
+         and self.conv_config["enable"]
+         and self.conv_config.get("probability", 0)
+         and len(self.conv_config.get("active_func", []))
+         and random.random() < self.conv_config.get("probability", 0)
+         and self.match(r".*"))
     def prob_msg(self):
         """概率触发遇见API"""
         try:
-            func = random.choice(self.config[self.owner_id].get("active_func", []))
+            func = random.choice(self.conv_config.get("active_func", []))
             api_url = self.URL_MAP[func]
             def api_req():
                 resp = httpx.get(api_url, timeout=5, follow_redirects=True)
@@ -101,7 +101,7 @@ class YUJN(Module):
             self.errorf(traceback.format_exc())
             self.errorf(f"遇见API请求失败: {e}")
 
-    @via(lambda self: self.au(2)
+    @handler(lambda self: self.au(2)
          and self.match(rf"^(来|发)(点|只|张|个|位){self.PICTURE_PATTERN}$"))
     def picture_handler(self):
         """图片类功能处理"""
@@ -117,7 +117,7 @@ class YUJN(Module):
             self.errorf(traceback.format_exc())
             self.errorf(f"遇见API请求失败: {e}")
 
-    @via(lambda self: self.au(2)
+    @handler(lambda self: self.au(2)
          and self.match(rf"^(来|发)(点|只|张|个|位){self.VIDEO_PATTERN}$"))
     def video_handler(self):
         """视频类功能处理"""
@@ -141,7 +141,7 @@ class YUJN(Module):
             self.errorf(traceback.format_exc())
             self.errorf(f"遇见API请求失败: {e}")
 
-    @via(lambda self: self.au(2)
+    @handler(lambda self: self.au(2)
          and self.match(rf"^(来|发)(点|只|个|位|句){self.VOICE_PATTERN}(语音|声音)?$"))
     def voice_handler(self):
         """语音类功能处理"""
@@ -163,11 +163,11 @@ class YUJN(Module):
             self.errorf(traceback.format_exc())
             self.errorf(f"遇见API请求失败: {e}")
 
-    @via(lambda self: self.group_at() and self.au(1)
+    @handler(lambda self: self.group_at() and self.au(1)
          and self.match(r"^(开启|关闭)遇见API$"))
     def toggle(self):
         """开启关闭模块"""
-        flag = self.config[self.owner_id].get("enable", True)
+        flag = self.conv_config.get("enable", True)
         text = "开启" if flag else "关闭"
         if self.match(r"(开启|打开|启用|允许)"):
             flag = True
@@ -176,7 +176,7 @@ class YUJN(Module):
             flag = False
             text = "关闭"
         msg = f"遇见API模块已{text}"
-        self.config[self.owner_id]["enable"] = flag
+        self.conv_config["enable"] = flag
         self.save_config()
         self.reply(msg, reply=True)
 

@@ -1,9 +1,12 @@
 """函数库"""
 
+from __future__ import annotations
+
 import ast
 import asyncio
 import base64
 from datetime import datetime, timedelta
+from functools import wraps
 import importlib
 import io
 import logging
@@ -89,12 +92,13 @@ def listening(host: str, port: int, timeout: int=5) -> tuple[dict|str]:
         server.close()
     return headers, body
 
-def receive_msg(robot: "Concerto"):
+def receive_msg(robot: Concerto):
+    """接收数据"""
     body = None
     try:
         header, body = listening(robot.config.host, int(robot.config.port))
-        if robot.config.is_debug and header.get("Content-Type") != "application/json":
-            robot.warnf(f"收到一非JSON数据\n{body}")
+        if header.get("Content-Type") != "application/json":
+            robot.warnf(f"收到一非JSON数据\n{body}", level="DEBUG")
             return {}
         rev_json = json.loads(body)
         return rev_json
@@ -260,7 +264,7 @@ def char_true_color(char: str, rgb: list):
     r, g, b = rgb
     return f"\033[38;2;{r};{g};{b}m{char}\033[0m"
 
-def msg_img2char(robot: "Concerto", msg: str, show_url = False):
+def msg_img2char(robot: Concerto, msg: str, show_url = False):
     """
     检测CQ码中有图片并转化为字符画
     :param robot: 机器人类
@@ -327,7 +331,7 @@ def resize_image(image: bytes, size=(640, 360), format: str = "JPEG") -> bytes:
     new_img.save(buf, format=format)
     return buf.getvalue()
 
-async def async_get_content_base64(robot : "Concerto", url: str, timeout: str=3, max_retries: str=3) -> str:
+async def async_get_content_base64(robot : Concerto, url: str, timeout: str=3, max_retries: str=3) -> str:
     """获取url所指内容的Base64"""
     for attempt in range(max_retries):
         try:
@@ -340,7 +344,7 @@ async def async_get_content_base64(robot : "Concerto", url: str, timeout: str=3,
             if attempt + 1 == max_retries:
                 raise
 
-def get_content_base64(robot : "Concerto", url: str, timeout: str=3, max_retries: str=3) -> str:
+def get_content_base64(robot : Concerto, url: str, timeout: str=3, max_retries: str=3) -> str:
     """获取url所指内容的Base64"""
     if not url:
         return ""
@@ -429,7 +433,7 @@ def build_forward(text: str, user_id: str):
         }
     return data
 
-def reply_event(robot: "Concerto", event: "Event", msg: str, reply=False, force=False):
+def reply_event(robot: Concerto, event: Event, msg: str, reply=False, force=False):
     """
     快捷回复消息
     :param robot: 机器人类
@@ -456,7 +460,7 @@ def reply_event(robot: "Concerto", event: "Event", msg: str, reply=False, force=
             resp_dict = {"msg_type": "private", "number": user_id, "msg": msg}
             return api.send_msg(robot, resp_dict)
 
-def reply_id(robot: "Concerto", msg_type: str, uid: str, msg: str, force=False):
+def reply_id(robot: Concerto, msg_type: str, uid: str, msg: str, force=False):
     """
     按id回复消息
     :param robot: 机器人类
@@ -477,7 +481,7 @@ def reply_id(robot: "Concerto", msg_type: str, uid: str, msg: str, force=False):
             resp_dict = {"msg_type": "private", "number": uid, "msg": msg}
             return api.send_msg(robot, resp_dict)
 
-def reply_back(robot: "Concerto", owner_id: str, msg: str):
+def reply_back(robot: Concerto, owner_id: str, msg: str):
     """
     对reply_id方法的封装，对owner_id发送消息
     :param robot: 机器人类
@@ -489,7 +493,7 @@ def reply_back(robot: "Concerto", owner_id: str, msg: str):
     else:
         reply_id(robot, "group", owner_id[1:], msg)
 
-def quick_reply(robot: "Concerto", raw: dict, msg: str):
+def quick_reply(robot: Concerto, raw: dict, msg: str):
     """
     调用“.handle_quick_operation”接口的快捷回复消息
     :param robot: 机器人类
@@ -502,7 +506,7 @@ def quick_reply(robot: "Concerto", raw: dict, msg: str):
         resp_dict = {"context": raw, "operation": {"reply": msg}}
         return api.handle_quick_operation(robot, resp_dict)
 
-def send_msg(robot: "Concerto", msg_type: str, number: str, msg: str, group_id: str=None):
+def send_msg(robot: Concerto, msg_type: str, number: str, msg: str, group_id: str=None):
     """
     发送消息
     :param robot: 机器人类
@@ -516,7 +520,7 @@ def send_msg(robot: "Concerto", msg_type: str, number: str, msg: str, group_id: 
     result = api.send_msg(robot, resp_dict)
     return result
 
-def get_msg(robot: "Concerto", msg_id: str):
+def get_msg(robot: Concerto, msg_id: str):
     """
     获取消息内容
     :param robot: 机器人类
@@ -526,7 +530,7 @@ def get_msg(robot: "Concerto", msg_id: str):
     resp_dict = {"message_id": msg_id}
     return api.get_msg(robot, resp_dict)
 
-def del_msg(robot: "Concerto", msg_id: str):
+def del_msg(robot: Concerto, msg_id: str):
     """
     撤回消息
     :param robot: 机器人类
@@ -535,7 +539,7 @@ def del_msg(robot: "Concerto", msg_id: str):
     resp_dict = {"message_id": msg_id}
     return api.del_msg(robot, resp_dict)
 
-def get_forward_msg(robot: "Concerto", msg_id: str):
+def get_forward_msg(robot: Concerto, msg_id: str):
     """
     获取转发消息内容
     :param robot: 机器人类
@@ -547,7 +551,7 @@ def get_forward_msg(robot: "Concerto", msg_id: str):
     resp_dict = {"message_id": msg_id}
     return api.get_forward_msg(robot, resp_dict)
 
-def send_forward_msg(robot: "Concerto", nodes: list, group_id=None, user_id=None, source=None, summary=None):
+def send_forward_msg(robot: Concerto, nodes: list, group_id=None, user_id=None, source=None, summary=None):
     """
     发送转发消息
     :param robot: 机器人类
@@ -572,7 +576,7 @@ def send_forward_msg(robot: "Concerto", nodes: list, group_id=None, user_id=None
     return api.send_forward_msg(robot, resp_dict)
 
 
-def send_private_forward_msg(robot: "Concerto", node: dict, user_id: str):
+def send_private_forward_msg(robot: Concerto, node: dict, user_id: str):
     """
     发送私聊转发消息
     :param robot: 机器人类
@@ -583,7 +587,7 @@ def send_private_forward_msg(robot: "Concerto", node: dict, user_id: str):
     resp_dict = {"user_id": user_id, "messages": node}
     return api.send_private_forward_msg(robot, resp_dict)
 
-def send_group_forward_msg(robot: "Concerto", node: dict, group_id: str):
+def send_group_forward_msg(robot: Concerto, node: dict, group_id: str):
     """
     发送群聊转发消息
     :param robot: 机器人类
@@ -594,7 +598,7 @@ def send_group_forward_msg(robot: "Concerto", node: dict, group_id: str):
     resp_dict = {"group_id": group_id, "messages": node}
     return api.send_group_forward_msg(robot, resp_dict)
 
-def get_group_msg_history(robot: "Concerto", group_id: str):
+def get_group_msg_history(robot: Concerto, group_id: str):
     """
     获取群消息历史
     :param robot: 机器人类
@@ -604,7 +608,7 @@ def get_group_msg_history(robot: "Concerto", group_id: str):
     resp_dict = {"group_id": group_id}
     return api.get_group_msg_history(robot, resp_dict)
 
-def reply_add(robot: "Concerto", raw: dict, accept: str, msg: str):
+def reply_add(robot: Concerto, raw: dict, accept: str, msg: str):
     """
     回复添加请求
     :param robot: 机器人类
@@ -621,7 +625,7 @@ def reply_add(robot: "Concerto", raw: dict, accept: str, msg: str):
             }
         )
 
-def get_user_name(robot: "Concerto", uid: str):
+def get_user_name(robot: Concerto, uid: str):
     """
     获取用户信息
     :param robot: 机器人类
@@ -642,7 +646,7 @@ def get_user_name(robot: "Concerto", uid: str):
             return name
         return ""
 
-def get_user_id(robot: "Concerto", user_name: str, group_id: str = None) -> str:
+def get_user_id(robot: Concerto, user_name: str, group_id: str = None) -> str:
     """使用用户名获取用户ID"""
     if group_id:
         member_list = get_group_member_list(robot, group_id).get("data", [])
@@ -653,7 +657,7 @@ def get_user_id(robot: "Concerto", user_name: str, group_id: str = None) -> str:
         if name == user_name:
             return uid
 
-def get_group_info(robot: "Concerto", group_id: str):
+def get_group_info(robot: Concerto, group_id: str):
     """
     获取群信息
     :param robot: 机器人类
@@ -663,7 +667,7 @@ def get_group_info(robot: "Concerto", group_id: str):
     resp_dict = {"group_id": group_id}
     return api.get_group_info(robot, resp_dict)
 
-def set_group_ban(robot: "Concerto", group_id: str, user_id: str, duration: int):
+def set_group_ban(robot: Concerto, group_id: str, user_id: str, duration: int):
     """
     设置群禁言
     :param robot: 机器人类
@@ -674,7 +678,7 @@ def set_group_ban(robot: "Concerto", group_id: str, user_id: str, duration: int)
     resp_dict = {"group_id": int(group_id), "user_id": int(user_id), "duration": int(duration)}
     return api.set_group_ban(robot, resp_dict)
 
-def set_group_whole_ban(robot: "Concerto", group_id: str, enable: bool):
+def set_group_whole_ban(robot: Concerto, group_id: str, enable: bool):
     """
     设置群禁言
     :param robot: 机器人类
@@ -685,7 +689,7 @@ def set_group_whole_ban(robot: "Concerto", group_id: str, enable: bool):
     resp_dict = {"group_id": int(group_id), "enable": enable}
     return api.set_group_whole_ban(robot, resp_dict)
 
-def set_group_kick(robot: "Concerto", group_id: str, user_id: str):
+def set_group_kick(robot: Concerto, group_id: str, user_id: str):
     """
     设置群禁言
     :param robot: 机器人类
@@ -695,7 +699,7 @@ def set_group_kick(robot: "Concerto", group_id: str, user_id: str):
     resp_dict = {"group_id": int(group_id), "user_id": int(user_id)}
     return api.set_group_kick(robot, resp_dict)
 
-def get_group_member_list(robot: "Concerto", group_id: str):
+def get_group_member_list(robot: Concerto, group_id: str):
     """
     获取群内用户列表
     :param robot: 机器人类
@@ -706,7 +710,7 @@ def get_group_member_list(robot: "Concerto", group_id: str):
     resp_dict = {"group_id": group_id, "no_cache": False}
     return api.get_group_member_list(robot, resp_dict)
 
-def get_group_name(robot: "Concerto", group_id: str) -> str:
+def get_group_name(robot: Concerto, group_id: str) -> str:
     """
     获取群名称
     :param robot: 机器人类
@@ -726,7 +730,7 @@ def get_group_name(robot: "Concerto", group_id: str) -> str:
         else:
             return ""
 
-def get_image(robot: "Concerto", file: str) -> dict:
+def get_image(robot: Concerto, file: str) -> dict:
     """
     获取图片
     :param robot: 机器人类
@@ -735,7 +739,7 @@ def get_image(robot: "Concerto", file: str) -> dict:
     resp_dict = {"file": file}
     return api.get_image(robot, resp_dict)
 
-def get_record(robot: "Concerto", file_id: str, out_format: str = "mp3") -> dict:
+def get_record(robot: Concerto, file_id: str, out_format: str = "mp3") -> dict:
     """
     获取图片
     :param robot: 机器人类
@@ -746,7 +750,7 @@ def get_record(robot: "Concerto", file_id: str, out_format: str = "mp3") -> dict
     resp_dict = {"file_id": file_id, "out_format": out_format}
     return api.get_record(robot, resp_dict)
 
-def poke(robot: "Concerto", user_id: str, group_id: str | None=None):
+def poke(robot: Concerto, user_id: str, group_id: str | None=None):
     """
     戳一戳
     :param robot: 机器人类
@@ -758,7 +762,7 @@ def poke(robot: "Concerto", user_id: str, group_id: str | None=None):
     else:
         return api.friend_poke(robot, {"user_id": user_id})
 
-def set_model_show(robot: "Concerto", device: str, model_show: str):
+def set_model_show(robot: Concerto, device: str, model_show: str):
     """
     贴表情
     :param robot: 机器人类
@@ -768,7 +772,7 @@ def set_model_show(robot: "Concerto", device: str, model_show: str):
     resp_dict = {"model": device, "model_show": model_show}
     return api.set_model_show(robot, resp_dict)
 
-def set_emoji(robot: "Concerto", message_id: str, emoji_id: str, is_set=True):
+def set_emoji(robot: Concerto, message_id: str, emoji_id: str, is_set=True):
     """
     贴表情
     :param robot: 机器人类
@@ -778,7 +782,7 @@ def set_emoji(robot: "Concerto", message_id: str, emoji_id: str, is_set=True):
     resp_dict = {"message_id": message_id, "emoji_id": emoji_id, "set": is_set}
     return api.set_msg_emoji_like(robot, resp_dict)
 
-def group_sign(robot: "Concerto", group_id: str):
+def group_sign(robot: Concerto, group_id: str):
     """
     贴表情
     :param robot: 机器人类
@@ -787,7 +791,7 @@ def group_sign(robot: "Concerto", group_id: str):
     resp_dict = {"group_id": group_id}
     return api.set_group_sign(robot, resp_dict)
 
-def send_group_notice(robot: "Concerto", group_id: str, notice: str):
+def send_group_notice(robot: Concerto, group_id: str, notice: str):
     """
     发送群公告
     :param robot: 机器人类
@@ -797,7 +801,7 @@ def send_group_notice(robot: "Concerto", group_id: str, notice: str):
     resp_dict = {"group_id": group_id, "content": notice}
     return api.send_group_notice(robot, resp_dict)
 
-def send_like(robot: "Concerto", user_id: str, times: int):
+def send_like(robot: Concerto, user_id: str, times: int):
     """
     贴表情
     :param robot: 机器人类
@@ -807,7 +811,7 @@ def send_like(robot: "Concerto", user_id: str, times: int):
     resp_dict = {"user_id": user_id, "times": times}
     return api.send_like(robot, resp_dict)
 
-def upload_file(robot: "Concerto", file: str, name: str, user_id: str | None=None, group_id: str | None=None, folder_id: str | None=None):
+def upload_file(robot: Concerto, file: str, name: str, user_id: str | None=None, group_id: str | None=None, folder_id: str | None=None):
     """
     上传文件
     :param file: 文件路径
@@ -820,7 +824,7 @@ def upload_file(robot: "Concerto", file: str, name: str, user_id: str | None=Non
     else:
         return api.upload_private_file(robot, {"user_id": user_id, "file": file, "name": name})
 
-def del_file(robot: "Concerto", file_id: str, group_id: str):
+def del_file(robot: Concerto, file_id: str, group_id: str):
     """
     删除文件
     :param file_id: 文件ID
@@ -828,7 +832,7 @@ def del_file(robot: "Concerto", file_id: str, group_id: str):
     """
     return api.del_group_file(robot, {"file_id": file_id, "group_id": group_id})
 
-def send_group_ai_record(robot: "Concerto", group_id: str, character: str, text: str):
+def send_group_ai_record(robot: Concerto, group_id: str, character: str, text: str):
     """
     发送群AI语音
     :param robot: 机器人类
@@ -839,7 +843,7 @@ def send_group_ai_record(robot: "Concerto", group_id: str, character: str, text:
     resp_dict = {"group_id": group_id, "character": character, "text": text}
     return api.send_group_ai_record(robot, resp_dict)
 
-def group_member_info(robot: "Concerto", group_id: str, user_id: str):
+def group_member_info(robot: Concerto, group_id: str, user_id: str):
     """
     获取群成员信息
     :param robot: 机器人类
@@ -849,7 +853,7 @@ def group_member_info(robot: "Concerto", group_id: str, user_id: str):
     resp_dict = {"group_id": group_id, "user_id": user_id}
     return api.get_group_member_info(robot, resp_dict)
 
-def group_special_title(robot: "Concerto", group_id: str, user_id: str, special_title: str):
+def group_special_title(robot: Concerto, group_id: str, user_id: str, special_title: str):
     """
     设置群成员专属头衔
     :param robot: 机器人类
@@ -858,7 +862,7 @@ def group_special_title(robot: "Concerto", group_id: str, user_id: str, special_
     resp_dict = {"group_id": group_id, "user_id": user_id, "special_title": special_title}
     return api.set_group_special_title(robot, resp_dict)
 
-def get_stranger_info(robot: "Concerto", user_id: int):
+def get_stranger_info(robot: Concerto, user_id: int):
     """
     获取用户信息
     :param robot: 机器人类
@@ -867,7 +871,7 @@ def get_stranger_info(robot: "Concerto", user_id: int):
     resp_dict = {"user_id": user_id}
     return api.get_stranger_info(robot, resp_dict)
 
-def ocr_image(robot: "Concerto", img_id: str):
+def ocr_image(robot: Concerto, img_id: str):
     """
     OCR图片识别
     :param robot: 机器人类
@@ -877,7 +881,7 @@ def ocr_image(robot: "Concerto", img_id: str):
     return ocr_image(robot, resp_dict)
 
 
-def get_img_url(robot: "Concerto", url: str) -> str:
+def get_img_url(robot: Concerto, url: str) -> str:
     """获取QQ链接"""
     try:
         robot.printf(f"获取QQ图片链接...url={url}")
@@ -961,31 +965,47 @@ def scan_missing_modules(file_path: str):
                         missing.add(e.name)
     return missing
 
-def via(condition, success=True):
+def handler(condition):
+    """竞争执行方法装饰器"""
+    return _register_handler(condition, handled=True)
+
+def listener(condition):
+    """监听执行方法装饰器"""
+    return _register_handler(condition, handled=False)
+
+def _register_handler(condition, handled=True):
     """模块方法装饰器"""
     def decorator(func):
-        def wrapper(self: "Module", *args, **kwargs):
-            if condition(self):
-                if self.robot.config.is_debug:
-                    self.printf(f"执行{Fore.YELLOW}[{func.__name__}]{Fore.RESET}方法")
-                try:
-                    self.success = success
-                    if asyncio.iscoroutinefunction(func):
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        return loop.run_until_complete(func(self, *args, **kwargs))
-                    else:
-                        return func(self, *args, **kwargs)
-                except Exception as e:
-                    self.errorf(f"{Fore.RED}执行{Fore.YELLOW}[{self.ID}.{func.__name__}]{Fore.RED}方法发生错误！")
-                    self.errorf(Fore.RED + traceback.format_exc())
-                    self.success = False
-                    raise e
-            # else:
-            #     self.robot.printf(f"未满足[{self.ID}.{func.__name__}]的条件")
-        wrapper._method = True # pylint: disable=protected-access
+        @wraps(func)
+        def wrapper(self: Module, *args, **kwargs):
+            method_name = f"{self.ID}.{func.__name__}"
+            if not condition(self):
+                # self.robot.printf(f"未满足[{method_name}]的执行条件", level="DEBUG")
+                return None
+            self.printf(f"执行{Fore.YELLOW}[{method_name}]{Fore.RESET}方法", level="DEBUG")
+            try:
+                self.handled = handled
+                result = func(self, *args, **kwargs)
+                if asyncio.iscoroutine(result):
+                    return run_coroutine_sync(result)
+                if handled:
+                    self.printf(f"{Fore.YELLOW}[{method_name}]{Fore.RESET}方法已处理该事件", level="DEBUG")
+                return result
+            except Exception:
+                self.errorf(f"{Fore.RED}执行{Fore.YELLOW}[{method_name}]{Fore.RED}方法发生错误！")
+                self.errorf(Fore.RED + traceback.format_exc())
+                self.handled = False
+        wrapper._is_handler = True # pylint: disable=protected-access
         return wrapper
     return decorator
+
+def run_coroutine_sync(coroutine: Coroutine):
+    """在同步上下文中安全执行协程"""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coroutine)
+    raise RuntimeError("当前事件循环正在运行，无法在同步装饰器中阻塞执行协程")
 
 class MiniCron:
     """简单Crontab，支持同步和异步函数"""
@@ -1091,7 +1111,7 @@ class MiniCron:
 
 class Event:
     """基础事件结构"""  
-    def __init__(self, robot: "Concerto", raw = None):
+    def __init__(self, robot: Concerto, raw = None):
         # 机器人本类
         self.robot = robot
         # 原始数据结构
@@ -1160,13 +1180,14 @@ class Module:
 
     def __init__(self, event: Event, auth: int=0):
         self.name = self.__class__.NAME
-        self.success = False
+        self.handled = False
         self.event = event
         self.robot = event.robot
         self.auth = int(auth)
         self.owner_id = ""
         self.config_file = ""
         self.config = {}
+        self.conv_config = {}
         self.data = {}
         self.init_config()
         if not self.premise():
@@ -1180,10 +1201,10 @@ class Module:
     def activate(self):
         """执行类方法"""
         for attr_name in dir(self):
-            if self.success:
+            if self.handled:
                 return
             func = getattr(self, attr_name)
-            if callable(func) and getattr(func, "_method", False):
+            if callable(func) and getattr(func, "_is_handler", False):
                 func()
 
     def au(self, max_level=3, min_level=0):
@@ -1249,6 +1270,7 @@ class Module:
             self.config[self.owner_id] = {}
         self.CONV_CONFIG = self.CONV_CONFIG or {}
         self.config[self.owner_id] = merge(self.CONV_CONFIG, self.config[self.owner_id])
+        self.conv_config = self.config[self.owner_id]
         self.save_config()
 
     def save_config(self, config_content=None, owner_id=""):

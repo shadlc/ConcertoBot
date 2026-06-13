@@ -15,7 +15,7 @@ from urllib.parse import quote
 import httpx
 from PIL import Image
 
-from src.utils import MiniCron, Module, calc_time, get_img_url, get_msg, reply_back, send_msg, set_emoji, status_ok, via
+from src.utils import MiniCron, Module, calc_time, get_img_url, reply_back, set_emoji, handler, listener
 
 class Picture(Module):
     """图片处理模块"""
@@ -99,13 +99,13 @@ class Picture(Module):
         if notify_maisaka := self.robot.func.get("notify_maisaka"):
             notify_maisaka(msg, owner[1:])
 
-    @via(lambda self: self.au(2) and self.at_or_private()
+    @handler(lambda self: self.au(2) and self.at_or_private()
          and self.match(r"^(来|发)(张|个)(无聊|屌|弔|吊|梗)图$"))
     def jiandan_msg(self):
         """获取煎蛋无聊图"""
         if not self.is_private():
             set_emoji(self.robot, self.event.msg_id, 124)
-        config = self.config[self.owner_id]["jiandan"]
+        config = self.conv_config["jiandan"]
         data_list = self.robot.sync(self.get_jiandan())
         if not data_list:
             return self.reply("未获取到任何有效数据")
@@ -123,8 +123,8 @@ class Picture(Module):
         msg = re.sub(r"""<img\s+src="([^"]+)"\s*/?>""", r"[CQ:image,file=\1]", msg)
         self.reply(msg)
 
-    @via(lambda self: self.au(2) and self.at_or_private()
-         and self.match(r"^(\[.*\])?\s*?(打分|评分)(\[.*\])?$"), success=False)
+    @listener(lambda self: self.au(2) and self.at_or_private()
+         and self.match(r"^(\[.*\])?\s*?(打分|评分)(\[.*\])?$"))
     def nsfw(self):
         """对图片色气度进行打分"""
         api_url = "https://nsfwtag.azurewebsites.net/api/nsfw?url="
@@ -136,7 +136,7 @@ class Picture(Module):
                 url = match.group(1)
         if url == "":
             return
-        self.success = True
+        self.handled = True
         try:
             encoded_url = quote(url, safe="")
             response = httpx.get(api_url + encoded_url, timeout=5)
@@ -168,7 +168,7 @@ class Picture(Module):
         except (ValueError, KeyError):
             return self.reply("解析API响应失败", reply=True)
 
-    @via(lambda self: self.au(2) and self.at_or_private()
+    @handler(lambda self: self.au(2) and self.at_or_private()
          and self.match(r"^我?(要|来|发|看|给|有没有){0,3}?(更|超|超级|很|再|无敌|最强|大){0,3}?(来|发|看|给|瑟|涩|色|se)\S{0,10}(图|瑟|涩|色|se|好看|好康|可爱)的?"))
     def lolicon(self):
         tags = []
@@ -211,8 +211,8 @@ class Picture(Module):
             self.errorf(traceback.format_exc())
             self.reply(f"Lolicon API调用失败! {e}", reply=True)
 
-    @via(lambda self: self.au(2) and self.at_or_private()
-         and self.config[self.owner_id].get("animate_search")
+    @handler(lambda self: self.au(2) and self.at_or_private()
+         and self.conv_config.get("animate_search")
          and self.match(r"^(\[.*\])?\s*?(搜索|搜|查询|查|找)(番|剧|番剧|动画|动漫)\s*?(\[.*\])?$"))
     def search_animate(self):
         """搜番"""
@@ -234,8 +234,8 @@ class Picture(Module):
             self.errorf(traceback.format_exc())
             self.reply(f"TraceMoe调用失败! {e}", reply=True)
 
-    @via(lambda self: self.au(2) and self.at_or_private()
-         and self.config[self.owner_id].get("image_search")
+    @handler(lambda self: self.au(2) and self.at_or_private()
+         and self.conv_config.get("image_search")
          and self.match(r"^(\[.*\])?\s*?(搜索|搜|查询|查|找|识)(图|图片)\s*?(\[.*\])?$"))
     def search_image(self):
         url = ""
@@ -265,9 +265,9 @@ class Picture(Module):
             self.errorf(traceback.format_exc())
             self.reply(f"谷歌搜图调用失败! {e}", reply=True)
 
-    @via(lambda self: self.au(2)
-         and self.config[self.owner_id].get("saucenao")
-         and self.match(r"^(\[.*\])?\s*?(s|S)auce(n|N)(a|A)(o|O)"), success=False)
+    @listener(lambda self: self.au(2)
+         and self.conv_config.get("saucenao")
+         and self.match(r"^(\[.*\])?\s*?(s|S)auce(n|N)(a|A)(o|O)"))
     def saucenao(self):
         url = ""
         if match := self.match(r"\[CQ:image,.*url=([^,\]]+?),.*\]"):
@@ -277,7 +277,7 @@ class Picture(Module):
                 url = match.group(1)
         if url == "":
             return
-        self.success = True
+        self.handled = True
         try:
             if not self.is_private():
                 set_emoji(self.robot, self.event.msg_id, 124)
@@ -295,9 +295,9 @@ class Picture(Module):
             self.errorf(traceback.format_exc())
             self.reply(f"SauceNAO调用失败! {e}", reply=True)
 
-    @via(lambda self: self.au(2)
-         and self.config[self.owner_id].get("enhance")
-         and self.match(r"清晰术"), success=False)
+    @listener(lambda self: self.au(2)
+         and self.conv_config.get("enhance")
+         and self.match(r"清晰术"))
     def enhance_img(self):
         """清晰术"""
         url = ""
@@ -308,7 +308,7 @@ class Picture(Module):
                 url = match.group(1)
         if url == "":
             return
-        self.success = True
+        self.handled = True
         if not self.config.get("real_cugan_url"):
             return self.reply("星辰坐标未对齐，法阵无法唤醒!")
         cmd = self.event.text

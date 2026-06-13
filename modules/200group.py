@@ -1,7 +1,7 @@
 """群组处理模块"""
 
 import asyncio
-from src.utils import Module, group_member_info, group_special_title, status_ok, via, reply_id
+from src.utils import Module, group_member_info, group_special_title, status_ok, handler, reply_id
 
 
 class Group(Module):
@@ -28,7 +28,7 @@ class Group(Module):
             self.robot.group_decrease_broadcasts = {}
         return True
 
-    @via(lambda self: self.group_at() and self.au(1)
+    @handler(lambda self: self.group_at() and self.au(1)
         and self.match(r"^(为|给|替)\s*(\S+)\s*(设置|添加|增加|颁发|设立)(专属)*(头衔|称号)\s*(\S+)$"))
     def special_title(self):
         member_info = group_member_info(
@@ -50,20 +50,20 @@ class Group(Module):
         else:
             self.reply(f"为{user_id}设置群头衔[{title}]失败!")
 
-    @via(lambda self: self.group_at() and self.au(1)
+    @handler(lambda self: self.group_at() and self.au(1)
         and self.match(r"^(开启|启用|打开|记录|启动|关闭|禁用|取消)群成员广播"))
     def group_member_broadcast(self):
         msg = ""
         if self.match(r"(开启|启用|打开|记录|启动)"):
-            self.config[self.owner_id]["member_broadcast"]["enable"] = True
+            self.conv_config["member_broadcast"]["enable"] = True
             msg = "入群广播已开启"
         elif self.match(r"(关闭|禁用|取消)"):
-            self.config[self.owner_id]["member_broadcast"]["enable"] = False
+            self.conv_config["member_broadcast"]["enable"] = False
             msg = "入群广播已关闭"
         self.save_config()
         self.reply(msg)
 
-    @via(lambda self: self.config[self.owner_id]["member_broadcast"]["enable"]
+    @handler(lambda self: self.conv_config["member_broadcast"]["enable"]
          and self.event.notice_type == ("group_decrease"))
     def group_decrease(self):
         group_id = self.event.group_id
@@ -99,7 +99,7 @@ class Group(Module):
         # 发送广播
         reply_id(self.robot, "group", group_id, msg)
 
-    @via(lambda self: self.config[self.owner_id]["member_broadcast"]["enable"]
+    @handler(lambda self: self.conv_config["member_broadcast"]["enable"]
          and self.event.raw.get("request_type") == "group")
     def group_request(self):
         if self.event.raw.get("request_type") == "group":

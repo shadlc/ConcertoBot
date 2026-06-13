@@ -4,7 +4,7 @@ import random
 import re
 
 from colorama import Fore
-from src.utils import Module, via
+from src.utils import Module, handler, listener
 
 
 class Repeater(Module):
@@ -27,11 +27,11 @@ class Repeater(Module):
         "exclude": [],
     }
 
-    @via(lambda self: not self.at_or_private() and self.au(2)
-        and self.config[self.owner_id]["repeat"]
-        and self.event.text not in self.config[self.owner_id].get("exclude")
+    @listener(lambda self: not self.at_or_private() and self.au(2)
+        and self.conv_config["repeat"]
+        and self.event.text not in self.conv_config.get("exclude")
         and re.sub(r",url=.*?]","]", str(self.data.past_message)).count(f"'message': '{self.event.msg}") > 1
-        and self.event.msg != "", success=False)
+        and self.event.msg != "")
     def repeat(self):
         """复读机"""
         self.printf(f"在群{Fore.MAGENTA}{self.event.group_name}({self.event.group_id}){Fore.RESET}检测到来自"
@@ -59,11 +59,11 @@ class Repeater(Module):
             else:
                 self.printf(f"本次概率{f"{round(chance*100,2)}%"}, 复读失败")
 
-    @via(lambda self: self.group_at() and self.au(1) and self.match(r"^(开启|打开|启用|允许|关闭|禁止|不允许|取消)?复读机$"))
+    @handler(lambda self: self.group_at() and self.au(1) and self.match(r"^(开启|打开|启用|允许|关闭|禁止|不允许|取消)?复读机$"))
     def toggle(self):
         """设置复读机"""
-        flag = self.config[self.owner_id]["repeat"]
-        text = "开启" if self.config[self.owner_id]["repeat"] else "关闭"
+        flag = self.conv_config["repeat"]
+        text = "开启" if self.conv_config["repeat"] else "关闭"
         if self.match(r"(开启|打开|启用|允许)"):
             flag = True
             text = "开启"
@@ -71,24 +71,24 @@ class Repeater(Module):
             flag = False
             text = "关闭"
         msg = f"复读机功能已{text}"
-        self.config[self.owner_id]["repeat"] = flag
+        self.conv_config["repeat"] = flag
         self.save_config()
         self.reply(msg)
 
-    @via(lambda self: self.group_at() and self.au(2) and self.match(r"^(不|禁止)?(复读|复读)\s+(\S+)$"))
+    @handler(lambda self: self.group_at() and self.au(2) and self.match(r"^(不|禁止)?(复读|复读)\s+(\S+)$"))
     def exclude(self):
         """复读排除"""
         text = self.match(r"^(不|禁止)?(复读|复读)\s+(\S+)$").group(3)
         if self.match(r"(不|禁止)"):
-            self.config[self.owner_id]["exclude"].append(text)
+            self.conv_config["exclude"].append(text)
             self.save_config()
             msg = f"成功将[{text}]添加到复读屏蔽词中!"
             self.reply(msg)
         else:
-            if text in self.config[self.owner_id]["exclude"]:
+            if text in self.conv_config["exclude"]:
                 self.reply(f"[{text}]从未在复读屏蔽词中存在!")
             else:
-                self.config[self.owner_id]["exclude"].remove(text)
+                self.conv_config["exclude"].remove(text)
                 msg = f"成功将[{text}]从复读屏蔽词中移除!"
                 self.reply(msg)
         self.printf(f"会话[{self.owner_id}]{msg}")

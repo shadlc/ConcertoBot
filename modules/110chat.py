@@ -23,7 +23,6 @@ from src.utils import (
     MiniCron,
     Module,
     get_error,
-    get_forward_msg,
     get_group_member_list,
     get_group_name,
     get_record,
@@ -32,7 +31,8 @@ from src.utils import (
     reply_back,
     set_emoji,
     status_ok,
-    via
+    handler,
+    listener
 )
 
 class Chat(Module):
@@ -128,7 +128,7 @@ class Chat(Module):
         except Exception:
             self.errorf(f"任务执行失败 {traceback.format_exc()}")
 
-    @via(lambda self: self.at_or_private() and self.au(2) and self.match(r"词云"), success=False)
+    @listener(lambda self: self.at_or_private() and self.au(2) and self.match(r"词云"))
     def wordcloud(self):
         """词云"""
         date_pattern = "历史|全部|今天|今日|本日|这天|昨天|昨日|前天|前日|本周|这周|此周|这个?礼拜|这个?星期|上周|上个?礼拜|上个?星期|本月|这月|次月|这个月|上个?月|今年|本年|此年|这一?年|去年|上一?年"
@@ -142,7 +142,7 @@ class Chat(Module):
             self.wordcloud_colormap()
             return
         elif result := self.match(rf"(给|为)?([^\s]*?)?\s?(生成|的)?({date_pattern})?的?词云"):
-            if self.config[self.owner_id]["record"]["enable"]:
+            if self.conv_config["record"]["enable"]:
                 gen_type = "all"
                 if self.match(r"(今天|今日|本日|这天)"):
                     gen_type = "today"
@@ -201,16 +201,16 @@ class Chat(Module):
                 except Exception:
                     self.errorf(traceback.format_exc())
                     msg = "词云生成错误！\n" + get_error()
-            elif not self.config[self.owner_id]["record"]["enable"]:
+            elif not self.conv_config["record"]["enable"]:
                 msg = "请先开启开启消息记录哦~"
             else:
                 msg = "没有任何消息记录哦~"
         else:
             return
-        self.success = True
+        self.handled = True
         self.reply(msg, reply=True)
 
-    @via(lambda self: self.at_or_private() and self.au(2) and self.match(r"(发言|群聊|聊天|消息)(排行|统计)"), success=False)
+    @listener(lambda self: self.at_or_private() and self.au(2) and self.match(r"(发言|群聊|聊天|消息)(排行|统计)"))
     def statistics(self):
         """发言排行"""
         date_pattern = "历史|全部|今天|今日|本日|这天|昨天|昨日|前天|前日|本周|这周|此周|这个?礼拜|这个?星期|上周|上个?礼拜|上个?星期|本月|这月|次月|这个月|上个?月|今年|本年|此年|这一?年|去年|上一?年"
@@ -221,7 +221,7 @@ class Chat(Module):
             else:
                 msg = "你没有此操作的权限！"
         elif result := self.match(rf"(给|为)?([^\s]*?)?\s?(生成|的)?({date_pattern})?的?(发言|群聊|聊天|消息)(排行|统计)"):
-            if self.config[self.owner_id]["record"]["enable"]:
+            if self.conv_config["record"]["enable"]:
                 gen_type = "all"
                 if self.match(r"(今天|今日|本日|这天)"):
                     gen_type = "today"
@@ -279,29 +279,29 @@ class Chat(Module):
                 except Exception:
                     self.errorf(traceback.format_exc())
                     msg = "发言排行生成错误！\n" + get_error()
-            elif not self.config[self.owner_id]["record"]["enable"]:
+            elif not self.conv_config["record"]["enable"]:
                 msg = "请先开启开启消息记录哦~"
             else:
                 msg = "没有任何消息记录哦~"
         else:
             return
-        self.success = True
+        self.handled = True
         self.reply(msg, reply=True)
 
-    @via(lambda self: self.at_or_private() and self.au(2) and self.match(r"复读(统计|记录|排行榜?)"), success=False)
+    @listener(lambda self: self.at_or_private() and self.au(2) and self.match(r"复读(统计|记录|排行榜?)"))
     def repeat(self):
         """复读"""
         date_pattern = "历史|全部|今天|今日|本日|这天|昨天|昨日|前天|前日|本周|这周|此周|这个?礼拜|这个?星期|上周|上个?礼拜|上个?星期|本月|这月|次月|这个月|上个?月|今年|本年|此年|这一?年|去年|上一?年"
         if self.match(r"(开启|启用|打开|记录|启动)"):
-            self.config[self.owner_id]["repeat_record"]["enable"] = True
+            self.conv_config["repeat_record"]["enable"] = True
             msg = "复读统计已开启"
             self.save_config()
         elif self.match(r"(关闭|禁用|取消)"):
-            self.config[self.owner_id]["repeat_record"]["enable"] = False
+            self.conv_config["repeat_record"]["enable"] = False
             msg = "复读统计已关闭"
             self.save_config()
         elif match := self.match(rf"(生成)?({date_pattern})?的?复读(统计|记录|排行榜?)"):
-            if self.config[self.owner_id]["repeat_record"]["enable"]:
+            if self.conv_config["repeat_record"]["enable"]:
                 if self.match(r"(今天|今日)"):
                     gen_type = "today"
                 elif self.match(r"(昨天|昨日)"):
@@ -334,10 +334,10 @@ class Chat(Module):
                 msg = "请先开启复读记录哦~"
         else:
             return
-        self.success = True
+        self.handled = True
         self.reply(msg, reply=True)
 
-    @via(lambda self: self.at_or_private() and self.au(2) and self.match(r"^(\S+)(说|言)(道|过)?(:|：)([\S+ ]+)"))
+    @handler(lambda self: self.at_or_private() and self.au(2) and self.match(r"^(\S+)(说|言)(道|过)?(:|：)([\S+ ]+)"))
     def once_said(self):
         """曾言道"""
         msg_said = re.findall(r"(\S+)(说|言)(道|过)?(:|：)([\S ]+)", self.event.msg)
@@ -350,8 +350,8 @@ class Chat(Module):
             content = re.sub(r",sub_type=\d", "", said[-1])
             content = content.replace(r"\n", "\n").strip()
             uid = self.get_uid(name)
-            if uid in self.config[self.owner_id]["users"]:
-                name = self.config[self.owner_id]["users"][uid]["nickname"]
+            if uid in self.conv_config["users"]:
+                name = self.conv_config["users"][uid]["nickname"]
             elif name.isdigit():
                 name = get_user_name(self.robot, name)
             if re.search(r"^(我|吾|俺|朕|孤)$", name):
@@ -366,14 +366,14 @@ class Chat(Module):
             msg = "生成转发消息错误~"
             self.reply(msg)
 
-    @via(lambda self: self.match(r"^\[CQ:record.*\]$"), success=False)
+    @listener(lambda self: self.match(r"^\[CQ:record.*\]$"))
     def fix_record_file(self):
         """使用API获取语音消息正确格式的语音文件"""
         if match := self.match(r"^\[CQ:record.*,file=([^,]+).*\]$"):
             file_id = match.group(1)
             get_record(self.robot, file_id)
 
-    @via(lambda self: self.at_or_private() and self.au(2) and self.match(r"^(刚刚|刚才|先前)?\S{0,3}(说|撤回)了?(什么|啥)"))
+    @listener(lambda self: self.at_or_private() and self.au(2) and self.match(r"^(刚刚|刚才|先前)?\S{0,3}(说|撤回)了?(什么|啥)"))
     def what_recall(self):
         """撤回了什么"""
         if messages := self.robot.data.get("latest_recall",{}).get(self.owner_id):
@@ -417,9 +417,9 @@ class Chat(Module):
         else:
             self.reply("什么也没有哦~")
 
-    @via(lambda self: self.at_or_private() and self.au(2)
+    @listener(lambda self: self.at_or_private() and self.au(2)
           and (self.match(r"直链\s?\[CQ:image\S*\]")
-               or self.match(r"\[CQ:reply,id=([^\]]+?)\]\s?(直链)?$")), success=False)
+               or self.match(r"\[CQ:reply,id=([^\]]+?)\]\s?(直链)?$")))
     def sticker_url(self):
         """获取表情链接"""
         urls = []
@@ -442,9 +442,9 @@ class Chat(Module):
         else:
             nodes = [self.node(url) for url in urls]
             self.reply_forward(nodes, source="图片直链")
-        self.success = True
+        self.handled = True
 
-    @via(lambda self: self.au(2) and self.at_or_private() and self.match(r"(\S+?)(又|也|同时|人)能?被?(称|叫)(为|做)?(\S+)$"))
+    @handler(lambda self: self.au(2) and self.at_or_private() and self.match(r"(\S+?)(又|也|同时|人)能?被?(称|叫)(为|做)?(\S+)$"))
     def set_label(self):
         """设置称号"""
         inputs = self.match(r"(\S+?)(又|也|同时)能?被?(称|叫)(为|做)?(\S+)").groups()
@@ -463,18 +463,18 @@ class Chat(Module):
                 self.event.user_id, self.event.user_name, label
             )
         else:
-            for uid, user in self.config[self.owner_id]["users"].items():
+            for uid, user in self.conv_config["users"].items():
                 if name == uid or name == user["nickname"]:
                     self.record_user(uid, name, label)
                     msg = f"我记住了，{name}人送外号: {label}！"
                     break
         self.reply(msg)
 
-    @via(lambda self: self.at_or_private() and self.au(2) and self.match(r"^成员列表$"))
+    @handler(lambda self: self.at_or_private() and self.au(2) and self.match(r"^成员列表$"))
     def show_label(self):
         """成员列表"""
         nodes = []
-        for uid, user in self.config[self.owner_id]["users"].items():
+        for uid, user in self.conv_config["users"].items():
             msg = f"QQ: {uid}"
             msg += f"\n昵称: {user["nickname"]}"
             label = user["label"] if user["label"] else "无"
@@ -482,7 +482,7 @@ class Chat(Module):
             nodes.append(self.node(msg))
         self.reply_forward(nodes, source="成员列表")
 
-    @via(lambda self: self.au(2) and not self.is_private() and self.match(r"^\[CQ:.*\]?[❤️\s]+$") and self.is_reply())
+    @handler(lambda self: self.au(2) and not self.is_private() and self.match(r"^\[CQ:.*\]?[❤️\s]+$") and self.is_reply())
     def praise(self):
         """一键发电"""
         praise_times = self.event.text.count("❤")
@@ -497,21 +497,21 @@ class Chat(Module):
             times += 1
             time.sleep(0.1)
 
-    @via(lambda self: self.au(2) and not self.is_private() and self.match(r"^\[CQ:.*\](屎|史|💩)$") and self.is_reply())
+    @handler(lambda self: self.au(2) and not self.is_private() and self.match(r"^\[CQ:.*\](屎|史|💩)$") and self.is_reply())
     def shit_msg(self):
         """屎"""
         reply_match = self.is_reply()
         msg_id = reply_match.group(1)
         set_emoji(self.robot, msg_id, 59)
 
-    @via(lambda self: self.event.user_id not in self.config[self.owner_id]["users"]
-         or self.event.user_name != self.config[self.owner_id]["users"].get(self.event.user_id,{}).get("nickname",""), success=False)
+    @listener(lambda self: self.event.user_id not in self.conv_config["users"]
+         or self.event.user_name != self.conv_config["users"].get(self.event.user_id,{}).get("nickname",""))
     def a_record_user(self):
         """用户记录"""
         self.record_user(self.event.user_id, self.event.user_name)
 
-    @via(lambda self: self.config[self.owner_id]["record"]["enable"]
-         and self.event.post_type in ["message", "message_sent"], success=False)
+    @listener(lambda self: self.conv_config["record"]["enable"]
+         and self.event.post_type in ["message", "message_sent"])
     def a_record_msg(self):
         """聊天消息记录"""
         self.count_chat(self.owner_id, self.event.user_id, self.event.text)
@@ -523,25 +523,25 @@ class Chat(Module):
         msg = re.sub(r"(.+?)\1{2,}", r"\1", msg)
         self.store_chat(self.owner_id, self.event.user_id, msg)
 
-    @via(lambda self: self.config[self.owner_id]["repeat_record"]["enable"]
-         and str(self.data.past_message).count(f"'message': '{self.event.msg}'") > 1, success=False)
+    @listener(lambda self: self.conv_config["repeat_record"]["enable"]
+         and str(self.data.past_message).count(f"'message': '{self.event.msg}'") > 1)
     def a_store_repeat(self):
         """复读消息记录"""
         self.store_repeat(self.owner_id, self.event.user_id, self.event.msg)
 
     def record_user(self, uid: str, name: str, label: str=""):
         """记录用户称号"""
-        info = self.config[self.owner_id]["users"].get("uid")
+        info = self.conv_config["users"].get("uid")
         if info and info.get("label") == "":
             label = info.get("label")
-        self.config[self.owner_id]["users"][uid] = {"nickname": name, "label": label}
+        self.conv_config["users"][uid] = {"nickname": name, "label": label}
         self.save_config()
 
     def get_uid(self, name):
         """使用用户名获取ID"""
         if match := re.search(r"\[CQ:at,qq=(\d+)\]", name):
             return match.group(1)
-        config = self.config[self.owner_id]
+        config = self.conv_config
         if name in config["users"]:
             return name
         if name in self.robot.user_dict:
@@ -806,7 +806,7 @@ class Chat(Module):
         }
         
         # 主题
-        colormap = self.config[self.owner_id]["record"]["colormap"]
+        colormap = self.conv_config["record"]["colormap"]
         if colormap:
             wc_kwargs["colormap"] = colormap
 
@@ -841,7 +841,7 @@ class Chat(Module):
         dates = set(row[2] for row in data)
         title = ""
 
-        colormap = self.config[self.owner_id]["record"]["colormap"]
+        colormap = self.conv_config["record"]["colormap"]
         font = fm.FontProperties(fname=self.get_font())
         fm.fontManager.addfont(self.get_font())
         font_family = [font.get_name()]
@@ -975,10 +975,10 @@ class Chat(Module):
         """打开或关闭消息记录"""
         msg = ""
         if self.match(r"(开启|启用|打开|记录|启动)"):
-            self.config[self.owner_id]["record"]["enable"] = True
+            self.conv_config["record"]["enable"] = True
             msg = "消息记录已开启"
         elif self.match(r"(关闭|禁用|取消)"):
-            self.config[self.owner_id]["record"]["enable"] = False
+            self.conv_config["record"]["enable"] = False
             msg = "消息记录已关闭"
         self.save_config()
         self.reply(msg)
@@ -987,7 +987,7 @@ class Chat(Module):
         """更改配色"""
         if self.match(r"#(\S+)"):
             colormap = self.match(r"#(\S+)").group(1)
-            self.config[self.owner_id]["record"]["colormap"] = colormap
+            self.conv_config["record"]["colormap"] = colormap
             self.save_config()
             msg = "配色设置成功！"
         else:

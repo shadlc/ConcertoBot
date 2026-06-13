@@ -235,27 +235,27 @@ class Concerto:
             if handle_type == "message":
                 for mod in self.modules.values():
                     if mod.HANDLE_MESSAGE:
-                        if mod(event, auth).success:
+                        if mod(event, auth).handled:
                             break
             elif handle_type == "message_sent":
                 for mod in self.modules.values():
                     if mod.HANDLE_MESSAGE_SENT:
-                        if mod(event, auth).success:
+                        if mod(event, auth).handled:
                             break
             elif handle_type == "notice":
                 for mod in self.modules.values():
                     if mod.HANDLE_NOTICE:
-                        if mod(event, auth).success:
+                        if mod(event, auth).handled:
                             break
             elif handle_type == "request":
                 for mod in self.modules.values():
                     if mod.HANDLE_REQUEST:
-                        if mod(event, auth).success:
+                        if mod(event, auth).handled:
                             break
             elif handle_type == "event":
                 for mod in self.modules.values():
                     if mod.HANDLE_EVENT:
-                        if mod(event, auth).success:
+                        if mod(event, auth).handled:
                             break
         except Exception:
             if not self.config.is_error_reply:

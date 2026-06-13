@@ -46,6 +46,7 @@ from src.utils import (
     get_user_id,
     get_user_name,
     group_member_info,
+    handler,
     poke,
     reply_id,
     send_forward_msg,
@@ -53,8 +54,7 @@ from src.utils import (
     set_group_ban,
     set_group_kick,
     set_group_whole_ban,
-    status_ok,
-    via,
+    status_ok
 )
 
 
@@ -966,9 +966,7 @@ class MaiSaka(Module):
         return bool(self.config.get("url") and self.config.get("api_key"))
 
     def shutdown(self) -> None:
-        if self.loop is None or self.loop.is_closed():
-            return
-        asyncio.run_coroutine_threadsafe(self.runtime.stop(), self.loop).result(timeout=5)
+        asyncio.run_coroutine_threadsafe(self.runtime.stop(), self.robot.loop).result(timeout=5)
 
     async def handle_api_message(self, message: APIMessageBase, metadata: dict) -> None:
         try:
@@ -1012,33 +1010,33 @@ class MaiSaka(Module):
             self.errorf(f"图片转换为 GIF 失败: {exc}")
             return image_base64
 
-    @via(lambda self: self.at_or_private() and self.au(1)
+    @handler(lambda self: self.at_or_private() and self.au(1)
          and self.match(r"^(开启|启用|打开|记录|启动|关闭|禁用|取消)麦麦$"))
     def enable_maibot(self):
         """启用麦麦"""
         if self.match(r"(开启|启用|打开|记录|启动)"):
-            self.config[self.owner_id]["enable"] = True
+            self.conv_config["enable"] = True
             self.save_config()
             self.reply("麦麦机器人已开启")
             return
         if self.match(r"(关闭|禁用|取消)"):
-            self.config[self.owner_id]["enable"] = False
+            self.conv_config["enable"] = False
             self.save_config()
             self.reply("麦麦机器人已关闭")
 
-    @via(lambda self: self.at_or_private() and self.au(1) and self.match(r"^重新连接麦麦$"))
+    @handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^重新连接麦麦$"))
     def restart_maibot(self):
         """重新连接麦麦"""
         try:
-            ok = asyncio.run_coroutine_threadsafe(self.runtime.reconnect(), self.loop).result()
+            ok = asyncio.run_coroutine_threadsafe(self.runtime.reconnect(), self.robot.loop).result()
             self.reply("已重置连接麦麦服务" if ok else "重连失败，请检查麦麦服务状态")
         except Exception:
             self.errorf(traceback.format_exc())
             self.reply("重连失败，请检查日志")
 
-    @via(lambda self: self.ID in self.robot.persist_mods
-         and self.config[self.owner_id].get("enable")
-         and self.event.user_id not in self.config[self.owner_id].get("blacklist")
+    @handler(lambda self: self.ID in self.robot.persist_mods
+         and self.conv_config.get("enable")
+         and self.event.user_id not in self.conv_config.get("blacklist")
          and (self.event.msg or self.event.sub_type == "poke"))
     def send_maibot(self):
         """发送至麦麦"""

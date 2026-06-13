@@ -16,7 +16,7 @@ try:
 except ImportError:
     HAS_PLAYWRIGHT = False
 
-from src.utils import MiniCron, Module, send_forward_msg, send_msg, set_emoji, via
+from src.utils import MiniCron, Module, send_forward_msg, send_msg, set_emoji, handler
 
 class Bilibili(Module):
     """哔哩哔哩模块"""
@@ -138,12 +138,12 @@ class Bilibili(Module):
                 await asyncio.sleep(interval * 1000)
         asyncio.run_coroutine_threadsafe(credential_refresh(), self.robot.loop)
 
-    @via(lambda self: self.at_or_private() and self.au(3) and self.match(r"^关注列表$"))
+    @handler(lambda self: self.at_or_private() and self.au(3) and self.match(r"^关注列表$"))
     async def show_follow_list(self):
         """显示关注列表"""
         title = ""
         nodes = []
-        follow_list = self.config[self.owner_id]["sub"]
+        follow_list = self.conv_config["sub"]
         if follow_list:
             if self.event.group_id:
                 title = "本群的关注列表"
@@ -161,7 +161,7 @@ class Bilibili(Module):
             self.reply(msg)
         self.reply_forward(nodes, title, "哔哩哔哩")
 
-    @via(lambda self: self.at_or_private() and self.au(2) and self.match(r"^关注\s?(\S+)$"))
+    @handler(lambda self: self.at_or_private() and self.au(2) and self.match(r"^关注\s?(\S+)$"))
     async def subscribe(self):
         """关注UP主"""
         user_match = self.match(r"^关注\s?(\S+)$").group(1)
@@ -171,10 +171,10 @@ class Bilibili(Module):
             name = info["name"]
             fans = info["fans"]
             avatar = info["avatar"]
-            if uid in self.config[self.owner_id]["sub"]:
+            if uid in self.conv_config["sub"]:
                 msg = f"你已经关注了{name}"
             else:
-                self.config[self.owner_id]["sub"][uid] = {
+                self.conv_config["sub"][uid] = {
                     "name": name,
                     "avatar": avatar,
                     "fans": fans,
@@ -188,12 +188,12 @@ class Bilibili(Module):
                 self.save_config()
                 msg = f"已将{name}(UID:{uid})添加至关注列表"
             msg += "\n===================="
-            msg += self.parse_user_info(uid, self.config[self.owner_id]["sub"][uid])
+            msg += self.parse_user_info(uid, self.conv_config["sub"][uid])
         else:
             msg = "查无此人"
         self.reply(msg)
 
-    @via(lambda self: self.at_or_private() and self.au(2) and self.match(r"^取关\s?(\S+)$"))
+    @handler(lambda self: self.at_or_private() and self.au(2) and self.match(r"^取关\s?(\S+)$"))
     async def unsubscribe(self):
         """取关UP主"""
         user_match = self.match(r"^取关\s?(\S+)$").group(1)
@@ -201,18 +201,18 @@ class Bilibili(Module):
         if info:
             uid = info["uid"]
             name = info["name"]
-            if uid not in self.config[self.owner_id]["sub"]:
+            if uid not in self.conv_config["sub"]:
                 msg = f"你并没有关注{name}"
             else:
                 msg = f"已将{name}(UID:{uid})取关"
-                del self.config[self.owner_id]["sub"][uid]
+                del self.conv_config["sub"][uid]
                 self.robot.persist_mods[self.ID].config = self.config.copy()
                 self.save_config()
         else:
             msg = "查无此人"
         self.reply(msg)
 
-    @via(lambda self: self.at_or_private() and self.au(2) and self.match(r"^(\S+)\s?反?向?通知关键词\s+(\S+)?$"))
+    @handler(lambda self: self.at_or_private() and self.au(2) and self.match(r"^(\S+)\s?反?向?通知关键词\s+(\S+)?$"))
     async def set_keywords(self):
         """设置通知关键词"""
         user_match, pattern = self.match(r"^(\S+)\s?反?向?通知关键词\s+(\S+)$").groups()
@@ -220,12 +220,12 @@ class Bilibili(Module):
         if info:
             uid = info["uid"]
             name = info["name"]
-            if uid in self.config[self.owner_id]["sub"]:
+            if uid in self.conv_config["sub"]:
                 if self.match("反向通知关键词"):
-                    self.config[self.owner_id]["sub"][uid]["anti_keyword"] = pattern
+                    self.conv_config["sub"][uid]["anti_keyword"] = pattern
                     msg = f"已成功为{name}设置反向匹配关键词【{pattern}】"
                 else:
-                    self.config[self.owner_id]["sub"][uid]["keyword"] = pattern
+                    self.conv_config["sub"][uid]["keyword"] = pattern
                     msg = f"已成功为{name}设置正则匹配关键词【{pattern}】"
                 self.robot.persist_mods[self.ID].config = self.config.copy()
                 self.save_config()
@@ -235,7 +235,7 @@ class Bilibili(Module):
             msg = "查无此人"
         self.reply(msg)
 
-    @via(lambda self: self.at_or_private() and self.au(3) and self.match(r"^(开启|关闭)?\s?(\S+?)\s?最?新?动态(通知)?$"))
+    @handler(lambda self: self.at_or_private() and self.au(3) and self.match(r"^(开启|关闭)?\s?(\S+?)\s?最?新?动态(通知)?$"))
     async def dynamic_control(self):
         """动态控制"""
         flag, user_match, _ = self.match(r"^(开启|关闭)?\s?(\S+?)\s?最?新?动态(通知)?$").groups()
@@ -282,9 +282,9 @@ class Bilibili(Module):
                     return
                 else:
                     msg = f"{name}没有发过任何动态..."
-            elif uid in self.config[self.owner_id]["sub"]:
+            elif uid in self.conv_config["sub"]:
                 status = flag == "开启"
-                self.config[self.owner_id]["sub"][uid]["dynamic_notice"] = status
+                self.conv_config["sub"][uid]["dynamic_notice"] = status
                 self.robot.persist_mods[self.ID].config = self.config.copy()
                 self.save_config()
                 msg = f"已{flag}对{name}的动态观测~"
@@ -294,7 +294,7 @@ class Bilibili(Module):
             msg = "查无此人"
         self.reply(msg)
 
-    @via(lambda self: self.at_or_private() and self.au(3) and self.match(r"^(开启|关闭)?\s?(\S+)\s?直播(通知)?$"))
+    @handler(lambda self: self.at_or_private() and self.au(3) and self.match(r"^(开启|关闭)?\s?(\S+)\s?直播(通知)?$"))
     async def live_control(self):
         """直播控制"""
         flag, user_match, _ = self.match(r"^(开启|关闭)?\s?(\S+)\s?直播(通知)?$").groups()
@@ -319,9 +319,9 @@ class Bilibili(Module):
                         msg = f"{name}还在休息中哦~"
                 else:
                     msg = f"{name}从来没有直播过哦~"
-            elif uid in self.config[self.owner_id]["sub"]:
+            elif uid in self.conv_config["sub"]:
                 status = flag == "开启"
-                self.config[self.owner_id]["sub"][uid]["live_notice"] = status
+                self.conv_config["sub"][uid]["live_notice"] = status
                 self.robot.persist_mods[self.ID].config = self.config.copy()
                 self.save_config()
                 msg = f"已{"开启" if status else "关闭"}对{name}的直播通知~"
@@ -331,7 +331,7 @@ class Bilibili(Module):
             msg = "查无此人"
         self.reply(msg)
 
-    @via(lambda self: self.at_or_private() and self.au(3) and self.match(r"^(开启|关闭)?(\S+)\s?粉丝数(通知)?$"))
+    @handler(lambda self: self.at_or_private() and self.au(3) and self.match(r"^(开启|关闭)?(\S+)\s?粉丝数(通知)?$"))
     async def fans_control(self):
         """粉丝数控制"""
         flag, user_match, _ = self.match(r"^(开启|关闭)?(\S+)\s?粉丝数(通知)?$").groups()
@@ -344,9 +344,9 @@ class Bilibili(Module):
             if not flag:
                 msg = f"{name}当前的粉丝数为：{fans}"
                 msg += f"\n[CQ:image,file={avatar}]"
-            elif uid in self.config[self.owner_id]["sub"]:
+            elif uid in self.conv_config["sub"]:
                 status = flag == "开启"
-                self.config[self.owner_id]["sub"]["fans_notice"] = status
+                self.conv_config["sub"]["fans_notice"] = status
                 self.robot.persist_mods[self.ID].config = self.config.copy()
                 self.save_config()
                 msg = f"已{"开启" if status else "关闭"}对{name}的粉丝数通知~"
@@ -356,12 +356,12 @@ class Bilibili(Module):
             msg = "查无此人"
         self.reply(msg)
 
-    @via(lambda self: self.at_or_private() and self.au(2) and self.match(r"^(开启|关闭)[b|B|哔]站通知$"))
+    @handler(lambda self: self.at_or_private() and self.au(2) and self.match(r"^(开启|关闭)[b|B|哔]站通知$"))
     def toggle(self):
         """通知控制"""
         flag = self.match(r"(开启|关闭)").group(1)
         status = flag == "开启"
-        self.config[self.owner_id]["enable"] = status
+        self.conv_config["enable"] = status
         self.robot.persist_mods[self.ID].config = self.config.copy()
         self.save_config()
         msg = f"已{flag}B站通知~"
@@ -689,8 +689,8 @@ class Bilibili(Module):
             if owner_id == "env":
                 continue
 
-            if uid in self.config[self.owner_id]["sub"]:
-                return self.config[self.owner_id]["sub"][uid].get(key, "")
+            if uid in self.conv_config["sub"]:
+                return self.conv_config["sub"][uid].get(key, "")
         return ""
 
     def update_follow_list_info(self, uid: str, data: dict, owner_id: str=None):
@@ -790,7 +790,7 @@ class Bilibili(Module):
         for owner_id in self.config:
             if owner_id == "env":
                 continue
-            for uid, info in self.config[self.owner_id]["sub"].items():
+            for uid, info in self.conv_config["sub"].items():
                 if user_match == info["name"]:
                     return uid
         if re.search(r"^[0-9]+$", user_match):

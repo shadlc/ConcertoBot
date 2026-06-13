@@ -4,7 +4,7 @@ import random
 import datetime
 import sqlite3
 import re
-from src.utils import Module, via, get_user_name
+from src.utils import Module, handler, get_user_name
 
 class RPG(Module):
     """跑团功能模块"""
@@ -103,15 +103,15 @@ class RPG(Module):
         }
 
         # 内存中的日志记录
-        if "logs" not in self.config[self.owner_id]:
-            self.config[self.owner_id]["logs"] = []
+        if "logs" not in self.conv_config:
+            self.conv_config["logs"] = []
 
-        self.config[self.owner_id]["logs"].append(log_entry)
+        self.conv_config["logs"].append(log_entry)
 
         # 只保留最近的日志
         max_logs = self.config.get("max_log_entries", 100)
-        if len(self.config[self.owner_id]["logs"]) > max_logs:
-            self.config[self.owner_id]["logs"] = self.config[self.owner_id]["logs"][-max_logs:]
+        if len(self.conv_config["logs"]) > max_logs:
+            self.conv_config["logs"] = self.conv_config["logs"][-max_logs:]
 
         # 数据库中的日志记录
         db_path = self.get_data_path(self.config["database"])
@@ -245,7 +245,7 @@ class RPG(Module):
         elif total <= 204: return "+1D6"
         else: return "+2D6"
 
-    @via(lambda self: self.au(2) and self.match(r"^\.help$"))
+    @handler(lambda self: self.au(2) and self.match(r"^\.help$"))
     def help(self):
         help_list = [
             ".r | 掷6面骰",
@@ -293,7 +293,7 @@ class RPG(Module):
         nodes = [self.node(help_text)]
         self.reply_forward(nodes, source="跑团功能帮助")
 
-    @via(lambda self: self.au(2) and self.match(r"^\.r[0-9dD\+\-\s]*$"))
+    @handler(lambda self: self.au(2) and self.match(r"^\.r[0-9dD\+\-\s]*$"))
     def roll(self):
         """掷骰子"""
         def process_dice_part(part, detail):
@@ -349,7 +349,7 @@ class RPG(Module):
             msg = f"骰子表达式错误: {expr}\n错误: {str(e)}"
         self.reply(msg)
 
-    @via(lambda self: self.au(2) and self.match(r"^\.ra\s?\S*$"))
+    @handler(lambda self: self.au(2) and self.match(r"^\.ra\s?\S*$"))
     def check(self):
         """检定（关联人物卡）和事件判定"""
         # 获取消息内容
@@ -467,7 +467,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @via(lambda self: self.au(2) and self.match(r"^\.sc\s+[\d/dfF]+$"))
+    @handler(lambda self: self.au(2) and self.match(r"^\.sc\s+[\d/dfF]+$"))
     def sanity_check(self):
         """理智检定"""
         try:
@@ -542,7 +542,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @via(lambda self: self.au(2) and self.match(r"^\.st\s+\S+\s+\d+$"))
+    @handler(lambda self: self.au(2) and self.match(r"^\.st\s+\S+\s+\d+$"))
     def set_skill(self):
         """快速设置技能"""
         try:
@@ -570,7 +570,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @via(lambda self: self.au(2) and self.match(r"^\.stlist$"))
+    @handler(lambda self: self.au(2) and self.match(r"^\.stlist$"))
     def show_skill_list(self):
         """显示标准技能列表"""
         msg = "📚 CoC 标准技能列表:\n"
@@ -580,7 +580,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @via(lambda self: self.au(2) and self.match(r"^\.sr(?:\s+[\d\s]+)?$"))
+    @handler(lambda self: self.au(2) and self.match(r"^\.sr(?:\s+[\d\s]+)?$"))
     def set_special_dice(self):
         """设置特殊骰子"""
         try:
@@ -602,7 +602,7 @@ class RPG(Module):
 
                 # 保存特殊骰子
                 user_id = self.event.user_id
-                self.config[self.owner_id]["special_dice"][user_id] = faces
+                self.conv_config["special_dice"][user_id] = faces
                 self.save_config()
                 msg = f"✅ 特殊骰子设置成功: {faces}"
     
@@ -614,24 +614,24 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @via(lambda self: self.au(2) and self.match(r"^\.srv$"))
+    @handler(lambda self: self.au(2) and self.match(r"^\.srv$"))
     def view_special_dice(self):
         """查看特殊骰子"""
         user_id = self.event.user_id
-        if user_id in self.config[self.owner_id]["special_dice"]:
-            faces = self.config[self.owner_id]["special_dice"][user_id]
+        if user_id in self.conv_config["special_dice"]:
+            faces = self.conv_config["special_dice"][user_id]
             msg = f"🎲 您的特殊骰子: {faces}"
         else:
             msg = "❌ 您还没有设置特殊骰子，请使用 .sr 命令设置"
 
         self.reply(msg)
 
-    @via(lambda self: self.au(2) and self.match(r"^\.sr\d*$"))
+    @handler(lambda self: self.au(2) and self.match(r"^\.sr\d*$"))
     def roll_special_dice(self):
         """掷特殊骰子"""
         user_id = self.event.user_id
 
-        if user_id not in self.config[self.owner_id]["special_dice"]:
+        if user_id not in self.conv_config["special_dice"]:
             msg = "❌ 您还没有设置特殊骰子，请使用 .sr 命令设置"
             self.reply(msg)
             return
@@ -659,7 +659,7 @@ class RPG(Module):
             self.reply(msg)
 
         # 掷特殊骰子
-        faces = self.config[self.owner_id]["special_dice"][user_id]
+        faces = self.conv_config["special_dice"][user_id]
         results = []
         for _ in range(count):
             roll = random.choice(faces)
@@ -681,7 +681,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @via(lambda self: self.au(2) and self.match(r"^\.ri(\+?-?\d+)?$"))
+    @handler(lambda self: self.au(2) and self.match(r"^\.ri(\+?-?\d+)?$"))
     def initiative(self):
         """先攻"""
         modifier = 0
@@ -699,7 +699,7 @@ class RPG(Module):
         total = roll + modifier
 
         # 记录到战斗系统中
-        battle = self.config[self.owner_id]["battles"].get("current")
+        battle = self.conv_config["battles"].get("current")
         if battle:
             user_id = self.event.user_id
             user_name = get_user_name(self.robot, user_id)
@@ -724,10 +724,10 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @via(lambda self: self.au(2) and self.match(r"^\.init$"))
+    @handler(lambda self: self.au(2) and self.match(r"^\.init$"))
     def show_initiative(self):
         """显示先攻列表"""
-        battle = self.config[self.owner_id]["battles"].get("current")
+        battle = self.conv_config["battles"].get("current")
         if not battle or not battle.get("initiatives"):
             msg = "当前没有进行中的战斗或无人掷先攻"
         else:
@@ -748,7 +748,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @via(lambda self: self.au(2) and self.match(r"^\.hp([+-]\d+)$"))
+    @handler(lambda self: self.au(2) and self.match(r"^\.hp([+-]\d+)$"))
     def hp_change(self):
         """HP 管理"""
         try:
@@ -777,7 +777,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @via(lambda self: self.au(2) and self.match(r"^\.mp([+-]\d+)$"))
+    @handler(lambda self: self.au(2) and self.match(r"^\.mp([+-]\d+)$"))
     def mp_change(self):
         """MP 管理"""
         try:
@@ -806,7 +806,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @via(lambda self: self.au(2) and self.match(r"^\.pc\s.*$"))
+    @handler(lambda self: self.au(2) and self.match(r"^\.pc\s.*$"))
     def pc_manage(self):
         """人物卡管理"""
         msg = ""
@@ -924,7 +924,7 @@ class RPG(Module):
 
         return msg
 
-    @via(lambda self: self.au(2) and self.match(r"^\.team\s.*$"))
+    @handler(lambda self: self.au(2) and self.match(r"^\.team\s.*$"))
     def team_manage(self):
         """队伍管理"""
         msg = ""
@@ -935,13 +935,13 @@ class RPG(Module):
             user_name = get_user_name(self.robot, user_id)
 
             # 检查是否已在其他队伍
-            for tname, team in self.config[self.owner_id]["teams"].items():
+            for tname, team in self.conv_config["teams"].items():
                 if str(user_id) in team["members"]:
                     msg = f"❌ 您已在 {tname} 队伍中，请先退出再加入新队伍"
                     self.reply(msg)
                     return
 
-            self.config[self.owner_id]["teams"][team_name] = {
+            self.conv_config["teams"][team_name] = {
                 "leader": user_id,
                 "members": {str(user_id): user_name},
                 "created": datetime.datetime.now().isoformat()
@@ -954,20 +954,20 @@ class RPG(Module):
 
         elif self.match(r"^\.team join\s+(\S+)$"):
             team_name = self.match(r"^\.team join\s+(\S+)$").group(1)
-            if team_name not in self.config[self.owner_id]["teams"]:
+            if team_name not in self.conv_config["teams"]:
                 msg = f"❌ 队伍 {team_name} 不存在"
             else:
                 user_id = self.event.user_id
                 user_name = get_user_name(self.robot, user_id)
 
                 # 检查是否已在其他队伍
-                for tname, team in self.config[self.owner_id]["teams"].items():
+                for tname, team in self.conv_config["teams"].items():
                     if str(user_id) in team["members"] and tname != team_name:
                         msg = f"❌ 您已在 {tname} 队伍中，请先退出再加入新队伍"
                         self.reply(msg)
                         return
 
-                self.config[self.owner_id]["teams"][team_name]["members"][str(user_id)] = user_name
+                self.conv_config["teams"][team_name]["members"][str(user_id)] = user_name
                 self.save_config()
                 msg = f"👥 {user_name} 加入了队伍 {team_name}"
     
@@ -980,14 +980,14 @@ class RPG(Module):
 
             # 查找用户所在的队伍
             found = False
-            for team_name, team in self.config[self.owner_id]["teams"].items():
+            for team_name, team in self.conv_config["teams"].items():
                 if str(user_id) in team["members"]:
                     # 如果是队长，解散队伍
                     if team["leader"] == user_id:
-                        del self.config[self.owner_id]["teams"][team_name]
+                        del self.conv_config["teams"][team_name]
                         msg = f"👥 队长 {user_name} 离开了队伍，队伍 {team_name} 已解散"
                     else:
-                        del self.config[self.owner_id]["teams"][team_name]["members"][str(user_id)]
+                        del self.conv_config["teams"][team_name]["members"][str(user_id)]
                         msg = f"👥 {user_name} 离开了队伍 {team_name}"
                     found = True
                     break
@@ -1005,7 +1005,7 @@ class RPG(Module):
 
             # 查找用户所在的队伍
             found = False
-            for team_name, team in self.config[self.owner_id]["teams"].items():
+            for team_name, team in self.conv_config["teams"].items():
                 if str(user_id) in team["members"]:
                     leader_name = get_user_name(self.robot, team["leader"])
                     members = ", ".join(team["members"].values())
@@ -1017,7 +1017,7 @@ class RPG(Module):
             if not found:
                 msg = "❌ 您不在任何队伍中"
         elif self.match(r"^\.team list$"):
-            teams = self.config[self.owner_id]["teams"]
+            teams = self.conv_config["teams"]
             if not teams:
                 msg = "当前没有队伍"
             else:
@@ -1032,7 +1032,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @via(lambda self: self.au(2) and self.match(r"^\.battle\s.*$"))
+    @handler(lambda self: self.au(2) and self.match(r"^\.battle\s.*$"))
     def battle_manage(self):
         """战斗管理"""
         msg = ""
@@ -1042,7 +1042,7 @@ class RPG(Module):
 
             # 检查用户是否在队伍中
             user_team = None
-            for team_name, team in self.config[self.owner_id]["teams"].items():
+            for team_name, team in self.conv_config["teams"].items():
                 if str(user_id) in team["members"]:
                     user_team = team_name
                     break
@@ -1050,11 +1050,11 @@ class RPG(Module):
             if not user_team:
                 msg = "❌ 您不在任何队伍中，无法开始战斗"
             else:
-                team = self.config[self.owner_id]["teams"][user_team]
+                team = self.conv_config["teams"][user_team]
                 if team["leader"] != user_id:
                     msg = "❌ 只有队长可以开始战斗"
                 else:
-                    self.config[self.owner_id]["battles"]["current"] = {
+                    self.conv_config["battles"]["current"] = {
                         "team": user_team,
                         "initiatives": {},
                         "round": 0,
@@ -1070,18 +1070,18 @@ class RPG(Module):
         elif self.match(r"^\.battle end$"):
             user_id = self.event.user_id
 
-            if "current" not in self.config[self.owner_id]["battles"]:
+            if "current" not in self.conv_config["battles"]:
                 msg = "❌ 当前没有进行中的战斗"
             else:
-                battle = self.config[self.owner_id]["battles"]["current"]
+                battle = self.conv_config["battles"]["current"]
                 team_name = battle["team"]
 
                 # 检查是否是队长
-                team = self.config[self.owner_id]["teams"][team_name]
+                team = self.conv_config["teams"][team_name]
                 if team["leader"] != user_id:
                     msg = "❌ 只有队长可以结束战斗"
                 else:
-                    del self.config[self.owner_id]["battles"]["current"]
+                    del self.conv_config["battles"]["current"]
                     self.save_config()
                     msg = f"⚔️ 战斗结束！队伍 {team_name} 退出战斗状态"
         
@@ -1092,10 +1092,10 @@ class RPG(Module):
                     })
         
         elif self.match(r"^\.battle status$"):
-            if "current" not in self.config[self.owner_id]["battles"]:
+            if "current" not in self.conv_config["battles"]:
                 msg = "当前没有进行中的战斗"
             else:
-                battle = self.config[self.owner_id]["battles"]["current"]
+                battle = self.conv_config["battles"]["current"]
                 team_name = battle["team"]
                 round_num = battle["round"]
                 initiative_count = len(battle["initiatives"])
@@ -1117,10 +1117,10 @@ class RPG(Module):
                             msg += f"\n\n🔄 第{round_num}回合 - 当前行动: {current_player}"
 
         elif self.match(r"^\.battle next$"):
-            if "current" not in self.config[self.owner_id]["battles"]:
+            if "current" not in self.conv_config["battles"]:
                 msg = "❌ 当前没有进行中的战斗"
             else:
-                battle = self.config[self.owner_id]["battles"]["current"]
+                battle = self.conv_config["battles"]["current"]
     
                 if not battle["initiatives"]:
                     msg = "❌ 无人掷先攻，无法开始回合"
@@ -1166,7 +1166,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @via(lambda self: self.au(2) and self.match(r"^\.jrrp$"))
+    @handler(lambda self: self.au(2) and self.match(r"^\.jrrp$"))
     def jrrp(self):
         """今日人品"""
         # 基于用户ID和日期生成确定性的随机数
@@ -1196,7 +1196,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @via(lambda self: self.au(2) and self.match(r"^\.(coin|掷硬币)$"))
+    @handler(lambda self: self.au(2) and self.match(r"^\.(coin|掷硬币)$"))
     def coin(self):
         """掷硬币"""
         result = random.choice(["正面", "反面"])
@@ -1208,7 +1208,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @via(lambda self: self.au(2) and self.match(r"^\.coc$"))
+    @handler(lambda self: self.au(2) and self.match(r"^\.coc$"))
     def coc_help(self):
         """显示CoC相关帮助"""
         msg = "🐙 CoC 跑团帮助:\n"
@@ -1220,10 +1220,10 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @via(lambda self: self.au(2) and self.match(r"^\.log$"))
+    @handler(lambda self: self.au(2) and self.match(r"^\.log$"))
     def show_log(self):
         """显示最近的日志"""
-        logs = self.config[self.owner_id].get("logs", [])
+        logs = self.conv_config.get("logs", [])
         if not logs:
             msg = "暂无日志记录"
         else:

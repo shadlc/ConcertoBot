@@ -9,7 +9,7 @@ import re
 import traceback
 
 import httpx
-from src.utils import Module, via, get_img_url, get_user_name, status_ok
+from src.utils import Module, handler, get_img_url, get_user_name, status_ok
 
 class Waifu(Module):
     """抽老婆模块"""
@@ -40,13 +40,13 @@ class Waifu(Module):
     }
 
     def premise(self):
-        return self.group_at() or self.config[self.owner_id].get("enable")
+        return self.group_at() or self.conv_config.get("enable")
 
-    @via(lambda self: self.group_at() and self.au(1) and self.match(r"^(开启|打开|启用|允许|关闭|禁止|不允许|取消)?抽老婆$"))
+    @handler(lambda self: self.group_at() and self.au(1) and self.match(r"^(开启|打开|启用|允许|关闭|禁止|不允许|取消)?抽老婆$"))
     def toggle(self):
         """设置抽老婆"""
-        flag = self.config[self.owner_id]["enable"]
-        text = "开启" if self.config[self.owner_id]["enable"] else "关闭"
+        flag = self.conv_config["enable"]
+        text = "开启" if self.conv_config["enable"] else "关闭"
         if self.match(r"(开启|打开|启用|允许)"):
             flag = True
             text = "开启"
@@ -54,14 +54,14 @@ class Waifu(Module):
             flag = False
             text = "关闭"
         msg = f"抽老婆功能已{text}"
-        self.config[self.owner_id]["enable"] = flag
+        self.conv_config["enable"] = flag
         self.save_config()
         self.reply(msg, reply=True)
 
     def get_today_waifus(self):
         """获取今天已分配的老婆列表"""
         today = datetime.date.today().strftime("%Y%m%d")
-        waifu_data = self.config[self.owner_id]["waifu"]
+        waifu_data = self.conv_config["waifu"]
         
         # 从waifu数据中筛选出今天分配的老婆
         today_waifus = []
@@ -86,12 +86,12 @@ class Waifu(Module):
         
         return available_waifus
 
-    @via(lambda self: self.au(2) and self.config[self.owner_id].get("enable") and self.match(r"^抽取?老婆$"))
+    @handler(lambda self: self.au(2) and self.conv_config.get("enable") and self.match(r"^抽取?老婆$"))
     def draw_waifu(self):
         """抽取二次元老婆"""
         today = datetime.date.today().strftime("%Y%m%d")
         user_id = self.event.user_id
-        config = self.config[self.owner_id]
+        config = self.conv_config
         waifu = None
         
         # 检查用户今天是否已经抽过老婆
@@ -118,7 +118,7 @@ class Waifu(Module):
             qq_url = get_img_url(self.robot, f"base64://{waifu_img}")
             self.reply(f"你今天的二次元老婆是{waifu_name}哒~\n{qq_url}", reply=True)
 
-    @via(lambda self: self.au(2) and self.config[self.owner_id].get("enable") and self.match(r"^查寻?老婆"))
+    @handler(lambda self: self.au(2) and self.conv_config.get("enable") and self.match(r"^查寻?老婆"))
     def check_waifu(self):
         """查询二次元老婆"""
         today = datetime.date.today().strftime("%Y%m%d")
@@ -128,7 +128,7 @@ class Waifu(Module):
         if match := re.search(r"\[CQ:at,qq=(.*?)\]", self.event.msg):
             user_id = match.group(1)
             user_name = get_user_name(self.robot, user_id)
-            waives = self.config[self.owner_id]["waifu"]
+            waives = self.conv_config["waifu"]
             waifu = None
             
             if user_id in waives:
@@ -180,8 +180,8 @@ class Waifu(Module):
             else:
                 self.reply(f"{waifu_name}不存在，可以添加哦~", reply=True)
 
-    @via(lambda self: self.au(self.config[self.owner_id].get("add_auth"))
-         and self.config[self.owner_id].get("enable") 
+    @handler(lambda self: self.au(self.conv_config.get("add_auth"))
+         and self.conv_config.get("enable")
          and self.match(r"添加?老婆 "))
     def add_waifu(self):
         """添加二次元老婆"""
@@ -220,8 +220,8 @@ class Waifu(Module):
             self.errorf(traceback.format_exc())
             self.reply(f"{waifu_name}添加失败!", reply=True)
 
-    @via(lambda self: self.au(self.config[self.owner_id].get("add_auth"))
-        and self.config[self.owner_id].get("enable") 
+    @handler(lambda self: self.au(self.conv_config.get("add_auth"))
+        and self.conv_config.get("enable") 
         and self.match(r"^删(除)?老婆"))
     def del_waifu(self):
         """删除二次元老婆（必须指定格式）"""

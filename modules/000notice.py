@@ -6,7 +6,7 @@ import time
 
 from colorama import Fore
 
-from src.utils import Module, calc_size, poke, reply_event, reply_id, via, get_user_name
+from src.utils import Module, calc_size, poke, reply_event, reply_id, listener, get_user_name
 
 
 class Notice(Module):
@@ -34,10 +34,10 @@ class Notice(Module):
             self.robot.last_notice_timestamp = 0
         return True
 
-    @via(lambda self: self.event.notice_type == "notify"
+    @listener(lambda self: self.event.notice_type == "notify"
          and self.event.sub_type == "poke"
          and self.config.get("poke_reply")
-         and not self.is_self_send(), success=False)
+         and not self.is_self_send())
     def poke(self):
         if self.event.group_id and self.event.group_id in self.robot.config.rev_group:
             self.printf(
@@ -63,16 +63,16 @@ class Notice(Module):
             if random.choice(range(5)) == 0:
                 reply_event(self.robot, self.event, "%BE_POKED%")
 
-    @via(lambda self: self.event.notice_type == "notify"
+    @listener(lambda self: self.event.notice_type == "notify"
          and self.event.sub_type == "input_status"
-         and self.event.raw.get("status_text"), success=False)
+         and self.event.raw.get("status_text"))
     def typing(self):
         if status_text := self.event.raw.get("status_text"):
             self.printf(
                 f"{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}{status_text}"
             )
 
-    @via(lambda self: self.event.notice_type == "client_status", success=False)
+    @listener(lambda self: self.event.notice_type == "client_status")
     def client_status(self):
         if self.event.raw["online"]:
             self.printf(
@@ -83,17 +83,17 @@ class Notice(Module):
                 f"检测到本账号在客户端{Fore.MAGENTA}{self.event.raw["client"]["device_name"]}{Fore.RESET}登出"
             )
 
-    @via(lambda self: self.event.notice_type == "friend_add", success=False)
+    @listener(lambda self: self.event.notice_type == "friend_add")
     def friend_add(self):
         self.printf(f"{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}已加为好友")
 
-    @via(lambda self: self.event.notice_type == "friend_recall", success=False)
+    @listener(lambda self: self.event.notice_type == "friend_recall")
     def friend_recall(self):
         self.printf(f"{Fore.MAGENTA}{self.event.operator_name}({self.event.operator_id})撤回了一条消息")
         msg = "%OTHER_RECALL%"
         reply_event(self.robot, self.event, msg)
 
-    @via(lambda self: self.event.notice_type == "group_recall", success=False)
+    @listener(lambda self: self.event.notice_type == "group_recall")
     def group_recall(self):
         self.printf(f"在群{Fore.MAGENTA}{self.event.group_name}({self.event.group_id}){Fore.RESET}检测到一条撤回消息")
         recall_time = time.strftime(
@@ -109,7 +109,7 @@ class Notice(Module):
             and time.time() - self.robot.last_notice_timestamp > 1
         ):
             self.robot.last_notice_timestamp = time.time()
-            
+
             msg = f"{self.event.operator_name}在{recall_time}将{self.robot.self_name}的消息撤回，{self.robot.self_name}很难过"
             reply_event(self.robot, self.event, msg)
         elif self.event.user_id != self.robot.self_id:
@@ -121,7 +121,7 @@ class Notice(Module):
                         self.robot.data["latest_recall"][self.owner_id] = deque(maxlen=20)
                     self.robot.data["latest_recall"][self.owner_id].append(message)
 
-    @via(lambda self: self.event.notice_type == "group_upload", success=False)
+    @listener(lambda self: self.event.notice_type == "group_upload")
     def group_upload(self):
         file_name = self.event.raw["file"]["name"]
         file_size = calc_size(self.event.raw["file"]["size"])
@@ -131,7 +131,7 @@ class Notice(Module):
             f"文件{Fore.YELLOW}{file_name}({file_size})"
         )
 
-    @via(lambda self: self.event.notice_type == "group_admin", success=False)
+    @listener(lambda self: self.event.notice_type == "group_admin")
     def group_admin(self):
         if self.event.sub_type == "set":
             self.printf(
@@ -144,7 +144,7 @@ class Notice(Module):
                 f"管理员{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}被取缔"
             )
 
-    @via(lambda self: self.event.notice_type == "group_decrease", success=False)
+    @listener(lambda self: self.event.notice_type == "group_decrease")
     def group_decrease(self):
         if self.event.sub_type == "leave":
             self.printf(
@@ -163,7 +163,7 @@ class Notice(Module):
                 f"群{Fore.MAGENTA}{self.event.group_name}({self.event.group_id}){Fore.RESET}解散"
             )
 
-    @via(lambda self: self.event.notice_type == "group_increase", success=False)
+    @listener(lambda self: self.event.notice_type == "group_increase")
     def group_increase(self):
         if self.event.sub_type == "approve":
             self.printf(
@@ -185,13 +185,13 @@ class Notice(Module):
                     group_name=self.event.group_name)
                 msg = llm_chat(self_intro)
             reply_id(self.robot, "group", self.event.group_id, msg)
-        elif self.event.group_id in self.robot.config.rev_group and self.config[self.owner_id].get("welcome_newbie"):
+        elif self.event.group_id in self.robot.config.rev_group and self.conv_config.get("welcome_newbie"):
             if time.time() - self.robot.last_notice_timestamp < 1:
                 return
             self.robot.last_notice_timestamp = time.time()
             msg = self.event.user_name + " %WELCOME_NEWBIE%"
             if llm_chat:
-                welcome = self.config[self.owner_id].get("welcome") or self.config.get("welcome")
+                welcome = self.conv_config.get("welcome") or self.config.get("welcome")
                 welcome = welcome.format(
                     self_name=self.robot.self_name,
                     user_name=self.event.user_name,
@@ -199,7 +199,7 @@ class Notice(Module):
                 msg = llm_chat(welcome)
             reply_id(self.robot, "group", self.event.group_id, msg)
 
-    @via(lambda self: self.event.notice_type == "group_ban", success=False)
+    @listener(lambda self: self.event.notice_type == "group_ban")
     def group_ban(self):
         duration = self.event.raw["duration"]
         if duration:
@@ -230,8 +230,8 @@ class Notice(Module):
                     f"{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}的禁言"
                 )
 
-    @via(lambda self: self.event.notice_type == "notify"
-         and self.event.sub_type == "profile_like", success=False)
+    @listener(lambda self: self.event.notice_type == "notify"
+         and self.event.sub_type == "profile_like")
     def profile_like(self):
         times = self.event.raw.get("times")
         self.printf(
