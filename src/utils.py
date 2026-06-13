@@ -100,10 +100,10 @@ def receive_msg(robot: "Concerto"):
         return rev_json
     except OSError as e:
         robot.errorf(f"端口{robot.config.port}已被占用，程序终止！ {e}")
-        robot.isrunning = False
+        robot.stop()
     except socket.gaierror as e:
         robot.errorf(f"绑定地址有误！ {robot.config.host} 不是一个正确的可绑定地址，程序终止！ {e}")
-        robot.isrunning = False
+        robot.stop()
     except json.JSONDecodeError as e:
         robot.warnf(f"{body} JSON数据解析失败！ {traceback.format_exc()}")
         return {}

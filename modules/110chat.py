@@ -366,7 +366,7 @@ class Chat(Module):
             msg = "生成转发消息错误~"
             self.reply(msg)
 
-    @via(lambda self: self.match(r"^\[CQ:record.*\]$"))
+    @via(lambda self: self.match(r"^\[CQ:record.*\]$"), success=False)
     def fix_record_file(self):
         """使用API获取语音消息正确格式的语音文件"""
         if match := self.match(r"^\[CQ:record.*,file=([^,]+).*\]$"):
@@ -1139,7 +1139,7 @@ class Chat(Module):
             "all": "历史",
         }
         type_text = date_dict[gen_type] if gen_type in date_dict else "历史"
-        msg = "%ROBOT_NAME%复读统计开始啦~"
+        msg = f"{self.robot.self_name}的复读统计开始啦~"
         total_repeat_times = len(data)
         msg += f"\n{type_text}共复读{total_repeat_times}次"
         text_count_dict = {}

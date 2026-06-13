@@ -18,7 +18,6 @@ class Config:
             "api_base": "http://127.0.0.1:3000/",
             "data_path": "data",
             "log_path": "logs",
-            "lang_file": "lang.json",
             "rev_group": [],
             "admin_list": [],
             "blacklist": [],
@@ -41,7 +40,6 @@ class Config:
         self.api_base = self.raw.get("api_base", self.default["api_base"])
         self.data_path = self.raw.get("data_path", self.default["data_path"])
         self.log_path = self.raw.get("log_path", self.default["log_path"])
-        self.lang_file = self.raw.get("lang_file", self.default["lang_file"])
         self.rev_group = self.raw.get("rev_group", self.default["rev_group"])
         self.admin_list = self.raw.get("admin_list", self.default["admin_list"])
         self.blacklist = self.raw.get("blacklist", self.default["blacklist"])

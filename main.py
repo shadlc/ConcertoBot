@@ -29,8 +29,7 @@ if platform.system() == "Linux":
 
 def my_handler(signum, frame): # pylint: disable=unused-argument
     """捕获Ctrl C信号"""
-    robot.warnf("正在关闭程序...")
-    robot.is_running = False
+    robot.stop()
     sys.exit()
 
 signal.signal(signal.SIGINT, my_handler)

@@ -109,7 +109,8 @@ class Notice(Module):
             and time.time() - self.robot.last_notice_timestamp > 1
         ):
             self.robot.last_notice_timestamp = time.time()
-            msg = f"{self.event.operator_name}在{recall_time}将%ROBOT_NAME%的消息撤回，%ROBOT_NAME%很难过"
+            
+            msg = f"{self.event.operator_name}在{recall_time}将{self.robot.self_name}的消息撤回，{self.robot.self_name}很难过"
             reply_event(self.robot, self.event, msg)
         elif self.event.user_id != self.robot.self_id:
             for message in self.data.past_message:
@@ -175,8 +176,6 @@ class Notice(Module):
                 f"群{Fore.MAGENTA}{self.event.group_name}({self.event.group_id}){Fore.RESET}"
             )
         llm_chat = self.robot.func.get("llm_chat")
-        print(self.event.group_id in self.robot.config.rev_group, self.config[self.owner_id].get("welcome_newbie"))
-        print(time.time() - self.robot.last_notice_timestamp < 1)
         if self.event.user_id == self.robot.self_id and self.config.get("self_introduction"):
             msg = "%SELF_INTRODUCTION%"
             if llm_chat:

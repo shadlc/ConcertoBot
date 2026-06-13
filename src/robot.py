@@ -18,12 +18,12 @@ import httpx
 
 from src import api
 from src.config import Config
+from src.placeholders import PLACEHOLDER_DICT
 from src.utils import (
     Event,
     Module,
     format_to_log,
     handle_placeholder,
-    import_json,
     msg_img2char,
     reply_event,
     scan_missing_modules,
@@ -58,9 +58,7 @@ class Concerto:
         self.func = {} # 需要开放为全局函数的字典
         self.modules = {} # 所有载入模块字典
         self.persist_mods = {} # 需要持续性运行的模块
-        self.placeholder_dict = import_json(
-            os.path.join(self.config.data_path, self.config.lang_file)
-        ).get("placeholder", {})
+        self.placeholder_dict = dict(PLACEHOLDER_DICT)
 
         self.api_name = ""
         self.self_id = ""
@@ -86,6 +84,9 @@ class Concerto:
             random.choice([Fore.RED,Fore.GREEN,Fore.YELLOW,Fore.BLUE,Fore.MAGENTA,Fore.CYAN,Fore.WHITE])
             + self.start_info + Fore.RESET, flush=True)
 
+    def update_robot_name_placeholder(self) -> None:
+        """更新机器人名称"""
+
     def init(self) -> bool:
         """初始化并尝试连接到API"""
         self.printf(f"正在连接API[{Fore.GREEN}{self.config.api_base}{Fore.RESET}]...", end="", console=False)
@@ -103,6 +104,7 @@ class Concerto:
                 self.self_name = result["data"]["nickname"]
                 self.self_id = str(result["data"]["user_id"])
                 self.at_info = "[CQ:at,qq=" + str(self.self_id) + "]"
+                self.placeholder_dict["ROBOT_NAME"] = [self.self_name]
                 self.printf(f"已接入账号: {Fore.MAGENTA}{self.self_name}({self.self_id}){Fore.RESET}")
             except httpx.RequestError:
                 time.sleep(1)
@@ -113,22 +115,41 @@ class Concerto:
         threading.Thread(target=self.listening_console, daemon=True, name="键盘监听").start()
         return connected
 
+    def stop(self):
+        """关闭机器人"""
+        self.is_running = False
+        self.is_restart = False
+
+    def restart(self) -> None:
+        """重启机器人"""
+        self.is_running = False
+        self.is_restart = True
+
     async def main_loop(self):
         """主事件循环"""
-        while self.is_running:
-            await asyncio.sleep(0.1)
+        try:
+            while self.is_running:
+                await asyncio.sleep(0.1)
+        except asyncio.exceptions.CancelledError:
+            return
 
     def run(self) -> None:
         """运行机器人"""
         self.init()
         asyncio.set_event_loop(self.loop)
         self.loop.run_until_complete(self.main_loop())
+        self.warnf("正在关闭程序...")
         sys.exit(self.is_restart)
 
     def listening_console(self):
         """监听来自终端的输入并处理"""
         while self.is_running:
-            self.handle_console(input(f"\r{Fore.GREEN}<console> {Fore.RESET}"))
+            try:
+                rev = input(f"\r{Fore.GREEN}<console> {Fore.RESET}")
+            except (EOFError, KeyboardInterrupt, OSError):
+                self.stop()
+                break
+            self.handle_console(rev)
 
     def listening_msg(self):
         """监听来自qq的请求"""
@@ -355,10 +376,11 @@ class Concerto:
                 module_name = os.path.splitext(item)[0]
                 missing = scan_missing_modules(item_path)
                 if missing:
-                    self.errorf(f"文件({item})缺失模块: {" ".join(missing)}, 加载失败!")
+                    self.errorf(f"文件({item})缺失模块: {' '.join(missing)}, 加载失败!")
                     continue
                 spec = importlib.util.spec_from_file_location(module_name, item_path)
                 module = importlib.util.module_from_spec(spec)
+                sys.modules[spec.name] = module
                 spec.loader.exec_module(module)
                 is_module = False
                 disabled = False

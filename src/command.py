@@ -581,8 +581,7 @@ class ExecuteCmd(object):
     def restart(self, argv=""):
         if argv == "":
             self.printf("正在重启程序...")
-            self.robot.is_running = False
-            self.robot.is_restart = True
+            self.robot.restart()
         else:
             self.printf(f"请使用 {Fore.CYAN}restart{Fore.RESET} 重启本程序")
 
@@ -864,8 +863,7 @@ class ExecuteCmd(object):
 
     def stop(self, argv=""):
         self.printf("正在关闭程序...")
-        self.robot.is_running = False
-        self.robot.is_restart = False
+        self.robot.stop()
 
     def test(self, argv=""):
         if re.search(r"(错误|error|ERROR)", argv):

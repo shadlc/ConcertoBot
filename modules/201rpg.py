@@ -15,40 +15,7 @@ class RPG(Module):
             "本模块为CoC风格跑团模块，无需使用@，而是.开头调用",
         ],
         2: [
-            ".r | 掷6面骰",
-            ".r[dice表达式] | 掷骰（如 r1d20+5, r3d6）",
-            ".rXdY | 掷X个Y面骰，X不填入默认为1",
-            ".ra [宾语][概率][主语] | 掷100面骰进行事件判定",
-            ".sr A B C D E F | 定义一个特殊6面骰，六个面的点数分别是ABCDEF",
-            ".srv | 查看当前特殊6面骰",
-            ".srXd | 掷X个特殊6面骰，X不填入默认为1",
-            ".ra [技能/属性] | 检定（如 ra 力量）",
-            ".ri[+修正] | 掷先攻（如 ri+2）",
-            ".hp±数字 | 修改当前 HP（如 hp-5）",
-            ".mp±数字 | 修改当前 MP（如 mp-3）",
-            ".pc new [名字] | 新建人物卡",
-            ".pc auto | 自动生成符合规则的人物卡",
-            ".pc set [属性]=值 | 设置属性（如 pc set 力量=60）",
-            ".pc show [@某人] | 查看自己或他人人物卡",
-            ".pc del | 删除人物卡",
-            ".st [技能名] [值] | 快速设置技能值",
-            ".stlist | 显示标准调查员技能列表",
-            ".jrrp | 今日人品（1~100）",
-            ".coin | 掷硬币（正/反）",
-            ".sc [san值变化] | 理智检定（如 sc 1/1d6）",
-            ".coc | 显示CoC相关帮助信息",
-            ".help | 显示模块帮助信息",
-            ".log | 查看最近的骰子记录",
-            ".team create [队伍名] | 创建队伍",
-            ".team join [队伍名] | 加入队伍",
-            ".team leave | 离开队伍",
-            ".team info | 查看队伍信息",
-            ".team list | 查看所有队伍",
-            ".battle start | 开始战斗（需要队伍）",
-            ".battle end | 结束战斗",
-            ".battle status | 查看战斗状态",
-            ".battle next | 推进到下一回合",
-            ".init | 查看先攻列表",
+           "详细操作请输入.help获取" 
         ]
     }
 
@@ -280,10 +247,46 @@ class RPG(Module):
 
     @via(lambda self: self.au(2) and self.match(r"^\.help$"))
     def help(self):
+        help_list = [
+            ".r | 掷6面骰",
+            ".r[dice表达式] | 掷骰（如 r1d20+5, r3d6）",
+            ".rXdY | 掷X个Y面骰，X不填入默认为1",
+            ".ra [宾语][概率][主语] | 掷100面骰进行事件判定",
+            ".sr A B C D E F | 定义一个特殊6面骰，六个面的点数分别是ABCDEF",
+            ".srv | 查看当前特殊6面骰",
+            ".srXd | 掷X个特殊6面骰，X不填入默认为1",
+            ".ra [技能/属性] | 检定（如 ra 力量）",
+            ".ri[+修正] | 掷先攻（如 ri+2）",
+            ".hp±数字 | 修改当前 HP（如 hp-5）",
+            ".mp±数字 | 修改当前 MP（如 mp-3）",
+            ".pc new [名字] | 新建人物卡",
+            ".pc auto | 自动生成符合规则的人物卡",
+            ".pc set [属性]=值 | 设置属性（如 pc set 力量=60）",
+            ".pc show [@某人] | 查看自己或他人人物卡",
+            ".pc del | 删除人物卡",
+            ".st [技能名] [值] | 快速设置技能值",
+            ".stlist | 显示标准调查员技能列表",
+            ".jrrp | 今日人品（1~100）",
+            ".coin | 掷硬币（正/反）",
+            ".sc [san值变化] | 理智检定（如 sc 1/1d6）",
+            ".coc | 显示CoC相关帮助信息",
+            ".help | 显示模块帮助信息",
+            ".log | 查看最近的骰子记录",
+            ".team create [队伍名] | 创建队伍",
+            ".team join [队伍名] | 加入队伍",
+            ".team leave | 离开队伍",
+            ".team info | 查看队伍信息",
+            ".team list | 查看所有队伍",
+            ".battle start | 开始战斗（需要队伍）",
+            ".battle end | 结束战斗",
+            ".battle status | 查看战斗状态",
+            ".battle next | 推进到下一回合",
+            ".init | 查看先攻列表",
+        ]
         help_text = ""
         for i in range(4):
             if self.auth <= i or i == 0:
-                for text in self.HELP.get(i, []):
+                for text in help_list:
                     help_text += f"{text}\n"
                     if i == 0:
                         help_text += "\n"

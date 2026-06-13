@@ -196,8 +196,7 @@ class Message(Module):
     @via(lambda self: self.at_or_private() and self.au(1) and self.match(r"^重启$"))
     def restart(self):
         self.reply("%REBOOTING%")
-        self.robot.is_running = False
-        self.robot.is_restart = True
+        self.robot.restart()
 
     @via(lambda self: self.at_or_private() and self.au(1) and self.match(r"说\s(.*)$"))
     def say(self):
@@ -293,8 +292,4 @@ class Message(Module):
 
     @via(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(在吗|你好)$"))
     def reply_msg(self):
-        if "在吗" == self.event.msg:
-            self.reply("%ROBOT_NAME%正在工作呢~\nBig brother is watching you!")
-        elif "你好" == self.event.msg:
-            self.reply("你好！我是%ROBOT_NAME%,请@我并发送“帮助”来让我帮助您~")
-
+        self.reply("%MENTIONED%\n请@我并发送“帮助”来让我帮助您~")
