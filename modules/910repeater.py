@@ -54,8 +54,8 @@ class Repeater(Module):
                 msg = self.event.msg
                 self.reply(msg)
                 self.printf(f"本次概率{f"{round(chance*100,2)}%"}, 复读成功")
-                if notify_maimbot := self.robot.func.get("notify_maimbot"):
-                    notify_maimbot(msg, self.owner_id[1:])
+                if notify_maisaka := self.robot.func.get("notify_maisaka"):
+                    notify_maisaka(msg, self.owner_id[1:])
             else:
                 self.printf(f"本次概率{f"{round(chance*100,2)}%"}, 复读失败")
 

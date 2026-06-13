@@ -96,8 +96,8 @@ class Picture(Module):
         msg = msg.replace("/mw600/", "/large/").replace("/thumb180/", "/large/")
         msg = re.sub(r"""<img\s+src="([^"]+)"\s*/?>""", r"[CQ:image,sub_type=0,file=\1]", msg)
         reply_back(self.robot, owner, msg)
-        if notify_maimbot := self.robot.func.get("notify_maimbot"):
-            notify_maimbot(msg, owner[1:])
+        if notify_maisaka := self.robot.func.get("notify_maisaka"):
+            notify_maisaka(msg, owner[1:])
 
     @via(lambda self: self.au(2) and self.at_or_private()
          and self.match(r"^(来|发)(张|个)(无聊|屌|弔|吊|梗)图$"))
