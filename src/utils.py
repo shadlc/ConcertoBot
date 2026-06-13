@@ -982,7 +982,7 @@ def ocr_image(robot: Concerto, img_id: str):
     :param img_id: 消息ID
     """
     resp_dict = {"image": img_id}
-    return ocr_image(robot, resp_dict)
+    return api.ocr_image(robot, resp_dict)
 
 
 def get_img_url(robot: Concerto, url: str) -> str:
@@ -1330,7 +1330,7 @@ class Module:
     HANDLE_MESSAGE_SENT = False
     HANDLE_NOTICE = False
     HANDLE_REQUEST = False
-    HANDLE_META_EVENT = False
+    HANDLE_EVENT = False
 
     def __init__(self, event: Event, auth: int = 0):
         self.name = self.__class__.NAME

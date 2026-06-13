@@ -74,13 +74,13 @@ def send_msg(robot: Concerto, resp: dict):
 def del_msg(robot: Concerto, resp: dict):
     """撤回消息"""
     message_id = resp["message_id"]  # 消息ID
-    url = "/delete_msg?message_id=" + str(message_id)
+    url = f"/delete_msg?message_id={message_id}"
     return get(robot, url)
 
 def get_msg(robot: Concerto, resp: dict):
     """获取消息内容"""
     message_id = resp["message_id"]  # 消息ID
-    url = "/get_msg?message_id=" + str(message_id)
+    url = f"/get_msg?message_id={message_id}"
     return get(robot, url)
 
 def get_forward_msg(robot: Concerto, resp: dict):
@@ -101,10 +101,8 @@ def send_group_forward_msg(robot: Concerto, resp: dict):
 
 def send_group_notice(robot: Concerto, resp: dict):
     """发送群公告"""
-    group_id = resp["group_id"]  # 群号
-    content = resp["content"]  # 公告内容
-    url = "/_send_group_notice?group_id=" + str(group_id) + "&content=" + content
-    return get(robot, url)
+    url = "/_send_group_notice"
+    return post(robot, url, resp)
 
 def send_group_ai_record(robot: Concerto, resp: dict):
     """发送群聊AI消息记录"""
@@ -132,7 +130,7 @@ def handle_quick_operation(robot: Concerto, resp: dict):
 def ocr_image(robot: Concerto, resp: dict):
     """识别图片中的文字"""
     image = resp["image"]  # 图片ID
-    url = "/.ocr_image?image=" + image
+    url = f"/.ocr_image?image={image}"
     return get(robot, url)
 
 def upload_private_file(robot: Concerto, resp: dict):
@@ -158,13 +156,13 @@ def get_group_msg_history(robot: Concerto, resp: dict):
 def get_stranger_info(robot: Concerto, resp: dict):
     """获取陌生人信息"""
     user_id = resp["user_id"]  # 目标QQ号
-    url = "/get_stranger_info?user_id=" + str(user_id)
+    url = f"/get_stranger_info?user_id={user_id}"
     return get(robot, url)
 
 def get_group_info(robot: Concerto, resp: dict):
     """获取群信息"""
     group_id = resp["group_id"]  # 目标群号
-    url = "/get_group_info?group_id=" + str(group_id)
+    url = f"/get_group_info?group_id={group_id}"
     return get(robot, url)
 
 def set_group_ban(robot: Concerto, resp: dict):
