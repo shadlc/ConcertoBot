@@ -1,6 +1,7 @@
 """机器人类定义"""
 
 import asyncio
+import ast
 import importlib
 import json
 import logging
@@ -56,9 +57,12 @@ class Concerto:
         self.config = Config(self.config_file)
         self.cmd = {}
 
-        self.func = {} # 需要开放为全局函数的字典
-        self.modules = {} # 所有载入模块字典
-        self.persist_mods = {} # 需要持续性运行的模块
+        self.func = {}
+        self.func_owner = {}
+        self.modules = {}
+        self.module_files = {}
+        self.module_names = {}
+        self.persist_mods = {}
         self.placeholder_dict = dict(PLACEHOLDER_DICT)
 
         self.api_name = ""
@@ -235,27 +239,27 @@ class Concerto:
         """具体模块处理"""
         try:
             if handle_type == "message":
-                for mod in self.modules.values():
+                for mod in list(self.modules.values()):
                     if mod.HANDLE_MESSAGE:
                         if mod(event, auth).handled:
                             break
             elif handle_type == "message_sent":
-                for mod in self.modules.values():
+                for mod in list(self.modules.values()):
                     if mod.HANDLE_MESSAGE_SENT:
                         if mod(event, auth).handled:
                             break
             elif handle_type == "notice":
-                for mod in self.modules.values():
+                for mod in list(self.modules.values()):
                     if mod.HANDLE_NOTICE:
                         if mod(event, auth).handled:
                             break
             elif handle_type == "request":
-                for mod in self.modules.values():
+                for mod in list(self.modules.values()):
                     if mod.HANDLE_REQUEST:
                         if mod(event, auth).handled:
                             break
             elif handle_type == "event":
-                for mod in self.modules.values():
+                for mod in list(self.modules.values()):
                     if mod.HANDLE_EVENT:
                         if mod(event, auth).handled:
                             break
@@ -364,42 +368,241 @@ class Concerto:
         """添加可调用函数"""
         func_name = func.__name__
         self.func[func_name] = func
+        owner = getattr(getattr(func, "__self__", None), "ID", None)
+        if owner:
+            self.func_owner[func_name] = owner
         self.printf(f"新增可调用函数: {Fore.MAGENTA}{func_name}{Fore.RESET}", level="DEBUG")
 
     def import_modules(self):
-        """导入 modules 目录及其子目录内的模块"""
-        def import_classes(folder_path: str):
-            py_files = []
-            os.makedirs(folder_path, exist_ok=True)
-            for root, _, files in os.walk(folder_path):
-                py_files += [os.path.join(root, f) for f in files if f.endswith(".py")]
-            py_files.sort(key=os.path.basename)
-            for item_path in py_files:
-                item = os.path.basename(item_path)
-                module_name = os.path.splitext(item)[0]
-                missing = scan_missing_modules(item_path)
-                if missing:
-                    self.errorf(f"文件({item})缺失模块: {' '.join(missing)}, 加载失败!")
+        """从modules目录导入插件模块"""
+        os.makedirs("modules", exist_ok=True)
+        for item_path in self.module_py_files("modules"):
+            self.load_module_file(item_path)
+
+    def module_py_files(self, folder_path: str = "modules") -> list[str]:
+        """返回排序后的Python插件文件列表"""
+        py_files = []
+        for root, _, files in os.walk(folder_path):
+            py_files += [os.path.join(root, f) for f in files if f.endswith(".py")]
+        py_files.sort(key=os.path.basename)
+        return py_files
+
+    def module_info_from_file(self, item_path: str) -> list[dict[str, str]]:
+        """从模块文件中读取插件ID和名称而不导入它"""
+        try:
+            with open(item_path, encoding="utf-8") as file:
+                tree = ast.parse(file.read(), filename=item_path)
+        except (OSError, SyntaxError):
+            return []
+        modules = []
+        for node in tree.body:
+            if not isinstance(node, ast.ClassDef):
+                continue
+            values = {}
+            for stmt in node.body:
+                if not isinstance(stmt, ast.Assign):
                     continue
-                spec = importlib.util.spec_from_file_location(module_name, item_path)
-                module = importlib.util.module_from_spec(spec)
-                sys.modules[spec.name] = module
-                spec.loader.exec_module(module)
-                is_module = False
-                disabled = False
-                for _, obj in list(vars(module).items()):
-                    if isinstance(obj, type) and hasattr(obj, "ID") and obj.ID and hasattr(obj, "NAME") and obj.NAME:
-                        if obj.ID in self.config.disabled:
-                            self.printf(f"{Fore.YELLOW}[{obj.ID}]{Fore.RESET} {Fore.RESET}{obj.NAME}({item})已禁用❌")
-                            disabled = True
-                            continue
-                        is_module = True
-                        self.module_enable(obj, item)
-                        if getattr(obj, "AUTO_INIT", False):
-                            obj(Event(self))
-                if not is_module and not disabled:
-                    self.warnf(f"文件[{item}]内没有有效的模块, 未接入❌")
-        import_classes("modules")
+                for target in stmt.targets:
+                    if isinstance(target, ast.Name) and target.id in ("ID", "NAME"):
+                        try:
+                            values[target.id] = ast.literal_eval(stmt.value)
+                        except (ValueError, TypeError):
+                            pass
+            if values.get("ID") and values.get("NAME"):
+                modules.append({
+                    "id": str(values["ID"]),
+                    "name": str(values["NAME"]),
+                    "file": os.path.basename(item_path),
+                    "path": os.path.abspath(item_path),
+                })
+        return modules
+
+    def find_module_info(self, target: str) -> dict[str, str] | None:
+        """通过ID、文件名或路径查找插件元数据"""
+        target = target.strip().strip("\"'")
+        if not target:
+            return None
+        if target in self.module_files:
+            module = self.modules.get(target)
+            return {
+                "id": target,
+                "name": module.NAME if module else "",
+                "file": os.path.basename(self.module_files[target]),
+                "path": self.module_files[target],
+            }
+        for module_id, item_path in self.module_files.items():
+            if module_id.lower() == target.lower():
+                module = self.modules.get(module_id)
+                return {
+                    "id": module_id,
+                    "name": module.NAME if module else "",
+                    "file": os.path.basename(item_path),
+                    "path": item_path,
+                }
+        candidate = target
+        if not os.path.isabs(candidate):
+            candidate = os.path.join("modules", candidate)
+        if os.path.isfile(candidate):
+            infos = self.module_info_from_file(candidate)
+            return infos[0] if infos else None
+        if not target.endswith(".py"):
+            candidate = os.path.join("modules", f"{target}.py")
+            if os.path.isfile(candidate):
+                infos = self.module_info_from_file(candidate)
+                return infos[0] if infos else None
+        target_lower = target.lower()
+        for item_path in self.module_py_files("modules"):
+            item = os.path.basename(item_path)
+            item_name = os.path.splitext(item)[0]
+            infos = self.module_info_from_file(item_path)
+            for info in infos:
+                if target_lower in (info["id"].lower(), item.lower(), item_name.lower()):
+                    return info
+        return None
+
+    def load_module_file(self, item_path: str, respect_disabled: bool = True) -> list[str]:
+        """从单个模块文件加载插件"""
+        item_path = os.path.abspath(item_path)
+        item = os.path.basename(item_path)
+        module_name = os.path.splitext(item)[0]
+        missing = scan_missing_modules(item_path)
+        if missing:
+            self.errorf(f"无法加载模块{Fore.YELLOW}{item}{Fore.RESET}，缺少依赖: {', '.join(missing)}")
+            return []
+        spec = importlib.util.spec_from_file_location(module_name, item_path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        is_module = False
+        disabled = False
+        loaded = []
+        for _, obj in list(vars(module).items()):
+            if isinstance(obj, type) and hasattr(obj, "ID") and obj.ID and hasattr(obj, "NAME") and obj.NAME:
+                if respect_disabled and obj.ID in self.config.disabled:
+                    self.printf(f"{Fore.YELLOW}[{obj.ID}]{Fore.RESET} {Fore.RESET}{obj.NAME}({item})已禁用❌")
+                    disabled = True
+                    continue
+                is_module = True
+                if self.module_enable(obj, item):
+                    self.module_files[obj.ID] = item_path
+                    self.module_names[obj.ID] = module_name
+                    loaded.append(obj.ID)
+                    if getattr(obj, "AUTO_INIT", False):
+                        obj(Event(self))
+        if not is_module and not disabled:
+            self.warnf(f"文件[{item}]内没有有效模块，已跳过")
+        return loaded
+
+    def load_plugin(self, target: str) -> bool:
+        """通过ID加载插件"""
+        info = self.find_module_info(target)
+        if not info:
+            self.warnf(f"插件未找到: {target}")
+            return False
+        if info["id"] in self.config.disabled:
+            self.warnf(f"插件 {Fore.MAGENTA}{info['id']}{Fore.YELLOW} 已被禁用，请先使用 enable {info['id']} 启用")
+            return False
+        if info["id"] in self.modules:
+            self.warnf(f"插件 {Fore.MAGENTA}{info['id']}{Fore.YELLOW} 已加载过")
+            return False
+        return bool(self.load_module_file(info["path"]))
+
+    def unload_plugin(self, target: str) -> bool:
+        """通过ID卸载插件"""
+        module_id = self.resolve_loaded_module_id(target)
+        if not module_id:
+            self.warnf(f"插件 {Fore.MAGENTA}{target}{Fore.YELLOW} 未加载❌")
+            return False
+        module = self.modules.get(module_id)
+        instance = self.persist_mods.get(module_id)
+        if instance:
+            for hook_name in ("shutdown", "stop", "close", "on_unload", "unload"):
+                hook = getattr(instance, hook_name, None)
+                if not callable(hook):
+                    continue
+                try:
+                    result = hook()
+                    if asyncio.iscoroutine(result):
+                        asyncio.run_coroutine_threadsafe(result, self.loop).result(timeout=5)
+                except Exception:  # pylint: disable=broad-exception-caught
+                    self.errorf(f"卸载插件 {Fore.MAGENTA}{module_id}{Fore.RESET} 执行卸载方法 {hook_name} 时失败:\n{traceback.format_exc()}")
+                break
+        for func_name, func in list(self.func.items()):
+            owner = self.func_owner.get(func_name)
+            bound_owner = getattr(getattr(func, "__self__", None), "ID", None)
+            if owner == module_id or bound_owner == module_id or func_name == module_id:
+                self.func.pop(func_name, None)
+                self.func_owner.pop(func_name, None)
+        self.persist_mods.pop(module_id, None)
+        self.modules.pop(module_id, None)
+        self.module_files.pop(module_id, None)
+        module_name = self.module_names.pop(module_id, None)
+        if module_name:
+            sys.modules.pop(module_name, None)
+        module_name = module.NAME if module else module_id
+        self.printf(f"插件 {Fore.MAGENTA}{module_name}{Fore.YELLOW} 已卸载")
+        return True
+
+    def reload_plugin(self, target: str) -> bool:
+        """重载插件"""
+        if target.strip().lower() == "all":
+            module_ids = list(self.modules.keys())
+            ok = True
+            for module_id in module_ids:
+                ok = self.reload_plugin(module_id) and ok
+            return ok
+        info = self.find_module_info(target)
+        if not info:
+            self.warnf(f"插件未找到: {target}")
+            return False
+        if info["id"] in self.modules:
+            self.unload_plugin(info["id"])
+        return self.load_plugin(info["id"])
+
+    def disable_plugin(self, target: str) -> bool:
+        """禁用插件并在需要时卸载它"""
+        info = self.find_module_info(target)
+        module_id = info["id"] if info else self.resolve_loaded_module_id(target)
+        if not module_id:
+            self.warnf(f"插件未找到: {target}")
+            return False
+        if module_id not in self.config.disabled:
+            self.config.disabled.append(module_id)
+            self.config.save("disabled", self.config.disabled)
+        if module_id in self.modules:
+            self.unload_plugin(module_id)
+        self.printf(f"插件 {Fore.MAGENTA}{module_id}{Fore.YELLOW} 已禁用❌")
+        return True
+
+    def enable_plugin(self, target: str) -> bool:
+        """启用插件并在找到时加载它"""
+        info = self.find_module_info(target)
+        module_id = info["id"] if info else target.strip()
+        for disabled_id in list(self.config.disabled):
+            if disabled_id.lower() == module_id.lower():
+                self.config.disabled.remove(disabled_id)
+                module_id = disabled_id
+                self.config.save("disabled", self.config.disabled)
+                break
+        info = self.find_module_info(module_id)
+        if not info:
+            self.printf(f"插件 {Fore.MAGENTA}{module_id}{Fore.RESET} 已启用，但未找到有效内部模块")
+            return False
+        self.printf(f"插件 {Fore.MAGENTA}{info['id']}{Fore.RESET} 已启用✔️")
+        if info["id"] not in self.modules:
+            self.load_plugin(info["id"])
+        return True
+
+    def resolve_loaded_module_id(self, target: str) -> str | None:
+        """解析已加载的插件ID，忽略大小写"""
+        target = target.strip()
+        if target in self.modules:
+            return target
+        target_lower = target.lower()
+        for module_id in self.modules:
+            if module_id.lower() == target_lower:
+                return module_id
+        return None
 
     def module_enable(self, module: Module, module_file: str):
         """
@@ -411,9 +614,10 @@ class Concerto:
             self.errorf(
                 f"{Fore.RED}[{module.ID}]{Fore.RESET} 重名模块{Fore.YELLOW}{module.NAME}({module_file}){Fore.RESET}载入失败！❌"
             )
-        else:
-            self.modules[module.ID] = module
-            self.printf(f"{Fore.CYAN}[{module.ID}]{Fore.RESET} {module.NAME}({module_file})已接入✔️")
+            return False
+        self.modules[module.ID] = module
+        self.printf(f"{Fore.CYAN}[{module.ID}]{Fore.RESET} {module.NAME}({module_file})已接入✔️")
+        return True
 
     def sync(self, func: Callable) -> Any:
         """在主线程中同步执行异步函数并返回结果"""
@@ -444,7 +648,7 @@ class Concerto:
         if level == "DEBUG" and not self.config.is_debug:
             return
         msg = handle_placeholder(str(msg), self.placeholder_dict)
-        prefix = f"\r[{time.strftime("%H:%M:%S", time.localtime())} INFO] "
+        prefix = f"\r[{time.strftime('%H:%M:%S', time.localtime())} INFO] "
         if self.config.is_show_image:
             msg = msg_img2char(self, msg)
         if flush:
@@ -466,7 +670,7 @@ class Concerto:
             return
         msg = handle_placeholder(str(msg), self.placeholder_dict)
         msg = msg.replace(Fore.RESET, Fore.YELLOW)
-        prefix = f"\r[{time.strftime("%H:%M:%S", time.localtime())} WARN] "
+        prefix = f"\r[{time.strftime('%H:%M:%S', time.localtime())} WARN] "
         msg = f"{Fore.YELLOW}{prefix}{msg}{Fore.RESET}"
         print(msg, end=end)
         logger.info("%s", format_to_log(msg))
@@ -483,7 +687,7 @@ class Concerto:
         if level == "DEBUG" and not self.config.is_debug:
             return
         msg = handle_placeholder(str(msg), self.placeholder_dict)
-        prefix = f"\r[{time.strftime("%H:%M:%S", time.localtime())} ERROR] "
+        prefix = f"\r[{time.strftime('%H:%M:%S', time.localtime())} ERROR] "
         msg = f"{Fore.RED}{prefix}{msg}{Fore.RESET}"
         print(msg, end=end)
         logger.info("%s", format_to_log(msg))

@@ -54,6 +54,8 @@ class Config:
         self.min_image_width = self.raw.get("min_image_width", self.default["min_image_width"])
         self.max_image_width = self.raw.get("max_image_width", self.default["max_image_width"])
         self.disabled = self.raw.get("disabled", self.default["disabled"])
+        os.makedirs(self.data_path, exist_ok=True)
+        os.makedirs(self.log_path, exist_ok=True)
 
     def init_config(self):
         """初始化配置文件"""
