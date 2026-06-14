@@ -831,22 +831,24 @@ class ExecuteCmd(object):
             else:
                 self.warnf("消息回复强制引用已关闭")
         elif re.search(r"image\s+color", argv):
-            if re.search(r"(false|False|null|disabled|no)", argv):
+            if re.search(r"(false|null|disabled|no)", argv, re.IGNORECASE):
                 self.robot.config.image_color = "disabled"
                 self.warnf("彩色显示模式已关闭")
-            elif re.search(r"(colorama|8|standard)", argv):
+            elif re.search(r"(braille)", argv, re.IGNORECASE):
+                self.robot.config.image_color = "braille"
+            elif re.search(r"(gray)", argv, re.IGNORECASE):
+                self.robot.config.image_color = "gray"
+            elif re.search(r"(colorama|8|standard|colorama\(8\))", argv, re.IGNORECASE):
                 self.robot.config.image_color = "colorama"
-            elif re.search(r"(ansi_256|ansi256|ansi 256|ansi|ANSI|256)", argv):
+            elif re.search(r"(ansi_256|ansi256|ansi 256|ansi|256|ansi\(256\))", argv, re.IGNORECASE):
                 self.robot.config.image_color = "ansi_256"
-            elif re.search(
-                r"(true_color|truecolor|true color|TrueColor|True Color|trueColor)",
-                argv,
-            ):
+            elif re.search(r"(true_color|truecolor|true color)", argv, re.IGNORECASE):
                 self.robot.config.image_color = "true_color"
             else:
-                self.warnf("彩色显示模式有四种模式 disabled, colorama, ansi_256, true_color")
+                self.warnf("图片显示模式: disabled, braille, gray, colorama(8), ansi(256), true_color")
+                return
             self.robot.config.save("image_color", self.robot.config.image_color)
-            if self.robot.config.image_color in ("colorama", "ansi_256", "true_color"):
+            if self.robot.config.image_color != "disabled":
                 self.warnf(f"彩色显示模式已切换为{self.robot.config.image_color}")
         elif re.search(r"image\s+minsize", argv):
             if re.search(r"minsize\s+(\d+)", argv):

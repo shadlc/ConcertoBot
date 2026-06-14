@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Callable, Coroutine, Dict, Optional, Set, Unio
 
 import httpx
 from PIL import Image
-from colorama import Fore, Style
+from colorama import Back, Fore, Style
 
 from src import api
 
@@ -234,69 +234,170 @@ def format_to_log(text: str) -> str:
     text = re.sub(r"(\s?█+\s*)+", "[图片]", text)
     return text.strip()
 
-
-def char_colorama(char: str, rgb: list):
-    """
-    为字符添加标准8色
-    :param char: 字符
-    :param rgb: (R, G, B) 取值 0–255
-    :return: 彩色字符（Standard 8 色）
-    """
-    r, g, b = rgb
-    max_c = max(r, g, b)
-    min_c = min(r, g, b)
-    diff = max_c - min_c
-    if diff <= 50:
-        return char
-    color = ""
-    if r == max_c:
-        if g > b:
-            color = Fore.YELLOW
-        elif b > g:
-            color = Fore.MAGENTA
-        else:
-            color = Fore.RED
-    elif g == max_c:
-        if r > b:
-            color = Fore.YELLOW
-        elif b > r:
-            color = Fore.CYAN
-        else:
-            color = Fore.GREEN
-    elif b == max_c:
-        if r > g:
-            color = Fore.MAGENTA
-        elif g > r:
-            color = Fore.BLUE
-        else:
-            color = Fore.BLUE
-    return color + char + Fore.RESET
+def target_image_size(img: Image.Image, mode: str, min_width: int, max_width: int):
+    """计算渲染前的终端适配图片尺寸"""
+    width, height = img.size
+    target_w = sorted([min_width, width, max_width])[1]
+    if mode == "braille":
+        target_rows = max(1, int(target_w * height / width * 0.5))
+        return target_w * 2, target_rows * 4
+    half_block_modes = {"colorama", "ansi_256", "true_color"}
+    scale = 1 if mode in half_block_modes else 0.5
+    target_h = max(1, int(target_w * height / width * scale))
+    if mode in half_block_modes and target_h % 2:
+        target_h += 1
+    return target_w, target_h
 
 
-def char_ansi_256(char: str, rgb: list):
-    """
-    使用 ANSI 256 色 输出字符
-    :param char: 字符
-    :param rgb: (R, G, B) 取值 0–255
-    :return: 彩色字符（ANSI 256 色）
-    """
+def rgb_to_ansi_256(rgb: list):
+    """将 RGB 颜色转换为 ANSI 256 色的颜色代码"""
     r, g, b = [x / 255.0 for x in rgb]
     r_ = int(r * 5)
     g_ = int(g * 5)
     b_ = int(b * 5)
-    color_code = 16 + 36 * r_ + 6 * g_ + b_
-    return f"\033[38;5;{color_code}m{char}\033[0m"
+    return 16 + 36 * r_ + 6 * g_ + b_
 
 
-def char_true_color(char: str, rgb: list):
-    """
-    使用 TrueColor 输出字符
-    :param char: 字符
-    :param rgb: (R, G, B) 取值 0–255
-    :return: 彩色字符（24bit）
-    """
+def rgb_to_colorama(rgb: list, background: bool = False) -> str:
+    """将 RGB 颜色转换为 colorama 的前景色或背景色代码"""
+    colors = (
+        ((0, 0, 0), Fore.BLACK, Back.BLACK),
+        ((128, 0, 0), Fore.RED, Back.RED),
+        ((0, 128, 0), Fore.GREEN, Back.GREEN),
+        ((128, 128, 0), Fore.YELLOW, Back.YELLOW),
+        ((0, 0, 128), Fore.BLUE, Back.BLUE),
+        ((128, 0, 128), Fore.MAGENTA, Back.MAGENTA),
+        ((0, 128, 128), Fore.CYAN, Back.CYAN),
+        ((192, 192, 192), Fore.WHITE, Back.WHITE),
+    )
     r, g, b = rgb
-    return f"\033[38;2;{r};{g};{b}m{char}\033[0m"
+    _, foreground, back = min(
+        colors,
+        key=lambda item: (
+            (r - item[0][0]) ** 2
+            + (g - item[0][1]) ** 2
+            + (b - item[0][2]) ** 2
+        ),
+    )
+    return back if background else foreground
+
+
+def build_half_block(top_rgb: list, bottom_rgb: list, mode: str) -> str:
+    """构建一个半块字符"""
+    upper_half_block = chr(0x2580)
+    if mode == "colorama":
+        return (
+            f"{rgb_to_colorama(top_rgb)}"
+            f"{rgb_to_colorama(bottom_rgb, background=True)}{upper_half_block}"
+        )
+    if mode == "ansi_256":
+        top_code = rgb_to_ansi_256(top_rgb)
+        bottom_code = rgb_to_ansi_256(bottom_rgb)
+        return (
+            f"\033[38;5;{top_code}m"
+            f"\033[48;5;{bottom_code}m{upper_half_block}"
+        )
+    if mode == "true_color":
+        tr, tg, tb = top_rgb
+        br, bg, bb = bottom_rgb
+        return (
+            f"\033[38;2;{tr};{tg};{tb}m"
+            f"\033[48;2;{br};{bg};{bb}m{upper_half_block}"
+        )
+    raise ValueError(f"Unsupported half block mode: {mode!r}")
+
+
+def img_to_half_blocks(img: Image.Image, mode: str):
+    """使用半块字符输出图片"""
+    buf = []
+    target_w, target_h = img.size
+    pixels = img.load()
+    for y in range(0, target_h - 1, 2):
+        for x in range(target_w):
+            buf.append(build_half_block(pixels[x, y], pixels[x, y + 1], mode))
+        buf.append("\033[0m\n")
+    return buf
+
+
+def img_to_braille(img: Image.Image):
+    """使用盲文点输出字符"""
+    buf = []
+    target_w, target_h = img.size
+    gray = img.convert("L")
+    gp = gray.load()
+    for y in range(0, target_h, 4):
+        for x in range(0, target_w, 2):
+            value = 0
+
+            if gp[x, min(y, target_h - 1)] < 128:
+                value |= 0x01
+            if gp[x, min(y + 1, target_h - 1)] < 128:
+                value |= 0x02
+            if gp[x, min(y + 2, target_h - 1)] < 128:
+                value |= 0x04
+
+            if gp[min(x + 1, target_w - 1), min(y, target_h - 1)] < 128:
+                value |= 0x08
+            if gp[min(x + 1, target_w - 1), min(y + 1, target_h - 1)] < 128:
+                value |= 0x10
+            if gp[min(x + 1, target_w - 1), min(y + 2, target_h - 1)] < 128:
+                value |= 0x20
+
+            if gp[x, min(y + 3, target_h - 1)] < 128:
+                value |= 0x40
+            if gp[min(x + 1, target_w - 1), min(y + 3, target_h - 1)] < 128:
+                value |= 0x80
+
+            buf.append(chr(0x2800 + value))
+        buf.append("\n")
+    return buf
+
+
+def img_to_gray(img: Image.Image):
+    """使用灰度字符输出图片"""
+    ascii_chars = r" .,:;+*?#%@"
+    buf = []
+    target_w, target_h = img.size
+    gray = img.convert("L")
+    values = [
+        [float(gray.getpixel((x, y))) for x in range(target_w)]
+        for y in range(target_h)
+    ]
+    levels = len(ascii_chars) - 1
+    for y in range(target_h):
+        for x in range(target_w):
+            old = max(0, min(255, int(values[y][x])))
+            idx = round(old * levels / 255)
+            new = idx * 255 / levels
+            err = old - new
+            values[y][x] = new
+            buf.append(ascii_chars[idx])
+            if x + 1 < target_w:
+                values[y][x + 1] += err * 7 / 16
+            if y + 1 < target_h:
+                if x:
+                    values[y + 1][x - 1] += err * 3 / 16
+                values[y + 1][x] += err * 5 / 16
+                if x + 1 < target_w:
+                    values[y + 1][x + 1] += err * 1 / 16
+        buf.append("\n")
+    return buf
+
+
+def render_image_chars(img: Image.Image, mode: str, min_width: int, max_width: int) -> str:
+    """将PIL图片渲染为终端字符"""
+    target_w, target_h = target_image_size(img, mode, min_width, max_width)
+    img = img.resize((target_w, target_h), Image.Resampling.LANCZOS).convert("RGB")
+    renderers = {
+        "braille": img_to_braille,
+        "gray": img_to_gray,
+        "colorama": lambda image: img_to_half_blocks(image, "colorama"),
+        "ansi_256": lambda image: img_to_half_blocks(image, "ansi_256"),
+        "true_color": lambda image: img_to_half_blocks(image, "true_color"),
+    }
+    if mode in renderers:
+        return "".join(renderers[mode](img)).rstrip()
+    raise ValueError(f"Unsupported image render mode: {mode!r}")
 
 
 def msg_img2char(robot: Concerto, msg: str, print_img: bool = False):
@@ -304,47 +405,30 @@ def msg_img2char(robot: Concerto, msg: str, print_img: bool = False):
     检测CQ码中有图片并转化为字符画
     :param robot: 机器人类
     :param msg: 收到的消息
+    :param print_img: 是否直接print输出
     :return: 转化为字符画的消息
     """
+    mode = robot.config.image_color
+    render_modes = {"braille", "gray", "colorama", "ansi_256", "true_color"}
+    if mode == "disabled":
+        return msg
+    if mode not in render_modes:
+        robot.warnf(f"不支持的图片显示模式: {mode}", level="DEBUG")
+        return msg
+
     matches = re.findall(r"(\[CQ:image.*?url=([^,]*).*\])", msg)
     for cq, url in matches:
         try:
-            data = httpx.get(url, timeout=10)
-            img = Image.open(io.BytesIO(data.content)).convert("RGB")
-            w, h = img.size
-            ratio = h / float(w)
-            target_w = sorted(
-                [robot.config.min_image_width, w, robot.config.max_image_width]
-            )[1]
-            target_h = int(target_w * ratio * 0.5)
-            img = img.resize((target_w, target_h))
-            pixels = img.getdata()
-            char = ""
-            row = 0
-            for i in pixels:
-                pixel_gray = (i[0] * 38 + i[1] * 75 + i[2] * 15) >> 7
-                if robot.config.image_color == "colorama":
-                    image_ascii = list(".,:;+*?#%@")
-                    unit = (256 + 1) / len(image_ascii)
-                    single_char = image_ascii[int(pixel_gray // unit)]
-                    char += char_colorama(single_char, i)
-                elif robot.config.image_color == "ansi_256":
-                    char += char_ansi_256("█", i)
-                elif robot.config.image_color == "true_color":
-                    char += char_true_color("█", i)
-                else:
-                    image_ascii = list(".,:;+*?#%@")
-                    unit = (256 + 1) / len(image_ascii)
-                    single_char = image_ascii[int(pixel_gray // unit)]
-                    char += single_char
-                row += 1
-                if row >= target_w:
-                    row = 0
-                    char += "\n"
-            char = char.strip()
-            msg = msg.replace(cq, char)
+            response = httpx.get(url, timeout=10)
+            response.raise_for_status()
+            img = Image.open(io.BytesIO(response.content)).convert("RGB")
+            min_image_width = robot.config.min_image_width
+            max_image_width = robot.config.max_image_width
+            char = render_image_chars(img, mode, min_image_width, max_image_width)
             if print_img:
-                robot.printf("\r"+char, flush=True)
+                robot.printf("\r" + char, flush=True)
+            msg = msg.replace(cq, char)
+
         except Exception:  # pylint: disable=broad-exception-caught
             robot.errorf(f"图片转字符画失败!\n{traceback.format_exc()}", level="DEBUG")
     return msg
@@ -352,6 +436,8 @@ def msg_img2char(robot: Concerto, msg: str, print_img: bool = False):
 
 def submit_msg_img2char(robot: Concerto, msg: str) -> bool:
     """提交CQ图片到字符画后台转换任务"""
+    if robot.config.image_color == "disabled":
+        return False
     if "[RECEIVE]" not in msg:
         return False
     if not re.search(r"\[CQ:image.*?url=([^,]*).*?\]", msg):

@@ -17,7 +17,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from logging.handlers import TimedRotatingFileHandler
 from typing import Any, Callable
-from colorama import Fore
+from colorama import Fore, just_fix_windows_console
 import httpx
 
 from src import api
@@ -148,6 +148,7 @@ class Concerto:
 
     def setup_runtime(self) -> None:
         """配置进程级运行时行为"""
+        just_fix_windows_console()
         configure_logging(self.config.log_path)
         self.setup_console_completion()
         self.setup_signal_handler()

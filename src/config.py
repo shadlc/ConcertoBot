@@ -78,7 +78,7 @@ def int_validator(
 def validate_image_color(value: Any) -> str:
     """校验图片颜色模式"""
     value = validate_str(value)
-    if value not in {"disabled", "colorama", "ansi_256", "true_color"}:
+    if value not in ["disabled", "braille", "gray", "colorama", "ansi_256", "true_color"]:
         raise ValueError(f"不支持的图片颜色模式: {value!r}")
     return value
 
@@ -101,7 +101,7 @@ class Config:
     is_show_all_msg: bool
     is_show_image: bool
     is_error_reply: bool
-    image_color: Literal["disabled", "colorama", "ansi_256", "true_color"]
+    image_color: Literal["disabled", "gray", "gray", "colorama", "ansi_256", "true_color", "half_block", "braille"]
     min_image_width: int
     max_image_width: int
     handler_workers: int
