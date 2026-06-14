@@ -17,6 +17,7 @@ import html
 import socket
 import json
 import random
+import tempfile
 import threading
 import traceback
 
@@ -123,7 +124,7 @@ def import_json(file: str):
     try:
         content = "{}"
         if not os.path.exists(file):
-            open(file, "w", encoding="utf-8").write("{}")
+            save_json(file, {})
         if temp := open(file, "r", encoding="utf-8").read():
             content = temp
         return json.loads(content)
@@ -131,10 +132,24 @@ def import_json(file: str):
         raise e
 
 
-def save_json(file_name: str, data: str):
-    """导出json"""
-    with open(file_name, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+def save_json(file_name: str, data):
+    """原子化导出json"""
+    directory = os.path.dirname(file_name) or "."
+    os.makedirs(directory, exist_ok=True)
+    temp_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=directory, delete=False
+        ) as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+            temp_path = f.name
+        os.replace(temp_path, file_name)
+        temp_path = ""
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 def merge(d1: dict, d2: dict) -> dict:
@@ -1426,14 +1441,14 @@ class Module:
             self.errorf(
                 f"配置文件 {self.config_file} 解析发生错误!\n{traceback.format_exc()}"
             )
-        self.GLOBAL_CONFIG = self.GLOBAL_CONFIG or {} # pylint: disable=invalid-name
+        self.GLOBAL_CONFIG = self.GLOBAL_CONFIG or {}  # pylint: disable=invalid-name
         self.config = merge(self.GLOBAL_CONFIG, self.config)
         if self.CONV_CONFIG is None:
             self.save_config()
             return
         if self.owner_id not in self.config:
             self.config[self.owner_id] = {}
-        self.CONV_CONFIG = self.CONV_CONFIG or {} # pylint: disable=invalid-name
+        self.CONV_CONFIG = self.CONV_CONFIG or {}  # pylint: disable=invalid-name
         self.config[self.owner_id] = merge(self.CONV_CONFIG, self.config[self.owner_id])
         self.conv_config = self.config[self.owner_id]
         self.save_config()

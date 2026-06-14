@@ -6,7 +6,6 @@ import importlib
 import json
 import logging
 import os
-import platform
 import random
 import signal
 import sys
@@ -121,21 +120,23 @@ class Concerto:
 
     def setup_console_completion(self) -> None:
         """命令自动补全"""
-        if platform.system() != "Linux":
-            return
         try:
-            import readline # pylint: disable=import-error
+            import readline  # pylint: disable=import-error,import-outside-toplevel
         except ImportError:
-            return
-
-        def completer(text, state):
-            options = [cmd for cmd in self.cmd if cmd.startswith(text)]
-            if state < len(options):
-                return options[state]
+            logger.warning("未安装库readline，命令自动补全功能已禁用")
             return None
-
+        def completer(text: str, state: int) -> str | None:
+            """为控制台命令提供补全候选"""
+            matches = []
+            if state == 0:
+                matches = sorted(cmd for cmd in self.cmd if cmd.startswith(text))
+            if state < len(matches):
+                return matches[state]
+            return None
         readline.parse_and_bind("tab: complete")
         readline.set_completer(completer)
+
+
 
     def setup_signal_handler(self) -> None:
         """捕获Ctrl C信号"""
