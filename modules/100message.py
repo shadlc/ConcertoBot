@@ -38,6 +38,7 @@ class Message(Module):
 
     @Utils.handler(lambda self: self.at_or_private() and self.au(3) and self.match(r"^帮助\d?$"))
     def help(self):
+        """汇总当前权限可见的模块帮助并以合并转发发送"""
         auth_level = self.auth
         if result := self.match(r"帮助(\d)"):
             auth_level = max(auth_level, int(result.group(1)))
@@ -72,6 +73,7 @@ class Message(Module):
 
     @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(增加|添加|删除|取消)?\s?管理员"))
     def admin(self):
+        """添加或移除机器人管理员账号"""
         if self.match(r"^(增加|添加)\s?管理员\s?[0-9]+"):
             user_id = self.match(r"^(增加|添加)\s?管理员\s?([0-9]+)").group(2)
             user_name = Utils.get_user_name(self.robot, user_id)
@@ -101,6 +103,7 @@ class Message(Module):
 
     @Utils.handler(lambda self: self.at_or_private() and self.match(r"^权限(等级)?$"))
     def authority(self):
+        """回复当前用户在机器人中的权限等级"""
         if self.au(0):
             auth_level = "后台权限"
         elif self.au(1):
@@ -117,6 +120,7 @@ class Message(Module):
     @Utils.handler(lambda self: self.group_at() and self.au(1)
          and self.match(r"^(对接|监听|添加|增加|记录|删除|取消|移除)(本群|此群|该群|这个群|这群|群)?$"))
     def connect(self):
+        """将当前群加入或移出机器人监听群列表"""
         group_id = str(self.event.group_id)
         group_name = Utils.get_group_name(self.robot, group_id)
         msg = ""
@@ -142,6 +146,7 @@ class Message(Module):
 
     @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(开启|关闭)?调试(模式)?$"))
     def debug(self):
+        """开启、关闭或切换调试模式"""
         if self.match(r"^开启"):
             self.robot.config.is_debug = True
         elif self.match(r"^关闭"):
@@ -159,6 +164,7 @@ class Message(Module):
 
     @Utils.handler(lambda self: self.at_or_private() and self.match(r"^计时[0-9]+"))
     def delay(self):
+        """执行简单的计时回复"""
         sleep_time = int(self.match(r"([0-9]+)").group(1))
         msg = f"计时{sleep_time}秒开始"
         self.reply(msg)
@@ -168,6 +174,7 @@ class Message(Module):
 
     @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^信息$"))
     def info(self):
+        """查询协议端版本和当前已安装模块信息"""
         info = Utils.get_version_info(self.robot)
         msg = "=======API版本信息======="
         msg += f"\n应用名：{info["app_name"]}"
@@ -178,6 +185,7 @@ class Message(Module):
 
     @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(撤回|闭嘴|嘘)(！|，)?(懂？)?$"))
     def recall(self):
+        """撤回机器人最近发送的一条消息"""
         if len(self.robot.self_message):
             rev = self.robot.self_message[-1]
             msg_id = rev["message_id"]
@@ -195,11 +203,13 @@ class Message(Module):
 
     @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^重启$"))
     def restart(self):
+        """触发机器人重启流程"""
         self.reply("%REBOOTING%")
         self.robot.restart()
 
     @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"说\s(.*)$"))
     def say(self):
+        """让机器人向当前会话或指定会话发送文本消息"""
         if self.match(r"^向"):
             inputs = self.match(r"([0-9]+)说\s?(\S*)").groups()
             number = inputs[0]
@@ -223,6 +233,7 @@ class Message(Module):
 
     @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(开启|关闭)?静默(模式)?$"))
     def silence(self):
+        """开启、关闭或切换静默模式"""
         if self.match(r"^开启"):
             self.robot.config.is_silence = True
         elif self.match(r"^关闭"):
@@ -239,6 +250,7 @@ class Message(Module):
 
     @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^测试"))
     def test(self):
+        """执行基础连通性、错误或 IP 查询测试"""
         if self.match(r"^测试错误"):
             raise RuntimeError("测试错误")
         elif self.match(r"^测试(ip|IP)\s(\S*)"):
@@ -264,6 +276,7 @@ class Message(Module):
 
     @Utils.handler(lambda self: self.at_or_private() and self.au(2) and self.match(r"(语音|读)\s(.*)$"))
     def voice(self):
+        """将文本转换为语音并发送到当前或指定群聊"""
         text = "后面加上需要让我读出来的字嘛"
         match = self.match(r"向?(\d+)?发?送?(语音|读)\s?(.*)")
         group_id = match.group(1)
@@ -292,4 +305,5 @@ class Message(Module):
 
     @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(在吗|你好)$"))
     def reply_msg(self):
+        """回复常用问候并提示帮助入口"""
         self.reply("%MENTIONED%\n请@我并发送“帮助”来让我帮助您~")

@@ -41,6 +41,7 @@ class Waifu(Module):
     }
 
     def premise(self):
+        """未开启群聊功能时，仅允许通过 @ 触发管理命令"""
         return self.group_at() or self.conv_config.get("enable")
 
     @Utils.handler(lambda self: self.group_at() and self.au(1) and self.match(r"^(开启|打开|启用|允许|关闭|禁止|不允许|取消)?抽老婆$"))

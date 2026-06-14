@@ -5,8 +5,8 @@ import random
 import time
 import traceback
 from typing import Callable, Any
-import httpx
 
+from src import api
 from src.base import Module
 from src.utils import Utils
 
@@ -97,8 +97,8 @@ class YUJN(Module):
             api_url = self.URL_MAP[func]
 
             def api_req():
-                resp = httpx.get(api_url, timeout=5, follow_redirects=True)
-                resp.raise_for_status()
+                """请求随机视频接口并转为 Base64 视频资源"""
+                resp = api.get(self.robot, api_url, timeout=5)
                 b64 = base64.b64encode(resp.content).decode("utf-8")
                 return f"base64://{b64}"
 
@@ -141,8 +141,8 @@ class YUJN(Module):
             video_url = self.URL_MAP[cmd]
 
             def api_req():
-                resp = httpx.get(video_url, timeout=5, follow_redirects=True)
-                resp.raise_for_status()
+                """请求视频接口并转为 Base64 视频资源"""
+                resp = api.get(self.robot, video_url, timeout=5)
                 b64 = base64.b64encode(resp.content).decode("utf-8")
                 return f"base64://{b64}"
 
@@ -169,8 +169,8 @@ class YUJN(Module):
             voice_url = self.URL_MAP[cmd]
 
             def api_req():
-                resp = httpx.get(voice_url, timeout=5, follow_redirects=True)
-                resp.raise_for_status()
+                """请求语音接口并转为 Base64 语音资源"""
+                resp = api.get(self.robot, voice_url, timeout=5)
                 b64 = base64.b64encode(resp.content).decode("utf-8")
                 return f"base64://{b64}"
 

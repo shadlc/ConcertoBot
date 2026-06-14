@@ -510,6 +510,7 @@ class RPG(Module):
 
             # 解析损失值
             def parse_loss(loss_str):
+                """解析固定值或骰子表达式形式的理智损失"""
                 if loss_str.isdigit():
                     return int(loss_str)
                 elif "d" in loss_str.lower():

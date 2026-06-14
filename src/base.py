@@ -137,6 +137,7 @@ class Event:
     """基础事件结构"""
 
     def __init__(self, robot: Concerto, raw=None):
+        """从 OneBot 原始上报数据构造统一事件对象"""
         # 机器人本类
         self.robot = robot
         # 原始数据结构
@@ -213,6 +214,7 @@ class Module:
     HANDLE_EVENT = False
 
     def __init__(self, event: Event, auth: int = 0):
+        """初始化模块上下文、配置并按前置条件激活处理器"""
         self.name = self.__class__.NAME
         self.handled = False
         self.event = event

@@ -21,6 +21,7 @@ class ExecuteCmd(object):
     """执行命令"""
 
     def __init__(self, cmd, robot: Concerto):
+        """初始化命令表并在传入命令时立即分发执行"""
         self.robot = robot
         self.robot.cmd = {
             "add": "对添加请求进行操作",

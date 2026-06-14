@@ -54,6 +54,7 @@ class Ytdlp(Module):
     }
 
     def __init__(self, event, auth = 0):
+        """初始化支持解析的视频链接匹配规则"""
         # self.video_pattern = r"(https?://[^\s&;,\[]*(b23.tv|bilibili.com/video|youtu.be|youtube.com|x.com|v.qq.com|douyin.com|tiktok.com)[^\s&;,\"\[]*)"
         self.video_pattern = r"(https?://[^\s&;,\[]*(b23.tv|bilibili.com/video|youtu.be|x.com|youtube.com|v.qq.com)[^\s&;,\"\u4e00-\u9fff\[]*)"
         super().__init__(event, auth)
@@ -231,6 +232,7 @@ class Ytdlp(Module):
         self.reply(msg)
 
     def record_download(self, user_id: str, url: str):
+        """记录用户最近的视频下载任务用于冷却限制"""
         if user_id not in self.conv_config["tasks"]:
             self.conv_config["tasks"][user_id] = []
         self.conv_config["tasks"][user_id] = self.conv_config["tasks"][user_id][:10]

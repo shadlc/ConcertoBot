@@ -48,6 +48,7 @@ class Webhook(Module):
     AUTO_INIT = True
 
     def __init__(self, event, auth=0):
+        """初始化外部请求监听状态并启动监听线程"""
         super().__init__(event, auth)
         if self.ID in self.robot.persist_mods:
             return

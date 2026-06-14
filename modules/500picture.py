@@ -53,6 +53,7 @@ class Picture(Module):
     AUTO_INIT = True
 
     def __init__(self, event, auth=0):
+        """初始化图片模块并启动煎蛋图定时任务"""
         super().__init__(event, auth)
         if self.ID in self.robot.persist_mods:
             return

@@ -38,9 +38,11 @@ from src.utils import Utils
 
 
 def _safe_str(value: Any) -> str:
+    """将可选值安全转换为空字符串或文本"""
     return "" if value is None else str(value)
 
 def _build_message_id(prefix: str, *parts: Any) -> str:
+    """根据平台字段构造稳定且可读的消息 ID"""
     normalized = [re.sub(r"[^a-zA-Z0-9_-]+", "_", _safe_str(part)).strip("_") for part in parts if _safe_str(part)]
     suffix = "_".join(part for part in normalized if part)
     if suffix:
@@ -48,6 +50,7 @@ def _build_message_id(prefix: str, *parts: Any) -> str:
     return f"{prefix}_{int(time.time() * 1000)}"
 
 def _segment_preview(segment: Seg) -> str:
+    """生成隐藏二进制内容的消息段日志预览"""
     payload = segment.to_dict()
     text = re.sub(
         r"type='(image|emoji|voice)',\s?data='.*?'",
@@ -66,6 +69,7 @@ def _patch_log_queue_processor_shutdown() -> None:
     maim_log_queue.logging = logging
 
     async def _process_batch(self) -> None:
+        """批量处理日志队列并允许取消时快速退出"""
         batch = []
 
         try:
@@ -95,6 +99,7 @@ def _patch_log_queue_processor_shutdown() -> None:
                 await self._process_log_message(log_msg)
 
     async def _processor_loop(self) -> None:
+        """运行可被正常取消的日志队列处理循环"""
         self._running = True
         while self._running:
             try:
@@ -117,6 +122,7 @@ class MaimClientRuntime:
     """管理 API-Server 客户端生命周期"""
 
     def __init__(self, owner: MaiSaka, logger: logging.Logger) -> None:
+        """保存模块实例和 maim_message 日志器"""
         self._owner = owner
         self._logger = logger
         self._client: WebSocketClient | None = None
@@ -124,6 +130,7 @@ class MaimClientRuntime:
         self._ready = False
 
     async def start(self) -> bool:
+        """启动或复用到麦麦 API-Server 的 WebSocket 连接"""
         async with self._start_lock:
             _patch_log_queue_processor_shutdown()
 
@@ -159,12 +166,14 @@ class MaimClientRuntime:
             return self._ready
 
     async def reconnect(self) -> bool:
+        """关闭现有客户端并重新建立连接"""
         async with self._start_lock:
             await self._stop_client()
             self._ready = False
         return await self.start()
 
     async def send_message(self, message: APIMessageBase) -> bool:
+        """确保连接可用后发送一条 API-Server 消息"""
         if not await self.start():
             return False
         if self._client is None:
@@ -172,11 +181,13 @@ class MaimClientRuntime:
         return await self._client.send_message(message)
 
     async def stop(self) -> None:
+        """停止客户端并清理连接就绪状态"""
         async with self._start_lock:
             await self._stop_client()
             self._ready = False
 
     async def _stop_client(self) -> None:
+        """停止当前 WebSocket 客户端实例"""
         client = self._client
         self._client = None
         if client is None:
@@ -191,9 +202,11 @@ class ConcertoToMaimCodec:
     """将 ConcertoBot 事件编码为 API-Server 消息"""
 
     def __init__(self, owner: MaiSaka) -> None:
+        """绑定麦麦模块实例用于读取配置和调用工具"""
         self.owner = owner
 
     async def build_message(self, event: Event, *, content_override: str | None = None) -> APIMessageBase | None:
+        """将 ConcertoBot 事件构造成麦麦 API 消息"""
         raw_message = content_override if content_override is not None else _safe_str(event.raw.get("message", event.msg))
         raw_message = self._normalize_raw_message(raw_message)
 
@@ -207,12 +220,14 @@ class ConcertoToMaimCodec:
 
     @staticmethod
     def _normalize_raw_message(raw_message: str) -> str:
+        """清理协议端附带的无效文本和多余换行"""
         normalized = _safe_str(raw_message)
         if normalized and "\n" in normalized:
             normalized = re.sub(r"(\s)+", "", normalized)
         return normalized.replace("你收到一个专属红包，请在新版手机QQ查看。", "")
 
     def _build_special_notice_segments(self, event: Event) -> list[Seg]:
+        """将戳一戳和禁言等通知转为文本消息段"""
         if event.sub_type == "poke":
             if not event.group_id:
                 return []
@@ -233,6 +248,7 @@ class ConcertoToMaimCodec:
         return []
 
     async def _parse_message_segments(self, raw_message: str, event: Event) -> list[Seg]:
+        """解析 CQ 码和纯文本为麦麦消息段列表"""
         segments: list[Seg] = []
         cursor = 0
         cq_pattern = re.compile(r"\[CQ:(?P<type>[^,\]]+)(?:,(?P<data>[^\]]*))?\]")
@@ -261,6 +277,7 @@ class ConcertoToMaimCodec:
 
     @staticmethod
     def _parse_cq_data(payload: str) -> dict[str, str]:
+        """解析 CQ 码参数字符串为字典"""
         data: dict[str, str] = {}
         if not payload:
             return data
@@ -272,6 +289,7 @@ class ConcertoToMaimCodec:
         return data
 
     async def _build_cq_segment(self, cq_type: str, data: Mapping[str, Any], event: Event) -> Seg | list[Seg] | None:
+        """将单个 CQ 码转换为麦麦消息段"""
         match cq_type:
             case "at":
                 return self._build_at_segment(data, event)
@@ -336,6 +354,7 @@ class ConcertoToMaimCodec:
                 return Seg(type="text", data=f"[{cq_type}]")
 
     def _build_at_segment(self, data: Mapping[str, Any], event: Event) -> Seg:
+        """构造麦麦 @ 消息段并尽量补齐目标昵称"""
         target_user_id = _safe_str(data.get("qq"))
         target_name = ""
 
@@ -366,6 +385,7 @@ class ConcertoToMaimCodec:
         return Seg(type="text", data=f"@{fallback_name}" if fallback_name else "@未知")
 
     async def _build_image_segment(self, data: Mapping[str, Any]) -> Seg | None:
+        """下载或转换 CQ 图片为麦麦图片/表情段"""
         url_or_file = _safe_str(data.get("url") or data.get("file"))
         if not url_or_file:
             return None
@@ -382,6 +402,7 @@ class ConcertoToMaimCodec:
         return Seg(type="image", data=binary_base64)
 
     async def _build_voice_segment(self, data: Mapping[str, Any]) -> Seg | None:
+        """解析 CQ 语音为麦麦语音段"""
         url_or_file = _safe_str(data.get("url") or data.get("file"))
         if not url_or_file:
             return None
@@ -410,10 +431,12 @@ class ConcertoToMaimCodec:
         return Seg(type="text", data="[语音消息]")
 
     async def _build_forward_segment(self, msg_list: list[Any] | None) -> list[Seg] | None:
+        """将合并转发消息展开为麦麦可读的消息段"""
         if not msg_list:
             return None
 
         async def process_forward_message(items: list[Any], layer: int) -> list[Seg]:
+            """递归解析合并转发中的子消息"""
             seg_list: list[Seg] = []
             process_count = 0
             for sub_msg in items:
@@ -497,6 +520,7 @@ class ConcertoToMaimCodec:
         return seg_list or None
 
     async def _resolve_binary_content(self, url_or_file: str) -> str:
+        """获取 Base64、HTTP 资源中的二进制内容并转为 Base64"""
         if url_or_file.startswith("base64://"):
             return url_or_file.removeprefix("base64://")
         if url_or_file.startswith("http://") or url_or_file.startswith("https://"):
@@ -508,6 +532,7 @@ class ConcertoToMaimCodec:
         return ""
 
     def _build_api_message(self, event: Event, segment: Seg) -> APIMessageBase:
+        """按 API-Server v2 结构组装完整消息对象"""
         platform = self.owner.config["platform"]
         message_id = _safe_str(event.msg_id) or _build_message_id(
             "concerto",
@@ -558,6 +583,7 @@ class ConcertoToMaimCodec:
 
     @staticmethod
     def _segment_has_content(segment: Seg) -> bool:
+        """判断消息段是否包含可发送内容"""
         if segment.type == "seglist":
             return bool(segment.data)
         if isinstance(segment.data, Mapping):
@@ -609,9 +635,11 @@ class MaimToConcertoCodec:
     """将 API-Server 消息转换为 ConcertoBot 行为"""
 
     def __init__(self, owner: MaiSaka) -> None:
+        """绑定麦麦模块实例用于向 ConcertoBot 发送消息"""
         self.owner = owner
 
     async def dispatch(self, message: APIMessageBase, metadata: Mapping[str, Any]) -> None:
+        """分发来自麦麦 API-Server 的消息或命令"""
         segment = message.message_segment
         self.owner.printf(f"{Fore.CYAN}[FROM] {Fore.RESET}{_segment_preview(segment)}")
         if command_segment := self._extract_command_segment(segment):
@@ -651,6 +679,7 @@ class MaimToConcertoCodec:
             self.owner.warnf(f"发送麦麦回复失败: {info}")
 
     async def _handle_command_segment(self, segment: Seg, message: APIMessageBase) -> None:
+        """执行麦麦侧下发的群管理和消息操作命令"""
         data = segment.data if isinstance(segment.data, Mapping) else {}
         command = _safe_str(data.get("name"))
         args = data.get("args", {})
@@ -705,6 +734,7 @@ class MaimToConcertoCodec:
             self.owner.warnf(f"命令 {command} 执行失败: {info}")
 
     def _extract_command_segment(self, segment: Seg) -> Seg | None:
+        """从消息段或单元素段列表中提取命令段"""
         if segment.type == "command":
             return segment
 
@@ -726,6 +756,7 @@ class MaimToConcertoCodec:
 
     @staticmethod
     def _coerce_command_segment(data: Any) -> Seg | None:
+        """将字典形式的命令描述规范化为 command 段"""
         if not isinstance(data, Mapping):
             return None
 
@@ -742,6 +773,7 @@ class MaimToConcertoCodec:
         return Seg(type="command", data={"name": command, "args": dict(args)})
 
     async def _render_segment(self, segment: Seg, group_id: str) -> dict[str, Any] | None:
+        """将麦麦消息段渲染为 OneBot/CQ 可发送内容"""
         if segment.type == "seglist":
             reply_prefix = ""
             payload_parts: list[str] = []
@@ -840,6 +872,7 @@ class MaimToConcertoCodec:
         return {"type": "message", "message": fallback_map.get(segment.type, f"[{segment.type}]")}
 
     def _resolve_target(self, message: APIMessageBase) -> IncomingTarget | None:
+        """根据消息元数据解析回复目标会话"""
         info = message.message_info
         additional_config = info.additional_config if isinstance(info.additional_config, Mapping) else {}
         target_group_id = _safe_str(additional_config.get("platform_io_target_group_id"))
@@ -871,6 +904,7 @@ class MaimToConcertoCodec:
 
     @staticmethod
     def _coerce_seg_list(data: Any) -> list[Seg]:
+        """将原始列表中的字典元素安全转换为 Seg 对象"""
         if not isinstance(data, list):
             return []
         coerced: list[Seg] = []
@@ -911,6 +945,7 @@ class MaiSaka(Module):
     AUTO_INIT = True
 
     def __init__(self, event, auth=0):
+        """初始化麦麦适配器、编解码器和运行时连接"""
         super().__init__(event, auth)
         if self.ID in self.robot.persist_mods:
             return
@@ -936,6 +971,7 @@ class MaiSaka(Module):
         asyncio.run_coroutine_threadsafe(self.runtime.start(), self.robot.loop)
 
     def premise(self):
+        """复用持久化适配器状态并检查必要连接配置"""
         if self.ID in self.robot.persist_mods:
             maim: MaiSaka = self.robot.persist_mods[self.ID]
             self.failed_times = maim.failed_times
@@ -945,19 +981,23 @@ class MaiSaka(Module):
         return bool(self.config.get("url") and self.config.get("api_key"))
 
     def shutdown(self) -> None:
+        """停止麦麦 API-Server 连接"""
         asyncio.run_coroutine_threadsafe(self.runtime.stop(), self.robot.loop).result(timeout=5)
 
     async def handle_api_message(self, message: APIMessageBase, metadata: dict) -> None:
+        """处理麦麦 API-Server 推送的消息"""
         try:
             await self.codec_in.dispatch(message, metadata)
         except Exception: # pylint: disable=broad-exception-caught
             self.errorf(f"处理来自麦麦的消息失败:\n{traceback.format_exc()}")
 
     async def construct_message(self, event: Event | None = None, *, content_override: str | None = None) -> APIMessageBase | None:
+        """基于当前或指定事件构造麦麦 API 消息"""
         event = event or self.event
         return await self.codec_out.build_message(event, content_override=content_override)
 
     async def send_to_maim(self, message: APIMessageBase) -> bool:
+        """发送消息到麦麦并维护连续失败计数"""
         try:
             self.printf(f"{Fore.GREEN}[TO] {Fore.RESET}{_segment_preview(message.message_segment)}")
             send_status = await self.runtime.send_message(message)
@@ -1020,6 +1060,7 @@ class MaiSaka(Module):
     def send_maibot(self):
         """发送至麦麦"""
         async def send_task() -> None:
+            """异步构造并发送当前事件到麦麦"""
             try:
                 message = await self.construct_message()
                 if message is not None:
@@ -1038,6 +1079,7 @@ class MaiSaka(Module):
             return
 
         async def send_task() -> None:
+            """构造伪事件并主动推送到麦麦"""
             try:
                 fake_event = Event(self.robot)
                 fake_event.msg = content

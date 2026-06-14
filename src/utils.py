@@ -176,6 +176,7 @@ def apply_formatter(logger: logging.Logger, mid: str):
         }
 
         def format(self, record):
+            """为日志记录添加颜色并交给父类格式化"""
             color = self.COLORS.get(record.levelno, "")
             reset = Style.RESET_ALL
             record.asctime = f"{color}{record.levelname}{reset}"
@@ -1224,8 +1225,10 @@ def _register_handler(condition, handled=True):
     """模块方法装饰器"""
 
     def decorator(func):
+        """为模块方法生成带条件判断的包装器"""
         @wraps(func)
         def wrapper(self: Module, *args, **kwargs):
+            """执行条件满足时调用模块方法并维护 handled 状态"""
             method_name = f"{self.ID}.{func.__name__}"
             if not condition(self):
                 # self.robot.printf(f"未满足[{method_name}]的执行条件", level="DEBUG")

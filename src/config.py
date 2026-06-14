@@ -63,6 +63,7 @@ def int_validator(
     """构造整数校验器"""
 
     def validate(value: Any) -> int:
+        """校验单个整数配置值"""
         if isinstance(value, bool):
             raise TypeError(f"{name}需要整数类型")
         value = int(value)
@@ -131,6 +132,7 @@ class Config:
     }
 
     def __init__(self, config_file: str) -> None:
+        """读取配置文件并应用默认值和校验规则"""
         self.config_file = config_file
         self.default = {key: deepcopy(rule.default) for key, rule in self.SCHEMA.items()}
         self.raw = self._load()

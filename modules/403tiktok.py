@@ -23,6 +23,7 @@ class Tiktok(Module):
     }
 
     def __init__(self, event, auth=0):
+        """初始化抖音和 TikTok 链接匹配规则"""
         self.video_pattern = (
             r"(https?://[^\s&;,\[]*(douyin.com|tiktok.com)/[^\s&;,\"\u4e00-\u9fff\[]*)"
         )

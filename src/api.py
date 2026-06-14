@@ -16,8 +16,9 @@ def get(robot: Concerto, url, timeout=60):
     try:
         get_url = robot.config.api_base.strip("/") + url
         robot.request_list.append(f"GET{url}")
-        data = httpx.get(get_url, timeout=timeout)
-        rev_json = data.json()
+        resp = httpx.get(get_url, timeout=timeout, follow_redirects=True)
+        resp.raise_for_status()
+        rev_json = resp.json()
         robot.printf(
             f"{Fore.YELLOW}[DATA]{Fore.RESET} GET请求{Fore.MAGENTA}[{get_url}]{Fore.RESET}"
             f"后返回{Fore.YELLOW}{rev_json}{Fore.RESET}",
@@ -38,7 +39,8 @@ def post(robot: Concerto, url, data, timeout=60):
         post_url = robot.config.api_base.strip("/") + url
         robot.request_list.append(f"POST{url} | {data}")
         header = {"Content-Type": "application/json"}
-        data = httpx.post(post_url, headers=header, data=data, timeout=timeout)
+        resp = httpx.post(post_url, headers=header, data=data, timeout=timeout, follow_redirects=True)
+        resp.raise_for_status()
         rev_json = data.json()
         robot.printf(
             f"{Fore.YELLOW}[DATA]{Fore.RESET} POST请求{Fore.MAGENTA}[{post_url}]{Fore.RESET}"

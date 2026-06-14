@@ -40,6 +40,7 @@ class LLM(Module):
     AUTO_INIT = True
 
     def __init__(self, event, auth=0):
+        """初始化 LLM 配置并注册可被其他模块调用的能力"""
         super().__init__(event, auth)
         if "LLM" not in self.robot.func:
             self.robot.func["LLM"] = lambda: None
@@ -64,6 +65,7 @@ class LLM(Module):
                 self.warnf(f"未配置TTS模型，全局函数不可用 {e}")
 
     def premise(self):
+        """阻止本模块参与普通消息匹配，仅保留内部能力"""
         return False
 
     def build_model_map(self, model_type: str = "chat") -> Dict[str, Dict]:
@@ -137,6 +139,7 @@ class LLM(Module):
             return data["choices"][0]["message"]["content"]
 
         def generator():
+            """逐块读取同步流式响应内容"""
             with httpx.stream(
                 "POST", url, headers=headers, json=payload, timeout=params["timeout"]
             ) as response:
@@ -166,6 +169,7 @@ class LLM(Module):
             return data["choices"][0]["message"]["content"]
 
         async def generator():
+            """逐块读取异步流式响应内容"""
             async with httpx.AsyncClient().stream(
                 "POST", url, headers=headers, json=payload, timeout=params["timeout"]
             ) as response:

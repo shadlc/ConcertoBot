@@ -24,6 +24,7 @@ class Group(Module):
     HANDLE_REQUEST = True
 
     def premise(self):
+        """初始化群成员退出广播的临时缓存"""
         if not hasattr(self.robot, "group_decrease_broadcasts"):
             self.robot.group_decrease_broadcasts = {}
         return True
@@ -31,6 +32,7 @@ class Group(Module):
     @Utils.handler(lambda self: self.group_at() and self.au(1)
         and self.match(r"^(为|给|替)\s*(\S+)\s*(设置|添加|增加|颁发|设立)(专属)*(头衔|称号)\s*(\S+)$"))
     def special_title(self):
+        """为指定群成员设置专属头衔"""
         member_info = Utils.group_member_info(
             self.robot, self.event.group_id, self.event.self_id
         )
@@ -53,6 +55,7 @@ class Group(Module):
     @Utils.handler(lambda self: self.group_at() and self.au(1)
         and self.match(r"^(开启|启用|打开|记录|启动|关闭|禁用|取消)群成员广播"))
     def group_member_broadcast(self):
+        """开启或关闭当前群的成员变动广播"""
         msg = ""
         if self.match(r"(开启|启用|打开|记录|启动)"):
             self.conv_config["member_broadcast"]["enable"] = True
@@ -66,6 +69,7 @@ class Group(Module):
     @Utils.handler(lambda self: self.conv_config["member_broadcast"]["enable"]
          and self.event.notice_type == ("group_decrease"))
     def group_decrease(self):
+        """收集短时间内的退群事件，延迟合并广播"""
         group_id = self.event.group_id
         pending = self.robot.group_decrease_broadcasts.setdefault(group_id, {"events": [], "timer": None})
 
@@ -102,6 +106,7 @@ class Group(Module):
     @Utils.handler(lambda self: self.conv_config["member_broadcast"]["enable"]
          and self.event.raw.get("request_type") == "group")
     def group_request(self):
+        """将入群申请信息广播到当前群"""
         if self.event.raw.get("request_type") == "group":
             comment = self.event.raw.get("comment")
             Utils.reply_id(self.robot, "group", self.event.group_id,

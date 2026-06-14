@@ -53,6 +53,7 @@ def configure_logging(log_path: str) -> None:
 class Memory(object):
     """独立聊天记录存储"""
     def __init__(self):
+        """初始化消息和通知的短期历史缓存"""
         self.past_message = deque(maxlen=20)
         self.past_notice = deque(maxlen=20)
 
@@ -61,6 +62,7 @@ class Concerto:
     """机器人类定义"""
 
     def __init__(self):
+        """初始化机器人"""
         self.is_running = True
         self.is_restart = False
 
@@ -128,6 +130,7 @@ class Concerto:
     def setup_signal_handler(self) -> None:
         """捕获Ctrl C信号"""
         def handle_signal(signum, frame): # pylint: disable=unused-argument
+            """在收到 Ctrl+C 时停止机器人并退出进程"""
             self.stop()
             raise SystemExit()
 

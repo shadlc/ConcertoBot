@@ -70,6 +70,7 @@ class Chat(Module):
     AUTO_INIT = True
 
     def __init__(self, event, auth = 0):
+        """初始化统计周期名称映射并启动定时统计任务"""
         self.en2cn_dict = {
             "all": "历史", "today": "今天", "yesterday": "昨天", "before_yesterday": "前天",
             "this_week": "本周", "last_week": "上周",
@@ -918,6 +919,7 @@ class Chat(Module):
             filtered_sizes = [s for s in sizes if s > 0]
             colors = plt.get_cmap(colormap)(np.linspace(0, 1, len(filtered_labels)))
             def autopct(pct, sizes, labels):
+                """为饼图生成带数量的百分比标签"""
                 index = autopct.i
                 autopct.i += 1
                 return f"{labels[index]}{sizes[index]}条 {pct:.1f}%"

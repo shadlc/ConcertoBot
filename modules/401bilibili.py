@@ -62,6 +62,7 @@ class Bilibili(Module):
     AUTO_INIT = True
 
     def __init__(self, event, auth=0):
+        """初始化 B 站状态缓存并启动后台轮询任务"""
         self.type_msg = {
             "DYNAMIC_TYPE_AV": "投稿了一个视频",
             "DYNAMIC_TYPE_FORWARD": "转发了一条动态",
@@ -80,6 +81,7 @@ class Bilibili(Module):
         asyncio.run_coroutine_threadsafe(self.init_task(), self.robot.loop)
 
     def premise(self):
+        """刷新登录凭据对象并复用持久化模块状态"""
         self.credential = Credential(
             sessdata=self.config["env"]["sessdata"],
             bili_jct=self.config["env"]["bili_jct"],
@@ -103,6 +105,7 @@ class Bilibili(Module):
         fans = len(self.get_uid_list("fans"))
         self.printf(f"实时检测开启~ 共监控{dynamic}个用户动态, {live}个用户直播, {fans}个用户粉丝数")
         async def dynamic_loop():
+            """循环检查已关注 UP 主的新动态"""
             while True:
                 try:
                     await self.dynamic_check(interval)
@@ -113,6 +116,7 @@ class Bilibili(Module):
         asyncio.run_coroutine_threadsafe(dynamic_loop(), self.robot.loop)
 
         async def fans_loop():
+            """按 cron 配置检查粉丝数变化"""
             cron = MiniCron(
                 self.config["env"]["cron"],
                 lambda: sync(self.fans_check()),
@@ -128,6 +132,7 @@ class Bilibili(Module):
         asyncio.run_coroutine_threadsafe(fans_loop(), self.robot.loop)
 
         async def live_loop():
+            """循环检查已关注 UP 主的直播状态"""
             while True:
                 try:
                     await self.live_check()
@@ -138,6 +143,7 @@ class Bilibili(Module):
         asyncio.run_coroutine_threadsafe(live_loop(), self.robot.loop)
 
         async def credential_refresh():
+            """定期刷新并保存 B 站登录凭据"""
             while True:
                 if await self.credential.check_refresh():
                     await self.credential.refresh()

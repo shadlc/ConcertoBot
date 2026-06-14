@@ -45,6 +45,7 @@ class Repeater(Module):
             self.printf("该消息包含无效消息，不进行复读")
         else:
             def get_chance(repeat_count=2):
+                """根据连续复读次数计算本次跟读概率"""
                 p0 = 0.4 # 初始概率
                 return 1 - (1 - p0) * (0.5 ** (repeat_count - 2))
 

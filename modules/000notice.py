@@ -31,6 +31,7 @@ class Notice(Module):
     HANDLE_MESSAGE = False
 
     def premise(self):
+        """初始化通知节流状态"""
         if not hasattr(self.robot, "last_notice_timestamp"):
             self.robot.last_notice_timestamp = 0
         return True
@@ -40,6 +41,7 @@ class Notice(Module):
          and self.config.get("poke_reply")
          and not self.is_self_send())
     def poke(self):
+        """处理戳一戳通知并按配置进行回应"""
         if self.event.group_id and self.event.group_id in self.robot.config.rev_group:
             self.printf(
                 f"在群{Fore.MAGENTA}{self.event.group_name}({self.event.group_id}){Fore.RESET}接收来自"
@@ -68,6 +70,7 @@ class Notice(Module):
          and self.event.sub_type == "input_status"
          and self.event.raw.get("status_text"))
     def typing(self):
+        """记录好友或群成员正在输入的状态提示"""
         if status_text := self.event.raw.get("status_text"):
             self.printf(
                 f"{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}{status_text}"
@@ -75,6 +78,7 @@ class Notice(Module):
 
     @Utils.listener(lambda self: self.event.notice_type == "client_status")
     def client_status(self):
+        """记录机器人账号的客户端登录或登出状态"""
         if self.event.raw["online"]:
             self.printf(
                 f"检测到本账号在客户端{Fore.MAGENTA}{self.event.raw["client"]["device_name"]}{Fore.RESET}登录"
@@ -86,16 +90,19 @@ class Notice(Module):
 
     @Utils.listener(lambda self: self.event.notice_type == "friend_add")
     def friend_add(self):
+        """记录新增好友通知"""
         self.printf(f"{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}已加为好友")
 
     @Utils.listener(lambda self: self.event.notice_type == "friend_recall")
     def friend_recall(self):
+        """处理好友撤回通知并发送占位回复"""
         self.printf(f"{Fore.MAGENTA}{self.event.operator_name}({self.event.operator_id})撤回了一条消息")
         msg = "%OTHER_RECALL%"
         Utils.reply_event(self.robot, self.event, msg)
 
     @Utils.listener(lambda self: self.event.notice_type == "group_recall")
     def group_recall(self):
+        """记录群撤回消息，并缓存可供后续查询的撤回内容"""
         self.printf(f"在群{Fore.MAGENTA}{self.event.group_name}({self.event.group_id}){Fore.RESET}检测到一条撤回消息")
         recall_time = time.strftime(
             "%Y年%m月%d日%H:%M:%S", time.localtime(self.event.time)
@@ -124,6 +131,7 @@ class Notice(Module):
 
     @Utils.listener(lambda self: self.event.notice_type == "group_upload")
     def group_upload(self):
+        """记录群文件上传通知"""
         file_name = self.event.raw["file"]["name"]
         file_size = Utils.calc_size(self.event.raw["file"]["size"])
         self.printf(
@@ -134,6 +142,7 @@ class Notice(Module):
 
     @Utils.listener(lambda self: self.event.notice_type == "group_admin")
     def group_admin(self):
+        """记录群管理员变更通知"""
         if self.event.sub_type == "set":
             self.printf(
                 f"群{Fore.MAGENTA}{self.event.group_name}({self.event.group_id}){Fore.RESET}内"
@@ -147,6 +156,7 @@ class Notice(Module):
 
     @Utils.listener(lambda self: self.event.notice_type == "group_decrease")
     def group_decrease(self):
+        """记录群成员退出、被踢或群解散通知"""
         if self.event.sub_type == "leave":
             self.printf(
                 f"{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}主动退"
@@ -166,6 +176,7 @@ class Notice(Module):
 
     @Utils.listener(lambda self: self.event.notice_type == "group_increase")
     def group_increase(self):
+        """处理群成员加入通知，并按配置欢迎新人或自我介绍"""
         if self.event.sub_type == "approve":
             self.printf(
                 f"{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}已被同意加入"
@@ -202,6 +213,7 @@ class Notice(Module):
 
     @Utils.listener(lambda self: self.event.notice_type == "group_ban")
     def group_ban(self):
+        """记录群禁言和全员禁言状态变化"""
         duration = self.event.raw["duration"]
         if duration:
             duration = str(duration) + "秒" if int(duration) < 268435455 else "永久"
@@ -234,6 +246,7 @@ class Notice(Module):
     @Utils.listener(lambda self: self.event.notice_type == "notify"
          and self.event.sub_type == "profile_like")
     def profile_like(self):
+        """记录主页点赞通知"""
         times = self.event.raw.get("times")
         self.printf(
             f"{Fore.MAGENTA}{self.event.operator_id}({self.event.operator_nick}){Fore.RESET}给你的主页点了{Fore.YELLOW}{times}{Fore.RESET}个赞"
