@@ -521,6 +521,21 @@ def status_ok(response: dict):
         return False
 
 
+def get_version_info(robot: Concerto):
+    """获取API版本和相关信息"""
+    return api.get_version_info(robot)
+
+
+def get_login_info(robot: Concerto):
+    """获取登录号信息"""
+    return api.get_login_info(robot)
+
+
+def bot_exit(robot: Concerto):
+    """退出机器人"""
+    return api.bot_exit(robot)
+
+
 def handle_placeholder(text: str, placeholder_dict: dict):
     """替换标记的字符串"""
     pattern = re.compile(r"(%\S+?%)")
@@ -1277,6 +1292,9 @@ class Utils:
     get_content_base64 = staticmethod(get_content_base64)
     get_image_format = staticmethod(get_image_format)
     status_ok = staticmethod(status_ok)
+    get_version_info = staticmethod(get_version_info)
+    get_login_info = staticmethod(get_login_info)
+    bot_exit = staticmethod(bot_exit)
     handle_placeholder = staticmethod(handle_placeholder)
     build_msg = staticmethod(build_msg)
     build_node = staticmethod(build_node)

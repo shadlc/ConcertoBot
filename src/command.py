@@ -11,13 +11,7 @@ from typing import TYPE_CHECKING
 from colorama import Fore
 
 from src.utils import Utils
-from src.api import (
-    get,
-    get_version_info,
-    get_login_info,
-    bot_exit,
-    post,
-)
+from src.api import get, post
 
 if TYPE_CHECKING:
     from src.robot import Concerto
@@ -181,7 +175,7 @@ class ExecuteCmd(object):
 
     def exit(self, argv=""): # pylint: disable=unused-argument
         """退出机器人"""
-        result = bot_exit(self.robot)
+        result = Utils.bot_exit(self.robot)
         if Utils.status_ok(result):
             self.printf("账号已退出")
         else:
@@ -372,7 +366,7 @@ class ExecuteCmd(object):
 
     def info(self, argv=""): # pylint: disable=unused-argument
         """查看API版本和相关信息"""
-        info = get_version_info(self.robot)
+        info = Utils.get_version_info(self.robot)
         module_count = len(self.robot.modules)
         modules = [i.ID for i in self.robot.modules.values()]
         handler_amount = Utils.get_handler_amount(self.robot)
@@ -748,7 +742,7 @@ class ExecuteCmd(object):
                 self.robot.at_info = "[CQ:at,qq=" + str(self.robot.self_id) + "]"
                 self.printf(f"设置机器人为{Fore.MAGENTA}{self.robot.self_name}({self.robot.self_id}){Fore.RESET}成功")
             elif re.search(r"self\s+auto$", argv):
-                result = get_login_info(self.robot)
+                result = Utils.get_login_info(self.robot)
                 self.robot.self_name = result["data"]["nickname"]
                 self.robot.self_id = result["data"]["user_id"]
                 self.robot.at_info = "[CQ:at,qq=" + str(self.robot.self_id) + "]"

@@ -6,7 +6,6 @@ import time
 
 from colorama import Fore
 import httpx
-from src.api import del_msg, get_version_info, send_msg
 from src.base import Module
 from src.utils import Utils
 
@@ -169,7 +168,7 @@ class Message(Module):
 
     @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^信息$"))
     def info(self):
-        info = get_version_info(self.robot)
+        info = Utils.get_version_info(self.robot)
         msg = "=======API版本信息======="
         msg += f"\n应用名：{info["app_name"]}"
         msg += f"\n版本号：{info["app_version"]}"
@@ -183,7 +182,7 @@ class Message(Module):
             rev = self.robot.self_message[-1]
             msg_id = rev["message_id"]
             msg = rev["message"]
-            result = del_msg(self.robot, {"message_id": msg_id})
+            result = Utils.del_msg(self.robot, msg_id)
             self.robot.self_message.pop()
             if Utils.status_ok(result):
                 self.printf(f"撤回消息{Fore.MAGENTA}{msg}{Fore.RESET}成功！")
@@ -208,11 +207,11 @@ class Message(Module):
             result = False
             if self.match(r"向群[0-9]+"):
                 result = Utils.status_ok(
-                    send_msg(self.robot, {"msg_type": "group", "number": number, "msg": send})
+                    Utils.send_msg(self.robot, "group", number, send)
                 )
             else:
                 result = Utils.status_ok(
-                    send_msg(self.robot, {"msg_type": "private", "number": number, "msg": send})
+                    Utils.send_msg(self.robot, "private", number, send)
                 )
             if result:
                 msg = f"发送消息{send}成功!"
@@ -225,13 +224,13 @@ class Message(Module):
     @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(开启|关闭)?静默(模式)?$"))
     def silence(self):
         if self.match(r"^开启"):
-            self.robot.is_silence = True
+            self.robot.config.is_silence = True
         elif self.match(r"^关闭"):
-            self.robot.is_silence = False
+            self.robot.config.is_silence = False
         else:
-            self.robot.is_silence = not self.robot.is_silence
+            self.robot.config.is_silence = not self.robot.config.is_silence
         self.robot.config.save("is_silence", self.robot.config.is_silence)
-        if self.robot.is_silence:
+        if self.robot.config.is_silence:
             msg = "静默模式已开启"
         else:
             msg = "静默模式已关闭"

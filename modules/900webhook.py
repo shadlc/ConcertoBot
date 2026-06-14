@@ -11,7 +11,6 @@ from collections import deque
 
 from colorama import Fore
 
-from src.api import send_msg
 from src.base import Module
 from src.utils import Utils
 
@@ -76,11 +75,7 @@ class Webhook(Module):
                 if self.config["admin_id"] and (
                     time.time() - self.latest_warning_time > self.config["admin_warning_delay"]
                 ):
-                    send_msg(self, {
-                        "msg_type":"private",
-                        "number": self.config["admin_id"],
-                        "msg": msg
-                    })
+                    Utils.send_msg(self.robot, "private", self.config["admin_id"], msg)
                     self.latest_warning_time = time.time()
                 time.sleep(5)
 
@@ -218,22 +213,24 @@ class Webhook(Module):
         summary = data.get("eventData").get("summary")
         if notify := self.config["notify"].get("STREAM_STARTED"):
             for i in notify:
-                send_msg(self.robot, {
-                    "msg_type": i.get("msg_type"),
-                    "number": i.get("number"),
-                    "msg": i.get("msg", "").format(name=name, title=title, summary=summary)
-                })
+                Utils.send_msg(
+                    self.robot,
+                    i.get("msg_type"),
+                    i.get("number"),
+                    i.get("msg", "").format(name=name, title=title, summary=summary),
+                )
 
     def stream_end(self, data):
         """OwnCast结束直播通知"""
         name = data.get("eventData").get("name")
         if notify := self.config["notify"].get("STREAM_STOPPED"):
             for i in notify:
-                send_msg(self.robot, {
-                    "msg_type": i.get("msg_type"),
-                    "number": i.get("number"),
-                    "msg": i.get("msg", "").format(name=name)
-                })
+                Utils.send_msg(
+                    self.robot,
+                    i.get("msg_type"),
+                    i.get("number"),
+                    i.get("msg", "").format(name=name),
+                )
 
     def emby_new(self, data):
         """Emby更新资源"""
@@ -250,11 +247,12 @@ class Webhook(Module):
         if notify := self.config["notify"].get("library.new"):
             for i in notify:
                 if re.search(i.get("keywords", ""), name):
-                    send_msg(self.robot, {
-                        "msg_type": i.get("msg_type"),
-                        "number": i.get("number"),
-                        "msg": i.get("msg", "").format(name=name, img_id=img_id)
-                    })
+                    Utils.send_msg(
+                        self.robot,
+                        i.get("msg_type"),
+                        i.get("number"),
+                        i.get("msg", "").format(name=name, img_id=img_id),
+                    )
 
     def grafana_alert(self, data):
         """Grafana警告"""
@@ -263,8 +261,9 @@ class Webhook(Module):
         title = data.get("title")
         if notify := self.config["notify"].get("STREAM_STARTED"):
             for i in notify:
-                send_msg(self.robot, {
-                    "msg_type": i.get("msg_type"),
-                    "number": i.get("number"),
-                    "msg": i.get("msg", "").format(title=title)
-                })
+                Utils.send_msg(
+                    self.robot,
+                    i.get("msg_type"),
+                    i.get("number"),
+                    i.get("msg", "").format(title=title),
+                )
