@@ -17,6 +17,7 @@ import html
 import socket
 import json
 import random
+import threading
 import traceback
 
 from typing import TYPE_CHECKING, Callable, Coroutine, Dict, Optional, Set, Union
@@ -283,16 +284,13 @@ def char_true_color(char: str, rgb: list):
     return f"\033[38;2;{r};{g};{b}m{char}\033[0m"
 
 
-def msg_img2char(robot: Concerto, msg: str, show_url=False):
+def msg_img2char(robot: Concerto, msg: str, print_img: bool = False):
     """
     检测CQ码中有图片并转化为字符画
     :param robot: 机器人类
     :param msg: 收到的消息
-    :param color: 是否渲染颜色
     :return: 转化为字符画的消息
     """
-    if "[RECEIVE]" not in msg:
-        return msg
     matches = re.findall(r"(\[CQ:image.*?url=([^,]*).*\])", msg)
     for cq, url in matches:
         try:
@@ -306,7 +304,7 @@ def msg_img2char(robot: Concerto, msg: str, show_url=False):
             target_h = int(target_w * ratio * 0.5)
             img = img.resize((target_w, target_h))
             pixels = img.getdata()
-            char = "\n"
+            char = ""
             row = 0
             for i in pixels:
                 pixel_gray = (i[0] * 38 + i[1] * 75 + i[2] * 15) >> 7
@@ -328,12 +326,23 @@ def msg_img2char(robot: Concerto, msg: str, show_url=False):
                 if row >= target_w:
                     row = 0
                     char += "\n"
-            if show_url:
-                char = f"{url}{char}"
+            char = char.strip()
             msg = msg.replace(cq, char)
+            if print_img:
+                robot.printf("\r"+char, flush=True)
         except Exception:  # pylint: disable=broad-exception-caught
             robot.errorf(f"图片转字符画失败!\n{traceback.format_exc()}", level="DEBUG")
     return msg
+
+
+def submit_msg_img2char(robot: Concerto, msg: str) -> bool:
+    """提交CQ图片到字符画后台转换任务"""
+    if "[RECEIVE]" not in msg:
+        return False
+    if not re.search(r"\[CQ:image.*?url=([^,]*).*?\]", msg):
+        return False
+    threading.Thread(target=msg_img2char, args=(robot, msg, True),daemon=True).start()
+    return True
 
 
 def resize_image(image: bytes, size=(640, 360), file_format: str = "JPEG") -> bytes:

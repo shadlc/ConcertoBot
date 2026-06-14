@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import random
+import re
 import sys
 import time
 import threading
@@ -26,11 +27,11 @@ from src.utils import (
     format_to_log,
     get_handler_amount,
     handle_placeholder,
-    msg_img2char,
     reply_event,
     scan_missing_modules,
     send_forward_msg,
     simplify_traceback,
+    submit_msg_img2char,
     receive_msg,
     send_msg,
     status_ok,
@@ -650,12 +651,12 @@ class Concerto:
         msg = handle_placeholder(str(msg), self.placeholder_dict)
         prefix = f"\r[{time.strftime('%H:%M:%S', time.localtime())} INFO] "
         if self.config.is_show_image:
-            msg = msg_img2char(self, msg)
+            submit_msg_img2char(self, msg)
         if flush:
             print(msg, end=end,flush=flush)
         else:
             print(f"{prefix}{msg}", end=end, flush=flush)
-        if console and not flush:
+        if console:
             print(f"\r{Fore.GREEN}<console> {Fore.RESET}", end="")
         logger.info("%s", format_to_log(f"{prefix}{msg}"))
 
