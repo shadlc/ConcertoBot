@@ -7,7 +7,8 @@ from typing import Any, Callable
 
 import httpx
 
-from src.utils import Module, set_emoji, listener
+from src.base import Module
+from src.utils import Utils
 
 class Rednote(Module):
     """小红书视频模块"""
@@ -24,7 +25,7 @@ class Rednote(Module):
         self.video_pattern = r"(https?://[^\s&;,\[]*(xhslink.com/o|xiaohongshu.com/)[^\s;,\"\u4e00-\u9fff\[]*)"
         super().__init__(event, auth)
 
-    @listener(lambda self: self.at_or_private() and self.au(2)
+    @Utils.listener(lambda self: self.at_or_private() and self.au(2)
             and (self.is_reply() or self.match(self.video_pattern)))
     def rednote_download(self):
         """下载视频"""
@@ -39,10 +40,10 @@ class Rednote(Module):
         self.handled = True
         try:
             if not self.is_private():
-                set_emoji(self.robot, self.event.msg_id, 124)
+                Utils.set_emoji(self.robot, self.event.msg_id, 124)
             play_url = self.retry(lambda url=url: self.get_play_url(url), failed_ok=False)
             if not self.is_private():
-                set_emoji(self.robot, self.event.msg_id, 66)
+                Utils.set_emoji(self.robot, self.event.msg_id, 66)
             msg = f"[CQ:video,file={play_url}]"
             self.reply(msg)
         except Exception as e: # pylint: disable=broad-exception-caught

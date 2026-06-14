@@ -7,7 +7,8 @@ import traceback
 from typing import Callable, Any
 import httpx
 
-from src.utils import Module, set_emoji, status_ok, handler, listener
+from src.base import Module
+from src.utils import Utils
 
 
 class YUJN(Module):
@@ -81,7 +82,7 @@ class YUJN(Module):
         "active_func": [],
     }
 
-    @listener(
+    @Utils.listener(
         lambda self: self.au(2)
         and self.conv_config["enable"]
         and self.conv_config.get("probability", 0)
@@ -107,7 +108,7 @@ class YUJN(Module):
             self.errorf(traceback.format_exc())
             self.errorf(f"遇见API请求失败: {e}")
 
-    @handler(
+    @Utils.handler(
         lambda self: self.au(2)
         and self.match(rf"^(来|发)(点|只|张|个|位){self.PICTURE_PATTERN}$")
     )
@@ -115,7 +116,7 @@ class YUJN(Module):
         """图片类功能处理"""
         try:
             if not self.is_private():
-                set_emoji(self.robot, self.event.msg_id, 124)
+                Utils.set_emoji(self.robot, self.event.msg_id, 124)
             cmd = self.match(self.PICTURE_PATTERN).group(1)
             if cmd not in self.URL_MAP:
                 return self.reply(f"未知命令: {cmd}")
@@ -125,7 +126,7 @@ class YUJN(Module):
             self.errorf(traceback.format_exc())
             self.errorf(f"遇见API请求失败: {e}")
 
-    @handler(
+    @Utils.handler(
         lambda self: self.au(2)
         and self.match(rf"^(来|发)(点|只|张|个|位){self.VIDEO_PATTERN}$")
     )
@@ -133,7 +134,7 @@ class YUJN(Module):
         """视频类功能处理"""
         try:
             if not self.is_private():
-                set_emoji(self.robot, self.event.msg_id, 124)
+                Utils.set_emoji(self.robot, self.event.msg_id, 124)
             cmd = self.match(self.VIDEO_PATTERN).group(1)
             if cmd not in self.URL_MAP:
                 return self.reply(f"未知命令: {cmd}")
@@ -147,13 +148,13 @@ class YUJN(Module):
 
             b64 = self.retry(api_req)
             result = self.reply(f"[CQ:video,file={b64}]")
-            if not status_ok(result):
+            if not Utils.status_ok(result):
                 self.reply("视频失效了~请再试一次吧~")
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             self.errorf(f"遇见API请求失败: {e}")
 
-    @handler(
+    @Utils.handler(
         lambda self: self.au(2)
         and self.match(rf"^(来|发)(点|只|个|位|句){self.VOICE_PATTERN}(语音|声音)?$")
     )
@@ -161,7 +162,7 @@ class YUJN(Module):
         """语音类功能处理"""
         try:
             if not self.is_private():
-                set_emoji(self.robot, self.event.msg_id, 124)
+                Utils.set_emoji(self.robot, self.event.msg_id, 124)
             cmd = self.match(self.VOICE_PATTERN).group(1)
             if cmd not in self.URL_MAP:
                 return self.reply(f"未知命令: {cmd}")
@@ -179,7 +180,7 @@ class YUJN(Module):
             self.errorf(traceback.format_exc())
             self.errorf(f"遇见API请求失败: {e}")
 
-    @handler(
+    @Utils.handler(
         lambda self: self.group_at()
         and self.au(1)
         and self.match(r"^(开启|关闭)遇见API$")

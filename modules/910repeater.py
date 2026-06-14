@@ -4,7 +4,8 @@ import random
 import re
 
 from colorama import Fore
-from src.utils import Module, handler, listener
+from src.base import Module
+from src.utils import Utils
 
 
 class Repeater(Module):
@@ -27,7 +28,7 @@ class Repeater(Module):
         "exclude": [],
     }
 
-    @listener(lambda self: not self.at_or_private() and self.au(2)
+    @Utils.listener(lambda self: not self.at_or_private() and self.au(2)
         and self.conv_config["repeat"]
         and self.event.text not in self.conv_config.get("exclude")
         and re.sub(r",url=.*?]","]", str(self.data.past_message)).count(f"'message': '{self.event.msg}") > 1
@@ -59,7 +60,7 @@ class Repeater(Module):
             else:
                 self.printf(f"本次概率{f"{round(chance*100,2)}%"}, 复读失败")
 
-    @handler(lambda self: self.group_at() and self.au(1) and self.match(r"^(开启|打开|启用|允许|关闭|禁止|不允许|取消)?复读机$"))
+    @Utils.handler(lambda self: self.group_at() and self.au(1) and self.match(r"^(开启|打开|启用|允许|关闭|禁止|不允许|取消)?复读机$"))
     def toggle(self):
         """设置复读机"""
         flag = self.conv_config["repeat"]
@@ -75,7 +76,7 @@ class Repeater(Module):
         self.save_config()
         self.reply(msg)
 
-    @handler(lambda self: self.group_at() and self.au(2) and self.match(r"^(不|禁止)?(复读|复读)\s+(\S+)$"))
+    @Utils.handler(lambda self: self.group_at() and self.au(2) and self.match(r"^(不|禁止)?(复读|复读)\s+(\S+)$"))
     def exclude(self):
         """复读排除"""
         text = self.match(r"^(不|禁止)?(复读|复读)\s+(\S+)$").group(3)

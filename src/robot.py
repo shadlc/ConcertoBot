@@ -23,21 +23,8 @@ import httpx
 from src import api
 from src.config import Config
 from src.placeholders import PLACEHOLDER_DICT
-from src.utils import (
-    Event,
-    Module,
-    format_to_log,
-    get_handler_amount,
-    handle_placeholder,
-    reply_event,
-    scan_missing_modules,
-    send_forward_msg,
-    simplify_traceback,
-    submit_msg_img2char,
-    receive_msg,
-    send_msg,
-    status_ok,
-)
+from src.base import Event, Module
+from src.utils import Utils
 from src.command import ExecuteCmd
 
 logger = logging.getLogger()
@@ -161,7 +148,7 @@ class Concerto:
             self.printf(".", end="", flush=True)
             try:
                 result = api.get(self, "/get_version_info")
-                connected = status_ok(result)
+                connected = Utils.status_ok(result)
                 app_name = result.get("data",{}).get("app_name")
                 app_version = result.get("data",{}).get("app_version")
                 self.printf(f"已连接至 {Fore.YELLOW}{app_name}v{app_version}{Fore.RESET}")
@@ -182,7 +169,7 @@ class Concerto:
         self.printf(
             f"已成功唤醒{Fore.MAGENTA}{self.self_name}({self.self_id}){Fore.RESET}, "
             f"加载模块{Fore.MAGENTA}{len(self.modules)}{Fore.RESET}个, "
-            f"注册处理函数{Fore.MAGENTA}{get_handler_amount(self)}{Fore.RESET}个!"
+            f"注册处理函数{Fore.MAGENTA}{Utils.get_handler_amount(self)}{Fore.RESET}个!"
         )
         return connected
 
@@ -229,7 +216,7 @@ class Concerto:
         """监听来自API的请求"""
         self.printf(f"反向监听地址已启用 [{Fore.GREEN}{self.config.host}:{self.config.port}{Fore.RESET}]")
         while self.is_running:
-            rev = receive_msg(self)
+            rev = Utils.receive_msg(self)
             self.message_executor.submit(self.handle_msg, rev)
 
     def handle_msg(self, rev: dict):
@@ -334,15 +321,15 @@ class Concerto:
         except Exception: # pylint: disable=broad-exception-caught
             if not self.config.is_error_reply:
                 return
-            error_msg = f"%FATAL_ERROR%\n{simplify_traceback(traceback.format_exc())}"
+            error_msg = f"%FATAL_ERROR%\n{Utils.simplify_traceback()}"
             if event.group_id == "":
-                reply_event(self, event, error_msg)
+                Utils.reply_event(self, event, error_msg)
             else:
                 if self.admin_notify(error_msg):
                     return
                 if event.group_id not in self.config.rev_group:
                     return
-                reply_event(self, event, error_msg)
+                Utils.reply_event(self, event, error_msg)
 
     def message(self, event: Event, auth=3):
         """处理消息事件
@@ -533,7 +520,7 @@ class Concerto:
         item_path = os.path.abspath(item_path)
         item = os.path.basename(item_path)
         module_name = os.path.splitext(item)[0]
-        missing = scan_missing_modules(item_path)
+        missing = Utils.scan_missing_modules(item_path)
         if missing:
             self.errorf(f"无法加载模块{Fore.YELLOW}{item}{Fore.RESET}，缺少依赖: {', '.join(missing)}")
             return []
@@ -701,9 +688,9 @@ class Concerto:
             self.warnf("无可用管理员进行通知")
             return False
         if nodes:
-            send_forward_msg(self, nodes, None, self.config.admin_list[0], msg)
+            Utils.send_forward_msg(self, nodes, None, self.config.admin_list[0], msg)
         else:
-            send_msg(self, "private", self.config.admin_list[0], msg)
+            Utils.send_msg(self, "private", self.config.admin_list[0], msg)
         return True
 
     def printf(self, msg, end="\n", console=True, flush=False, level="INFO"):
@@ -715,17 +702,17 @@ class Concerto:
         """
         if level == "DEBUG" and not self.config.is_debug:
             return
-        msg = handle_placeholder(str(msg), self.placeholder_dict)
+        msg = Utils.handle_placeholder(str(msg), self.placeholder_dict)
         prefix = f"\r[{time.strftime('%H:%M:%S', time.localtime())} INFO] "
         if self.config.is_show_image:
-            submit_msg_img2char(self, msg)
+            Utils.submit_msg_img2char(self, msg)
         if flush:
             print(msg, end=end,flush=flush)
         else:
             print(f"{prefix}{msg}", end=end, flush=flush)
         if console:
             print(f"\r{Fore.GREEN}<console> {Fore.RESET}", end="")
-        logger.info("%s", format_to_log(f"{prefix}{msg}"))
+        logger.info("%s", Utils.format_to_log(f"{prefix}{msg}"))
 
     def warnf(self, msg, end="\n", console=True, level="INFO"):
         """
@@ -736,12 +723,12 @@ class Concerto:
         """
         if level == "DEBUG" and not self.config.is_debug:
             return
-        msg = handle_placeholder(str(msg), self.placeholder_dict)
+        msg = Utils.handle_placeholder(str(msg), self.placeholder_dict)
         msg = msg.replace(Fore.RESET, Fore.YELLOW)
         prefix = f"\r[{time.strftime('%H:%M:%S', time.localtime())} WARN] "
         msg = f"{Fore.YELLOW}{prefix}{msg}{Fore.RESET}"
         print(msg, end=end)
-        logger.info("%s", format_to_log(msg))
+        logger.info("%s", Utils.format_to_log(msg))
         if console:
             print(f"\r{Fore.GREEN}<console> {Fore.RESET}", end="")
 
@@ -754,10 +741,10 @@ class Concerto:
         """
         if level == "DEBUG" and not self.config.is_debug:
             return
-        msg = handle_placeholder(str(msg), self.placeholder_dict)
+        msg = Utils.handle_placeholder(str(msg), self.placeholder_dict)
         prefix = f"\r[{time.strftime('%H:%M:%S', time.localtime())} ERROR] "
         msg = f"{Fore.RED}{prefix}{msg}{Fore.RESET}"
         print(msg, end=end)
-        logger.info("%s", format_to_log(msg))
+        logger.info("%s", Utils.format_to_log(msg))
         if console:
             print(f"\r{Fore.GREEN}<console> {Fore.RESET}", end="")

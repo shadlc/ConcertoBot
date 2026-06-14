@@ -12,7 +12,8 @@ from collections import deque
 from colorama import Fore
 
 from src.api import send_msg
-from src.utils import Module, listening
+from src.base import Module
+from src.utils import Utils
 
 
 class Webhook(Module):
@@ -86,7 +87,7 @@ class Webhook(Module):
     def receive_msg(self):
         """接收外部请求并返回数据字典"""
         try:
-            header, body = listening(self.config["host"], self.config["port"])
+            header, body = Utils.listening(self.config["host"], self.config["port"])
             if "application/json" not in header.get("Content-Type"):
                 self.warnf(f"收到一非JSON数据\n{body}", level="DEBUG")
                 return {}

@@ -9,7 +9,8 @@ import re
 import traceback
 
 import httpx
-from src.utils import Module, handler, get_img_url, get_user_name, status_ok
+from src.base import Module
+from src.utils import Utils
 
 class Waifu(Module):
     """抽老婆模块"""
@@ -42,7 +43,7 @@ class Waifu(Module):
     def premise(self):
         return self.group_at() or self.conv_config.get("enable")
 
-    @handler(lambda self: self.group_at() and self.au(1) and self.match(r"^(开启|打开|启用|允许|关闭|禁止|不允许|取消)?抽老婆$"))
+    @Utils.handler(lambda self: self.group_at() and self.au(1) and self.match(r"^(开启|打开|启用|允许|关闭|禁止|不允许|取消)?抽老婆$"))
     def toggle(self):
         """设置抽老婆"""
         flag = self.conv_config["enable"]
@@ -86,7 +87,7 @@ class Waifu(Module):
 
         return available_waifus
 
-    @handler(lambda self: self.au(2) and self.conv_config.get("enable") and self.match(r"^抽取?老婆$"))
+    @Utils.handler(lambda self: self.au(2) and self.conv_config.get("enable") and self.match(r"^抽取?老婆$"))
     def draw_waifu(self):
         """抽取二次元老婆"""
         today = datetime.date.today().strftime("%Y%m%d")
@@ -114,11 +115,11 @@ class Waifu(Module):
         waifu_name = waifu.split(".")[0]
         waifu_img = self.get_waifu_file(waifu)
         result = self.reply(f"你今天的二次元老婆是{waifu_name}哒~\n[CQ:image,file=base64://{waifu_img}]", reply=True)
-        if not status_ok(result):
-            qq_url = get_img_url(self.robot, f"base64://{waifu_img}")
+        if not Utils.status_ok(result):
+            qq_url = Utils.get_img_url(self.robot, f"base64://{waifu_img}")
             self.reply(f"你今天的二次元老婆是{waifu_name}哒~\n{qq_url}", reply=True)
 
-    @handler(lambda self: self.au(2) and self.conv_config.get("enable") and self.match(r"^查寻?老婆"))
+    @Utils.handler(lambda self: self.au(2) and self.conv_config.get("enable") and self.match(r"^查寻?老婆"))
     def check_waifu(self):
         """查询二次元老婆"""
         today = datetime.date.today().strftime("%Y%m%d")
@@ -127,7 +128,7 @@ class Waifu(Module):
         # 检查是否是查询用户老婆
         if match := re.search(r"\[CQ:at,qq=(.*?)\]", self.event.msg):
             user_id = match.group(1)
-            user_name = get_user_name(self.robot, user_id)
+            user_name = Utils.get_user_name(self.robot, user_id)
             waives = self.conv_config["waifu"]
             waifu = None
 
@@ -144,8 +145,8 @@ class Waifu(Module):
             waifu_name = waifu.split(".")[0]
             waifu_img = self.get_waifu_file(waifu)
             result = self.reply(f"{user_name}今天的二次元老婆是{waifu_name}哒~[CQ:image,file=base64://{waifu_img}]", reply=True)
-            if not status_ok(result):
-                qq_url = get_img_url(self.robot, f"base64://{waifu_img}")
+            if not Utils.status_ok(result):
+                qq_url = Utils.get_img_url(self.robot, f"base64://{waifu_img}")
                 self.reply(f"{user_name}今天的二次元老婆是{waifu_name}哒~\n{qq_url}", reply=True)
 
         # 检查是否是查询老婆是否存在
@@ -180,7 +181,7 @@ class Waifu(Module):
             else:
                 self.reply(f"{waifu_name}不存在，可以添加哦~", reply=True)
 
-    @handler(lambda self: self.au(self.conv_config.get("add_auth"))
+    @Utils.handler(lambda self: self.au(self.conv_config.get("add_auth"))
          and self.conv_config.get("enable")
          and self.match(r"添加?老婆 "))
     def add_waifu(self):
@@ -225,7 +226,7 @@ class Waifu(Module):
             self.errorf(traceback.format_exc())
             self.reply(f"{waifu_name}添加失败!", reply=True)
 
-    @handler(lambda self: self.au(self.conv_config.get("add_auth"))
+    @Utils.handler(lambda self: self.au(self.conv_config.get("add_auth"))
         and self.conv_config.get("enable")
         and self.match(r"^删(除)?老婆"))
     def del_waifu(self):

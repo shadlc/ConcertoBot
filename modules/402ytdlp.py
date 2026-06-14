@@ -11,7 +11,8 @@ import traceback
 import urllib
 from yt_dlp import YoutubeDL, DownloadError
 
-from src.utils import Module, calc_size, calc_time, format_to_log, get_content_base64, set_emoji, handler, listener
+from src.base import Module
+from src.utils import Utils
 
 class Ytdlp(Module):
     """视频下载模块"""
@@ -57,7 +58,7 @@ class Ytdlp(Module):
         self.video_pattern = r"(https?://[^\s&;,\[]*(b23.tv|bilibili.com/video|youtu.be|x.com|youtube.com|v.qq.com)[^\s&;,\"\u4e00-\u9fff\[]*)"
         super().__init__(event, auth)
 
-    @listener(lambda self: self.at_or_private() and self.au(2)
+    @Utils.listener(lambda self: self.at_or_private() and self.au(2)
             and self.conv_config["enable"]
             and self.match("视频详情"))
     def video_info(self):
@@ -75,7 +76,7 @@ class Ytdlp(Module):
         self.handled = True
         opts = self.get_options(url)
         try:
-            set_emoji(self.robot, self.event.msg_id, 124)
+            Utils.set_emoji(self.robot, self.event.msg_id, 124)
             info = self.get_info(url, opts)
             msg = self.parse_info(info)
             msg = f"视频解析成功!\n{msg}"
@@ -84,7 +85,7 @@ class Ytdlp(Module):
             # http://fileformats.archiveteam.org/wiki/Netscape_cookies.txt
             return self.reply("Cookie载入失败! 请联系管理员", reply=True)
         except DownloadError as e:
-            nodes = self.node(f"{format_to_log(e.msg)}")
+            nodes = self.node(f"{Utils.format_to_log(e.msg)}")
             return self.reply_forward(nodes, source="视频解析失败")
         except Exception as e: # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
@@ -93,11 +94,8 @@ class Ytdlp(Module):
             nodes = self.node(f"{e}")
             self.robot.admin_notify(f"[{self.event.group_name or self.event.user_name}]视频处理失败", nodes)
             return self.reply_forward(nodes, source="视频处理失败")
-        except Exception as e: # pylint: disable=broad-exception-caught
-            nodes = self.node(f"{e}")
-            return self.reply_forward(nodes, source="视频解析失败")
 
-    @listener(lambda self: self.at_or_private() and self.au(2)
+    @Utils.listener(lambda self: self.at_or_private() and self.au(2)
             and self.conv_config["enable"]
             and (self.is_reply() or self.match(rf"(【.*】\s)?{self.video_pattern}")))
     def video_download(self):
@@ -118,7 +116,7 @@ class Ytdlp(Module):
         opts = self.get_options(url)
         try:
             if not self.is_private():
-                set_emoji(self.robot, self.event.msg_id, 124)
+                Utils.set_emoji(self.robot, self.event.msg_id, 124)
             info = self.get_info(url, opts)
             if not info:
                 return self.reply("请求失败或不支持的链接!", reply=True)
@@ -159,7 +157,7 @@ class Ytdlp(Module):
                 msg = f"正在解析\n{msg}"
                 self.reply(msg, reply=True)
             else:
-                set_emoji(self.robot, self.event.msg_id, 60)
+                Utils.set_emoji(self.robot, self.event.msg_id, 60)
             ext = self.config["ydl"]["merge_output_format"]
             file_path = Path(self.download_video(url, opts)).as_posix()
             if not os.path.exists(file_path):
@@ -168,9 +166,9 @@ class Ytdlp(Module):
                 return self.reply("啊咧~视频不见啦，下载失败惹~", reply=True)
             video_name = file_path.split("/").pop()
             file_size = os.path.getsize(file_path)
-            self.printf(f"视频{video_name}下载完成，大小{calc_size(file_size)}")
+            self.printf(f"视频{video_name}下载完成，大小{Utils.calc_size(file_size)}")
             if file_size > 100 * 1024 * 1024 and opts["format"] != "wv+ba/w":
-                self.reply(f"视频体积太大({calc_size(file_size)})，尝试使用最低画质下载~", reply=True)
+                self.reply(f"视频体积太大({Utils.calc_size(file_size)})，尝试使用最低画质下载~", reply=True)
                 # 视频大小太大则尝试使用最低画质下载
                 if os.path.exists(file_path):
                     os.remove(file_path)
@@ -182,11 +180,11 @@ class Ytdlp(Module):
                 file_size = os.path.getsize(file_path)
                 if file_size > 100 * 1024 * 1024:
                     # 视频大小依然太大则上传失败
-                    return self.reply(f"视频体积太大({calc_size(file_size)})，上传失败~", reply=True)
+                    return self.reply(f"视频体积太大({Utils.calc_size(file_size)})，上传失败~", reply=True)
             elif file_size > 100 * 1024 * 1024:
-                return self.reply(f"视频体积太大({calc_size(file_size)})，上传失败~", reply=True)
+                return self.reply(f"视频体积太大({Utils.calc_size(file_size)})，上传失败~", reply=True)
             if not self.is_private():
-                set_emoji(self.robot, self.event.msg_id, 66)
+                Utils.set_emoji(self.robot, self.event.msg_id, 66)
             if video_path := self.config["video_path"]:
                 video_path = Path(os.path.join(video_path, video_name)).as_posix()
                 msg = f"[CQ:video,file=file://{urllib.parse.quote(video_path)}]"
@@ -202,7 +200,7 @@ class Ytdlp(Module):
             # http://fileformats.archiveteam.org/wiki/Netscape_cookies.txt
             return self.reply("Cookie载入失败! 请联系管理员", reply=True)
         except DownloadError as e:
-            nodes = self.node(f"{format_to_log(e.msg)}")
+            nodes = self.node(f"{Utils.format_to_log(e.msg)}")
             return self.reply_forward(nodes, source="视频解析失败")
         except Exception as e: # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
@@ -215,7 +213,7 @@ class Ytdlp(Module):
             if os.path.exists(file_path):
                 os.remove(file_path)
 
-    @handler(
+    @Utils.handler(
         lambda self: self.at_or_private() and self.au(1)
         and self.match(r"^(开启|启用|打开|记录|启动|关闭|禁用|取消)视频(解析|下载)?(功能)?$")
     )
@@ -296,7 +294,7 @@ class Ytdlp(Module):
         title = info.get("title", "[未知]")
         uploader = info.get("uploader", "")
         thumbnail = info.get("thumbnail", "")
-        img = get_content_base64(self.robot, thumbnail)
+        img = Utils.get_content_base64(self.robot, thumbnail)
         duration = info.get("duration", 0)
         if info.get("_type") == "playlist":
             description = info.get("description", "")
@@ -364,13 +362,13 @@ class Ytdlp(Module):
             else:
                 msg += f"\n标题: {title}"
             msg += f"\n作者: {uploader or "[未知]"}"
-            msg += f"\n时长: {calc_time(int(duration)) or "[未知]"}"
+            msg += f"\n时长: {Utils.calc_time(int(duration)) or "[未知]"}"
             msg += f"\n播放量: {view_count}"
             if img:
                 msg += f"\n[CQ:image,file=base64://{img},subtype=0]"
             if size:
                 msg += "\n获取到的最佳格式为: "
-                msg += f"{resolution} {ext} {calc_size(int(size))}"
+                msg += f"{resolution} {ext} {Utils.calc_size(int(size))}"
             msg += "\n@我并回复本条消息开始下载视频"
             return msg
 

@@ -7,7 +7,8 @@ import time
 from colorama import Fore
 import httpx
 from src.api import del_msg, get_version_info, send_msg
-from src.utils import Module, get_group_name, get_user_name, reply_id, send_group_ai_record, import_json, status_ok, handler
+from src.base import Module
+from src.utils import Utils
 
 
 class Message(Module):
@@ -36,7 +37,7 @@ class Message(Module):
         ]
     }
 
-    @handler(lambda self: self.at_or_private() and self.au(3) and self.match(r"^帮助\d?$"))
+    @Utils.handler(lambda self: self.at_or_private() and self.au(3) and self.match(r"^帮助\d?$"))
     def help(self):
         auth_level = self.auth
         if result := self.match(r"帮助(\d)"):
@@ -50,7 +51,7 @@ class Message(Module):
                     self.robot.config.data_path,
                     f"{str(self.ID).lower()}.json"
                 )
-                config = import_json(config_file)
+                config = Utils.import_json(config_file)
                 if config.get(self.owner_id, {}).get("enable") is False:
                     continue
             except Exception: # pylint: disable=broad-exception-caught
@@ -70,11 +71,11 @@ class Message(Module):
         nodes = help_list
         self.reply_forward(nodes, source="ConcertBot HELP")
 
-    @handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(增加|添加|删除|取消)?\s?管理员"))
+    @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(增加|添加|删除|取消)?\s?管理员"))
     def admin(self):
         if self.match(r"^(增加|添加)\s?管理员\s?[0-9]+"):
             user_id = self.match(r"^(增加|添加)\s?管理员\s?([0-9]+)").group(2)
-            user_name = get_user_name(self.robot, user_id)
+            user_name = Utils.get_user_name(self.robot, user_id)
             if user_id not in self.robot.config.admin_list:
                 self.robot.config.admin_list.append(user_id)
                 self.robot.config.save("admin_list", self.robot.config.admin_list)
@@ -86,7 +87,7 @@ class Message(Module):
 
         elif self.match(r"^(删除|取消)\s?管理员\s?[0-9]+"):
             user_id = self.match(r"^(删除|取消)管理员\s?([0-9]+)").group(2)
-            user_name = get_user_name(self.robot, user_id)
+            user_name = Utils.get_user_name(self.robot, user_id)
             if user_id in self.robot.config.admin_list:
                 self.robot.config.admin_list.remove(user_id)
                 self.robot.config.save("admin_list", self.robot.config.admin_list)
@@ -99,7 +100,7 @@ class Message(Module):
             msg = "请使用 [增加|删除]管理员 [QQ号] 进行增添管理员"
         self.reply(msg)
 
-    @handler(lambda self: self.at_or_private() and self.match(r"^权限(等级)?$"))
+    @Utils.handler(lambda self: self.at_or_private() and self.match(r"^权限(等级)?$"))
     def authority(self):
         if self.au(0):
             auth_level = "后台权限"
@@ -114,11 +115,11 @@ class Message(Module):
         msg = f"您的权限等级为: {auth_level}"
         self.reply(msg)
 
-    @handler(lambda self: self.group_at() and self.au(1)
+    @Utils.handler(lambda self: self.group_at() and self.au(1)
          and self.match(r"^(对接|监听|添加|增加|记录|删除|取消|移除)(本群|此群|该群|这个群|这群|群)?$"))
     def connect(self):
         group_id = str(self.event.group_id)
-        group_name = get_group_name(self.robot, group_id)
+        group_name = Utils.get_group_name(self.robot, group_id)
         msg = ""
         if self.match(r"(对接|监听|添加|增加|记录)"):
             if group_id not in self.robot.config.rev_group:
@@ -140,7 +141,7 @@ class Message(Module):
                 msg = "本群不在对接列表！"
         self.reply(msg, True)
 
-    @handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(开启|关闭)?调试(模式)?$"))
+    @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(开启|关闭)?调试(模式)?$"))
     def debug(self):
         if self.match(r"^开启"):
             self.robot.config.is_debug = True
@@ -157,7 +158,7 @@ class Message(Module):
             self.warnf("调试模式已关闭")
         self.reply(msg, True)
 
-    @handler(lambda self: self.at_or_private() and self.match(r"^计时[0-9]+"))
+    @Utils.handler(lambda self: self.at_or_private() and self.match(r"^计时[0-9]+"))
     def delay(self):
         sleep_time = int(self.match(r"([0-9]+)").group(1))
         msg = f"计时{sleep_time}秒开始"
@@ -166,7 +167,7 @@ class Message(Module):
         msg = f"计时{sleep_time}秒结束"
         self.reply(msg)
 
-    @handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^信息$"))
+    @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^信息$"))
     def info(self):
         info = get_version_info(self.robot)
         msg = "=======API版本信息======="
@@ -176,7 +177,7 @@ class Message(Module):
         msg += f"\n已安装模块：{[f"{i.NAME}({i.ID})" for i in self.robot.modules.values()]}"
         self.reply(msg)
 
-    @handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(撤回|闭嘴|嘘)(！|，)?(懂？)?$"))
+    @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(撤回|闭嘴|嘘)(！|，)?(懂？)?$"))
     def recall(self):
         if len(self.robot.self_message):
             rev = self.robot.self_message[-1]
@@ -184,7 +185,7 @@ class Message(Module):
             msg = rev["message"]
             result = del_msg(self.robot, {"message_id": msg_id})
             self.robot.self_message.pop()
-            if status_ok(result):
+            if Utils.status_ok(result):
                 self.printf(f"撤回消息{Fore.MAGENTA}{msg}{Fore.RESET}成功！")
             else:
                 msg = f"撤回消息{Fore.MAGENTA}{msg}{Fore.RESET}失败！"
@@ -193,12 +194,12 @@ class Message(Module):
             msg = "暂无可撤回的历史消息"
             self.reply(msg)
 
-    @handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^重启$"))
+    @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^重启$"))
     def restart(self):
         self.reply("%REBOOTING%")
         self.robot.restart()
 
-    @handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"说\s(.*)$"))
+    @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"说\s(.*)$"))
     def say(self):
         if self.match(r"^向"):
             inputs = self.match(r"([0-9]+)说\s?(\S*)").groups()
@@ -206,11 +207,11 @@ class Message(Module):
             send = inputs[1]
             result = False
             if self.match(r"向群[0-9]+"):
-                result = status_ok(
+                result = Utils.status_ok(
                     send_msg(self.robot, {"msg_type": "group", "number": number, "msg": send})
                 )
             else:
-                result = status_ok(
+                result = Utils.status_ok(
                     send_msg(self.robot, {"msg_type": "private", "number": number, "msg": send})
                 )
             if result:
@@ -221,7 +222,7 @@ class Message(Module):
             msg = self.match(r"说\s?(\S*)").group(1)
         self.reply(msg)
 
-    @handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(开启|关闭)?静默(模式)?$"))
+    @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(开启|关闭)?静默(模式)?$"))
     def silence(self):
         if self.match(r"^开启"):
             self.robot.is_silence = True
@@ -237,7 +238,7 @@ class Message(Module):
         self.warnf(msg)
         self.reply(msg, True)
 
-    @handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^测试"))
+    @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^测试"))
     def test(self):
         if self.match(r"^测试错误"):
             raise RuntimeError("测试错误")
@@ -262,7 +263,7 @@ class Message(Module):
             msg = f"测试{thing}OK!"
         self.reply(msg)
 
-    @handler(lambda self: self.at_or_private() and self.au(2) and self.match(r"(语音|读)\s(.*)$"))
+    @Utils.handler(lambda self: self.at_or_private() and self.au(2) and self.match(r"(语音|读)\s(.*)$"))
     def voice(self):
         text = "后面加上需要让我读出来的字嘛"
         match = self.match(r"向?(\d+)?发?送?(语音|读)\s?(.*)")
@@ -276,20 +277,20 @@ class Message(Module):
             else:
                 msg = record
             if group_id:
-                result = reply_id(self.robot, "group", group_id, msg)
+                result = Utils.reply_id(self.robot, "group", group_id, msg)
             else:
                 result = self.reply(msg)
         elif not group_id or self.is_private():
             msg = f"[CQ:tts,text={text}]"
             if group_id:
-                result = reply_id(self.robot, "group", group_id, msg)
+                result = Utils.reply_id(self.robot, "group", group_id, msg)
             else:
                 result = self.reply(msg)
         else:
-            result = send_group_ai_record(self.robot, self.event.group_id, "lucy-voice-xueling", text)
-        if not status_ok(result):
+            result = Utils.send_group_ai_record(self.robot, self.event.group_id, "lucy-voice-xueling", text)
+        if not Utils.status_ok(result):
             self.reply(f"语音消息发送失败 {result.get("message")}", reply=True)
 
-    @handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(在吗|你好)$"))
+    @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(在吗|你好)$"))
     def reply_msg(self):
         self.reply("%MENTIONED%\n请@我并发送“帮助”来让我帮助您~")

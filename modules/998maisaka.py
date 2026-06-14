@@ -33,29 +33,8 @@ from maim_message.message import (
     UserInfo,
 )
 
-from src.utils import (
-    Event,
-    Module,
-    apply_formatter,
-    async_get_content_base64,
-    del_msg,
-    get_forward_msg,
-    get_group_name,
-    get_image_format,
-    get_record,
-    get_user_id,
-    get_user_name,
-    group_member_info,
-    handler,
-    poke,
-    reply_id,
-    send_forward_msg,
-    send_group_ai_record,
-    set_group_ban,
-    set_group_kick,
-    set_group_whole_ban,
-    status_ok
-)
+from src.base import Event, Module
+from src.utils import Utils
 
 
 def _safe_str(value: Any) -> str:
@@ -241,7 +220,7 @@ class ConcertoToMaimCodec:
             txt = ""
             if isinstance(raw_info, list) and len(raw_info) > 2 and isinstance(raw_info[2], Mapping):
                 txt = _safe_str(raw_info[2].get("txt"))
-            target_name = _safe_str(get_user_name(self.owner.robot, event.target_id) or event.target_id)
+            target_name = _safe_str(Utils.get_user_name(self.owner.robot, event.target_id) or event.target_id)
             return [Seg(type="text", data=f"[{txt}{target_name}]")]
 
         if event.notice_type == "group_ban":
@@ -321,8 +300,8 @@ class ConcertoToMaimCodec:
                 return Seg(type="text", data=f"分享[小程序<{title}>({url}):{desc}{tag}]")
             case "forward":
                 msg_id = _safe_str(data.get("id"))
-                info = get_forward_msg(self.owner.robot, msg_id)
-                if status_ok(info):
+                info = Utils.get_forward_msg(self.owner.robot, msg_id)
+                if Utils.status_ok(info):
                     msg_list = info.get("data", {}).get("messages")
                     return await self._build_forward_segment(msg_list)
                 return Seg(type="text", data="[未知转发消息]")
@@ -363,12 +342,12 @@ class ConcertoToMaimCodec:
         if target_user_id and target_user_id != "all":
             try:
                 if event.group_id:
-                    info = group_member_info(self.owner.robot, event.group_id, target_user_id)
-                    if status_ok(info):
+                    info = Utils.group_member_info(self.owner.robot, event.group_id, target_user_id)
+                    if Utils.status_ok(info):
                         member = info.get("data", {})
                         target_name = _safe_str(member.get("card") or member.get("nickname"))
                 if not target_name:
-                    target_name = get_user_name(self.owner.robot, target_user_id)
+                    target_name = Utils.get_user_name(self.owner.robot, target_user_id)
             except Exception: # pylint: disable=broad-exception-caught
                 self.owner.warnf(f"解析@目标失败: {target_user_id}")
 
@@ -397,7 +376,7 @@ class ConcertoToMaimCodec:
 
         sub_type = _safe_str(data.get("sub_type"))
         if sub_type not in ["0", "4", "9"]:
-            if get_image_format(binary_base64) != "gif":
+            if Utils.get_image_format(binary_base64) != "gif":
                 binary_base64 = self.owner.convert_image_to_gif(binary_base64)
             return Seg(type="emoji", data=binary_base64)
         return Seg(type="image", data=binary_base64)
@@ -418,8 +397,8 @@ class ConcertoToMaimCodec:
             return Seg(type="text", data="[语音下载失败]")
 
         try:
-            record_info = get_record(self.owner.robot, url_or_file)
-            if status_ok(record_info):
+            record_info = Utils.get_record(self.owner.robot, url_or_file)
+            if Utils.status_ok(record_info):
                 file_url = _safe_str(record_info.get("data", {}).get("file"))
                 if file_url:
                     binary_base64 = await self._resolve_binary_content(file_url)
@@ -522,7 +501,7 @@ class ConcertoToMaimCodec:
             return url_or_file.removeprefix("base64://")
         if url_or_file.startswith("http://") or url_or_file.startswith("https://"):
             try:
-                return await async_get_content_base64(self.owner.robot, url_or_file)
+                return await Utils.async_get_content_base64(self.owner.robot, url_or_file)
             except Exception: # pylint: disable=broad-exception-caught
                 self.owner.warnf(f"下载资源失败: {url_or_file}")
                 return ""
@@ -663,12 +642,12 @@ class MaimToConcertoCodec:
         if len(msg) > 200 and "CQ:" not in msg:
             source = msg.split("\n")[0]
             if target.msg_type == "group":
-                info = send_forward_msg(self.owner.robot, self.owner.node(msg), group_id=target_id, source=source)
+                info = Utils.send_forward_msg(self.owner.robot, self.owner.node(msg), group_id=target_id, source=source)
             else:
-                info = send_forward_msg(self.owner.robot, self.owner.node(msg), user_id=target_id, source=source)
+                info = Utils.send_forward_msg(self.owner.robot, self.owner.node(msg), user_id=target_id, source=source)
         else:
-            info = reply_id(self.owner.robot, target.msg_type, target_id, msg)
-        if not status_ok(info):
+            info = Utils.reply_id(self.owner.robot, target.msg_type, target_id, msg)
+        if not Utils.status_ok(info):
             self.owner.warnf(f"发送麦麦回复失败: {info}")
 
     async def _handle_command_segment(self, segment: Seg, message: APIMessageBase) -> None:
@@ -688,23 +667,23 @@ class MaimToConcertoCodec:
             match command:
                 case "GROUP_BAN" | "set_group_ban":
                     if group_id and qq_id:
-                        info = set_group_ban(self.owner.robot, group_id, qq_id, int(args.get("duration", 0) or 0))
+                        info = Utils.set_group_ban(self.owner.robot, group_id, qq_id, int(args.get("duration", 0) or 0))
                 case "SET_GROUP_WHOLE_BAN" | "set_group_whole_ban":
                     if group_id:
-                        info = set_group_whole_ban(self.owner.robot, group_id, bool(args.get("enable")))
+                        info = Utils.set_group_whole_ban(self.owner.robot, group_id, bool(args.get("enable")))
                 case "SET_GROUP_KICK" | "set_group_kick":
                     if group_id and qq_id:
-                        info = set_group_kick(self.owner.robot, group_id, qq_id)
+                        info = Utils.set_group_kick(self.owner.robot, group_id, qq_id)
                 case "SEND_POKE" | "send_poke":
                     if qq_id:
-                        info = poke(self.owner.robot, qq_id, group_id or None)
+                        info = Utils.poke(self.owner.robot, qq_id, group_id or None)
                 case "DELETE_MSG" | "delete_msg":
                     message_id = _safe_str(args.get("message_id"))
                     if message_id:
-                        info = del_msg(self.owner.robot, message_id)
+                        info = Utils.del_msg(self.owner.robot, message_id)
                 case "SEND_GROUP_AI_RECORD" | "send_group_ai_record":
                     if group_id:
-                        info = send_group_ai_record(
+                        info = Utils.send_group_ai_record(
                             self.owner.robot,
                             group_id,
                             _safe_str(args.get("character")),
@@ -720,7 +699,7 @@ class MaimToConcertoCodec:
         if info is None:
             self.owner.warnf(f"命令 {command} 缺少必要参数")
             return
-        if status_ok(info):
+        if Utils.status_ok(info):
             self.owner.printf(f"命令 {command} 执行成功")
         else:
             self.owner.warnf(f"命令 {command} 执行失败: {info}")
@@ -786,9 +765,9 @@ class MaimToConcertoCodec:
             text = segment.data
             if match := re.search(r"[\(（][@#](.*?)[\)）]", text):
                 user_name = match.group(1)
-                user_id = get_user_id(self.owner.robot, user_name, group_id)
+                user_id = Utils.get_user_id(self.owner.robot, user_name, group_id)
                 if re.search(r"[\(（]#(.*?)[\)）]", text):
-                    poke(self.owner.robot, user_id, group_id)
+                    Utils.poke(self.owner.robot, user_id, group_id)
                     text = re.sub(r"[\(（]#(.*?)[\)）]", "", text)
                 at_msg = f"[CQ:at,qq={user_id}]" if user_id else f"@{user_name}"
                 text = re.sub(r"[\(（]@(.*?)[\)）]", at_msg, text)
@@ -826,7 +805,7 @@ class MaimToConcertoCodec:
             emoji_base64 = _safe_str(segment.data)
             if emoji_base64:
                 try:
-                    if get_image_format(emoji_base64) != "gif":
+                    if Utils.get_image_format(emoji_base64) != "gif":
                         emoji_base64 = self.owner.convert_image_to_gif(emoji_base64)
                 except Exception: # pylint: disable=broad-exception-caught
                     self.owner.warnf("转换动画表情失败")
@@ -941,7 +920,7 @@ class MaiSaka(Module):
 
         logger = logging.getLogger("maim_message")
         logger.level = logging.WARNING
-        apply_formatter(logger, self.ID)
+        Utils.apply_formatter(logger, self.ID)
         self.api_logger = logger
         self.codec_out = ConcertoToMaimCodec(self)
         self.codec_in = MaimToConcertoCodec(self)
@@ -1010,7 +989,7 @@ class MaiSaka(Module):
             self.errorf(f"图片转换为 GIF 失败: {exc}")
             return image_base64
 
-    @handler(lambda self: self.at_or_private() and self.au(1)
+    @Utils.handler(lambda self: self.at_or_private() and self.au(1)
          and self.match(r"^(开启|启用|打开|记录|启动|关闭|禁用|取消)麦麦$"))
     def enable_maibot(self):
         """启用麦麦"""
@@ -1024,7 +1003,7 @@ class MaiSaka(Module):
             self.save_config()
             self.reply("麦麦机器人已关闭")
 
-    @handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^重新连接麦麦$"))
+    @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^重新连接麦麦$"))
     def restart_maibot(self):
         """重新连接麦麦"""
         try:
@@ -1034,7 +1013,7 @@ class MaiSaka(Module):
             self.errorf(traceback.format_exc())
             self.reply("重连失败，请检查日志")
 
-    @handler(lambda self: self.ID in self.robot.persist_mods
+    @Utils.handler(lambda self: self.ID in self.robot.persist_mods
          and self.conv_config.get("enable")
          and self.event.user_id not in self.conv_config.get("blacklist")
          and (self.event.msg or self.event.sub_type == "poke"))
@@ -1067,7 +1046,7 @@ class MaiSaka(Module):
                 fake_event.user_name = self.robot.self_name
                 fake_event.user_card = self.robot.self_name
                 fake_event.group_id = str(group_id)
-                fake_event.group_name = get_group_name(self.robot, str(group_id)) or ""
+                fake_event.group_name = Utils.get_group_name(self.robot, str(group_id)) or ""
                 fake_event.target_id = ""
                 fake_event.raw = {
                     "message": content,

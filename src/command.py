@@ -10,29 +10,7 @@ import traceback
 from typing import TYPE_CHECKING
 from colorama import Fore
 
-from src.utils import (
-    del_msg,
-    get_user_name,
-    get_group_name,
-    get_group_msg_history,
-    ocr_image,
-    poke,
-    reply_add,
-    reply_id,
-    send_group_ai_record,
-    send_group_notice,
-    send_like,
-    set_model_show,
-    status_ok,
-    get_forward_msg,
-    get_handler_amount,
-    get_stranger_info,
-    get_group_info,
-    send_msg,
-    quick_reply,
-    set_emoji,
-    group_sign,
-)
+from src.utils import Utils
 from src.api import (
     get,
     get_version_info,
@@ -116,13 +94,13 @@ class ExecuteCmd(object):
             else:
                 rev = self.robot.past_request[-1]
                 user_id = rev["user_id"]
-                user_name = get_user_name(self.robot, user_id)
+                user_name = Utils.get_user_name(self.robot, user_id)
                 result = ""
                 if inputs[0] == "agree":
-                    result = reply_add(self.robot, rev, "true", inputs[1])
+                    result = Utils.reply_add(self.robot, rev, "true", inputs[1])
                 else:
-                    result = reply_add(self.robot, rev, "false", inputs[1])
-                if status_ok(result):
+                    result = Utils.reply_add(self.robot, rev, "false", inputs[1])
+                if Utils.status_ok(result):
                     self.printf(f"已对{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}的请求作出回应")
                 else:
                     self.printf(f"回应失败！{result.get("message")}")
@@ -151,7 +129,7 @@ class ExecuteCmd(object):
         """取消管理员权限"""
         if re.search(r"(\d+)", argv):
             user_id = re.search(r"^(\d+)", argv).group(1)
-            user_name = get_user_name(self.robot, user_id)
+            user_name = Utils.get_user_name(self.robot, user_id)
             if user_id in self.robot.config.admin_list:
                 self.robot.config.admin_list.remove(user_id)
                 self.robot.config.save("admin_list", self.robot.config.admin_list)
@@ -165,8 +143,8 @@ class ExecuteCmd(object):
         """设置在线机型"""
         if re.search(r"(.+)", argv):
             device = re.search(r"(.+)", argv).group(1)
-            result = set_model_show(self.robot, device, device)
-            if status_ok(result):
+            result = Utils.set_model_show(self.robot, device, device)
+            if Utils.status_ok(result):
                 self.printf(f"成功设置新登陆设备为{Fore.MAGENTA}{device}{Fore.RESET}")
             else:
                 self.printf(f"设置失败！{result.get("message")}")
@@ -179,7 +157,7 @@ class ExecuteCmd(object):
             inputs = re.search(r"(\d+)\s?(\d+)", argv).groups()
             msg_id = inputs[0]
             emoji_id = inputs[1] if inputs[1] else 66
-            result = set_emoji(self.robot, msg_id, emoji_id)
+            result = Utils.set_emoji(self.robot, msg_id, emoji_id)
             if err := result.get("message", ""):
                 self.warnf(f"贴表情出错 {err}")
             elif err := result.get("data", {}).get("errMsg"):
@@ -193,8 +171,8 @@ class ExecuteCmd(object):
             rev = self.robot.data[self.robot.latest_data].past_message[-1]
             msg_id = rev.get("message_id")
             raw_msg = rev.get("message")
-            result = set_emoji(self.robot, msg_id, emoji_id)
-            if status_ok(result):
+            result = Utils.set_emoji(self.robot, msg_id, emoji_id)
+            if Utils.status_ok(result):
                 self.printf(f"向消息{Fore.MAGENTA}(mg_id: {msg_id}){raw_msg}{Fore.RESET}贴了表情❤")
             else:
                 self.warnf(f"贴表情出错 {result.get("message")}")
@@ -204,7 +182,7 @@ class ExecuteCmd(object):
     def exit(self, argv=""): # pylint: disable=unused-argument
         """退出机器人"""
         result = bot_exit(self.robot)
-        if status_ok(result):
+        if Utils.status_ok(result):
             self.printf("账号已退出")
         else:
             self.warnf("账号退出失败")
@@ -213,8 +191,8 @@ class ExecuteCmd(object):
         """获取用户或群的信息"""
         if re.search(r"user\s+(\d+)", argv):
             user_id = re.search(r"user\s+(\d+)", argv).group(1)
-            result = get_stranger_info(self.robot, user_id)
-            if status_ok(result):
+            result = Utils.get_stranger_info(self.robot, user_id)
+            if Utils.status_ok(result):
                 result = result["data"]
                 if result["sex"] == "male":
                     result["sex"] = "男"
@@ -235,8 +213,8 @@ class ExecuteCmd(object):
                 self.printf(f"查无此号！{result.get("message")}")
         elif re.search(r"group\s+(\d+)", argv):
             group_id = re.search(r"group\s+(\d+)", argv).group(1)
-            result = get_group_info(self.robot, group_id)
-            if status_ok(result):
+            result = Utils.get_group_info(self.robot, group_id)
+            if Utils.status_ok(result):
                 data = result.get("data")
                 self.printf(f"群{Fore.MAGENTA}{data.get("group_name")}({group_id}){Fore.RESET}信息")
                 self.printf(f"群简介：{data.get("fingerMemo", "")}")
@@ -253,7 +231,7 @@ class ExecuteCmd(object):
         """修改对接群列表"""
         if re.search(r"add\s+(\d+)", argv):
             group_id = re.search(r"\s+(\d+)", argv).group(1).strip()
-            group_name = get_group_name(self.robot, group_id)
+            group_name = Utils.get_group_name(self.robot, group_id)
             if group_id not in self.robot.config.rev_group:
                 self.robot.config.rev_group.append(group_id)
                 self.robot.config.save("rev_group", self.robot.config.rev_group)
@@ -262,7 +240,7 @@ class ExecuteCmd(object):
                 self.warnf(f"群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}已经在对接群列表中！")
         elif re.search(r"remove\s+(\d+)", argv):
             group_id = re.search(r"\s+(\d+)", argv).group(1).strip()
-            group_name = get_group_name(self.robot, group_id)
+            group_name = Utils.get_group_name(self.robot, group_id)
             if group_id in self.robot.config.rev_group:
                 self.robot.config.rev_group.remove(group_id)
                 self.robot.config.save("rev_group", self.robot.config.rev_group)
@@ -271,7 +249,7 @@ class ExecuteCmd(object):
                 self.warnf(f"群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}不在对接群列表中！")
         elif re.search(r"main\s+(\d+)", argv):
             group_id = re.search(r"\s+(\d+)", argv).group(1).strip()
-            group_name = get_group_name(self.robot, group_id)
+            group_name = Utils.get_group_name(self.robot, group_id)
             if group_id in self.robot.config.rev_group:
                 self.robot.config.rev_group.remove(group_id)
             self.robot.config.rev_group.insert(0, group_id)
@@ -286,10 +264,10 @@ class ExecuteCmd(object):
         if re.search(r"(\d+)\s+(.+)", argv):
             inputs = re.search(r"(\d+)\s+(.+)", argv).groups()
             group_id = inputs[0]
-            group_name = get_group_name(self.robot, group_id)
+            group_name = Utils.get_group_name(self.robot, group_id)
             msg = inputs[1]
-            result = send_msg(self.robot, "group", group_id, msg)
-            if status_ok(result):
+            result = Utils.send_msg(self.robot, "group", group_id, msg)
+            if Utils.status_ok(result):
                 self.printf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送消息：{Fore.YELLOW}{msg}")
             else:
                 self.warnf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送消息出错！{result.get("message")}")
@@ -301,10 +279,10 @@ class ExecuteCmd(object):
         if re.search(r"(\d+)\s+(.+)", argv):
             inputs = re.search(r"(\d+)\s+(.+)", argv).groups()
             group_id = inputs[0]
-            group_name = get_group_name(self.robot, group_id)
+            group_name = Utils.get_group_name(self.robot, group_id)
             msg = "[CQ:tts,text=" + inputs[1] + " ]"
-            result = send_msg(self.robot, "group", group_id, msg)
-            if status_ok(result):
+            result = Utils.send_msg(self.robot, "group", group_id, msg)
+            if Utils.status_ok(result):
                 self.printf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送文本转语音消息：{Fore.YELLOW}{inputs[1]}")
             else:
                 self.warnf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送文本转语音消息出错！{result.get("message")}")
@@ -318,9 +296,9 @@ class ExecuteCmd(object):
             text = match[0]
             group_id = match[1]
             character = match[2] or "lucy-voice-xueling"
-            group_name = get_group_name(self.robot, group_id)
-            result = send_group_ai_record(self.robot, group_id, character, text)
-            if status_ok(result):
+            group_name = Utils.get_group_name(self.robot, group_id)
+            result = Utils.send_group_ai_record(self.robot, group_id, character, text)
+            if Utils.status_ok(result):
                 self.printf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送AI声聊消息：{Fore.YELLOW}{match[1]}")
             else:
                 self.warnf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送AI声聊消息出错！{result.get("message")}")
@@ -349,7 +327,7 @@ class ExecuteCmd(object):
         if re.search(r"(\d+)$", argv):
             uid = re.search(r"(\d+)$", argv).group(1)
             if "u" + uid in self.robot.data:
-                self.printf(f"与{Fore.MAGENTA}{get_user_name(self.robot, uid)}{uid}{Fore.RESET}的历史消息:")
+                self.printf(f"与{Fore.MAGENTA}{Utils.get_user_name(self.robot, uid)}{uid}{Fore.RESET}的历史消息:")
                 past_msg = self.robot.data["u" + uid].past_message
                 for one_msg in past_msg:
                     msg_time = time.strftime("%m-%d %H:%M:%S", time.localtime(one_msg["time"]))
@@ -357,22 +335,22 @@ class ExecuteCmd(object):
                     msg_id = one_msg["message_id"]
                     self.printf(f"[{msg_time}] {Fore.MAGENTA}(msg_id:{msg_id}){Fore.RESET} {msg}")
             else:
-                data = get_group_msg_history(self.robot, uid).get("data")
+                data = Utils.get_group_msg_history(self.robot, uid).get("data")
                 if not data:
-                    self.printf(f"您未加入群{Fore.MAGENTA}{get_group_name(self.robot, str(uid))}({uid}){Fore.RESET}")
+                    self.printf(f"您未加入群{Fore.MAGENTA}{Utils.get_group_name(self.robot, str(uid))}({uid}){Fore.RESET}")
                     return
-                self.printf(f"群{Fore.MAGENTA}{get_group_name(self.robot, str(uid))}({uid}){Fore.RESET}中的历史消息:")
+                self.printf(f"群{Fore.MAGENTA}{Utils.get_group_name(self.robot, str(uid))}({uid}){Fore.RESET}中的历史消息:")
                 past_msg = data.get("messages") 
                 for one_msg in past_msg:
                     msg_time = time.strftime("%m-%d %H:%M:%S", time.localtime(one_msg["time"]))
                     msg_id = one_msg["message_id"]
-                    name = get_user_name(self.robot, one_msg["user_id"])
+                    name = Utils.get_user_name(self.robot, one_msg["user_id"])
                     msg = one_msg["raw_message"] or "[已撤回]"
                     self.printf(f"[{msg_time} {name}] "
                                 f"{Fore.MAGENTA}(msg_id:{msg_id}){Fore.RESET} {msg}")
         elif re.search(r"self", argv):
             if len(self.robot.self_message):
-                self.printf(f"自己发送的历史消息:")
+                self.printf("自己发送的历史消息:")
                 past_msg = self.robot.self_message
                 for one_msg in past_msg:
                     msg_time = time.strftime("%m-%d %H:%M:%S", time.localtime(one_msg["time"]))
@@ -381,14 +359,14 @@ class ExecuteCmd(object):
                     uname = uid = ""
                     if group_id := one_msg.get("group_id"):
                         uid = group_id
-                        uname = get_group_info(self.robot, group_id).get("data").get("group_name")
+                        uname = Utils.get_group_info(self.robot, group_id).get("data").get("group_name")
                     else:
                         uid = one_msg.get("user_id")
-                        uname = get_user_name(self.robot, uid)
+                        uname = Utils.get_user_name(self.robot, uid)
                     self.printf(f"[{msg_time} TO {uname}({uid})] "
                                 f"{Fore.MAGENTA}(msg_id:{msg_id}){Fore.RESET} {msg}")
             else:
-                self.printf(f"没有自己发送的历史消息")
+                self.printf("没有自己发送的历史消息")
         else:
             self.printf(f"请使用 {Fore.CYAN}history QQ号/群号/self{Fore.RESET} 获取历史消息")
 
@@ -397,7 +375,7 @@ class ExecuteCmd(object):
         info = get_version_info(self.robot)
         module_count = len(self.robot.modules)
         modules = [i.ID for i in self.robot.modules.values()]
-        handler_amount = get_handler_amount(self.robot)
+        handler_amount = Utils.get_handler_amount(self.robot)
         image_range = (
             f"({self.robot.config.min_image_width}:{self.robot.config.max_image_width})"
         )
@@ -434,9 +412,9 @@ class ExecuteCmd(object):
             inputs = re.search(r"([^\s]+)\s?(\d+)?", argv).groups()
             user_id = inputs[0]
             times = inputs[1] if inputs[1] else 20
-            user_name = get_user_name(self.robot, user_id)
-            result = send_like(self.robot, user_id, times)
-            if status_ok(result):
+            user_name = Utils.get_user_name(self.robot, user_id)
+            result = Utils.send_like(self.robot, user_id, times)
+            if Utils.status_ok(result):
                 self.printf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}进行{times}次点赞")
             else:
                 self.warnf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}进行{times}次点赞出错！{result.get("message")}")
@@ -463,10 +441,10 @@ class ExecuteCmd(object):
         if re.search(r"(\d+)\s+(.+)", argv):
             inputs = re.search(r"(\d+)\s+(.+)", argv).groups()
             user_id = inputs[0]
-            user_name = get_user_name(self.robot, user_id)
+            user_name = Utils.get_user_name(self.robot, user_id)
             msg = inputs[1]
-            result = send_msg(self.robot, "private", user_id, msg)
-            if status_ok(result):
+            result = Utils.send_msg(self.robot, "private", user_id, msg)
+            if Utils.status_ok(result):
                 self.printf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送消息：{msg}")
             else:
                 self.warnf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送消息出错！{result.get("message")}")
@@ -478,12 +456,12 @@ class ExecuteCmd(object):
         if re.search(r"(\d+)\s+(\d+)\s+(.+)", argv):
             inputs = re.search(r"(\d+)\s+(\d+)\s+(.+)", argv).groups()
             user_id = inputs[0]
-            user_name = get_user_name(self.robot, user_id)
+            user_name = Utils.get_user_name(self.robot, user_id)
             group_id = inputs[1]
-            group_name = get_group_name(self.robot, group_id)
+            group_name = Utils.get_group_name(self.robot, group_id)
             msg = inputs[2]
-            result = send_msg(self.robot, "private", user_id, msg, group_id)
-            if status_ok(result):
+            result = Utils.send_msg(self.robot, "private", user_id, msg, group_id)
+            if Utils.status_ok(result):
                 self.printf(f"通过群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送消息：{msg}")
             else:
                 self.warnf(f"通过群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送消息失败！{result.get("message")}")
@@ -495,10 +473,10 @@ class ExecuteCmd(object):
         if re.search(r"(\d+)\s+(.+)$", argv):
             inputs = re.search(r"(\d+)\s+(.+)$", argv).groups()
             group_id = inputs[0]
-            group_name = get_group_name(self.robot, group_id)
+            group_name = Utils.get_group_name(self.robot, group_id)
             notice = inputs[1]
-            result = send_group_notice(self.robot, group_id, notice)
-            if status_ok(result):
+            result = Utils.send_group_notice(self.robot, group_id, notice)
+            if Utils.status_ok(result):
                 self.printf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发布公告：{Fore.YELLOW}{notice}")
             else:
                 self.warnf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发布公告失败！ {result.get("message")}")
@@ -509,8 +487,8 @@ class ExecuteCmd(object):
         """识别图片中的文字"""
         if re.search(r"(\d+)", argv):
             img_id = re.search(r"(.+)", argv).group(1)
-            result = ocr_image(self.robot, img_id)
-            if status_ok(result):
+            result = Utils.ocr_image(self.robot, img_id)
+            if Utils.status_ok(result):
                 result = result["data"]
                 self.printf(f"图片{Fore.MAGENTA}({img_id}){Fore.RESET}识别结果")
                 self.printf(f"文字语音：{result["language"]}")
@@ -528,7 +506,7 @@ class ExecuteCmd(object):
         """增加管理员权限"""
         if re.search(r"(\d+)", argv):
             user_id = re.search(r"(\d+)", argv).group(1)
-            user_name = get_user_name(self.robot, user_id)
+            user_name = Utils.get_user_name(self.robot, user_id)
             if user_id not in self.robot.config.admin_list:
                 self.robot.config.admin_list.append(user_id)
                 self.robot.config.save("admin_list", self.robot.config.admin_list)
@@ -542,14 +520,14 @@ class ExecuteCmd(object):
         """读取转发消息内容"""
         if re.search(r"(.+)", argv):
             msg_id = re.search(r"(.+)", argv).group(1)
-            data = get_forward_msg(self.robot, msg_id).get("data", {})
+            data = Utils.get_forward_msg(self.robot, msg_id).get("data", {})
             if data:
                 group_id = 0
                 msg_list = data.get("messages")
                 for msg in msg_list:
                     if group_id != msg["group_id"]:
                         group_id = msg["group_id"]
-                        self.printf(f"{Fore.MAGENTA}{Fore.RESET}转发自群{Fore.MAGENTA}{get_group_name(self.robot, group_id)}({group_id}){Fore.RESET}中的消息")
+                        self.printf(f"{Fore.MAGENTA}{Fore.RESET}转发自群{Fore.MAGENTA}{Utils.get_group_name(self.robot, group_id)}({group_id}){Fore.RESET}中的消息")
                     msg_time = time.strftime("%m-%d %H:%M:%S", time.localtime(msg["time"]))
                     content = msg["raw_message"]
                     name = msg["sender"]["nickname"]
@@ -565,9 +543,9 @@ class ExecuteCmd(object):
         """戳一戳用户(默认上一条消息的发送者)"""
         if re.search(r"(.+)", argv):
             user_id = re.search(r"(.+)", argv).group(1)
-            user_name = get_user_name(self.robot, user_id)
-            result = poke(self.robot, user_id)
-            if status_ok(result):
+            user_name = Utils.get_user_name(self.robot, user_id)
+            result = Utils.poke(self.robot, user_id)
+            if Utils.status_ok(result):
                 self.printf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送戳一戳")
             else:
                 self.warnf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送戳一戳出错！{result.get("message")}")
@@ -579,8 +557,8 @@ class ExecuteCmd(object):
             user_id = rev.get("user_id")
             user_name = rev.get("sender", {}).get("nickname")
             group_id = rev.get("group_id")
-            result = poke(self.robot, user_id, group_id)
-            if status_ok(result):
+            result = Utils.poke(self.robot, user_id, group_id)
+            if Utils.status_ok(result):
                 self.printf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送戳一戳")
             else:
                 self.warnf(f"贴表情出错 {result.get("message")}")
@@ -597,8 +575,8 @@ class ExecuteCmd(object):
                 if msg_id == str(one_msg["message_id"]):
                     msg = one_msg["message"]
                     break
-            result = del_msg(self.robot, msg_id)
-            if status_ok(result):
+            result = Utils.del_msg(self.robot, msg_id)
+            if Utils.status_ok(result):
                 self.printf(f"撤回消息{Fore.MAGENTA}(message_id:{msg_id}) {Fore.YELLOW}{msg}{Fore.RESET}成功！")
             else:
                 self.warnf(f"撤回消息{Fore.MAGENTA}(message_id:{msg_id}) {Fore.YELLOW}{msg}{Fore.RESET}出错！")
@@ -606,8 +584,8 @@ class ExecuteCmd(object):
             rev = self.robot.self_message[-1]
             msg_id = rev["message_id"]
             msg = rev["message"]
-            result = del_msg(self.robot, {"message_id": msg_id})
-            if status_ok(result):
+            result = Utils.del_msg(self.robot, msg_id)
+            if Utils.status_ok(result):
                 self.robot.self_message.pop()
                 self.printf(f"撤回消息{Fore.MAGENTA}{msg}{Fore.RESET}成功！(使用 {Fore.CYAN}history self{Fore.RESET} 查看其他历史消息)")
             else:
@@ -670,15 +648,15 @@ class ExecuteCmd(object):
             rev = self.robot.data[self.robot.latest_data].past_message[-1]
             msg_id = rev.get("message_id")
             user_id = rev.get("user_id")
-            user_name = get_user_name(self.robot, user_id)
+            user_name = Utils.get_user_name(self.robot, user_id)
             group_id = rev.get("group_id")
-            group_name = get_group_name(self.robot, group_id)
+            group_name = Utils.get_group_name(self.robot, group_id)
             reply_msg = re.search(r"(.+)", argv).group(1)
             reply_msg = f"[CQ:reply,id={msg_id}]{reply_msg}"
             reply_type = "group" if group_id else "private"
             target_id = group_id if group_id else user_id
-            result = reply_id(self.robot, reply_type, target_id, reply_msg)
-            if status_ok(result):
+            result = Utils.reply_id(self.robot, reply_type, target_id, reply_msg)
+            if Utils.status_ok(result):
                 target_str = f"{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}"
                 if group_id:
                     target_str = (
@@ -702,12 +680,12 @@ class ExecuteCmd(object):
         elif re.search(r"(.+)", argv):
             rev = self.robot.data[self.robot.latest_data].past_message[-1]
             user_id = rev["user_id"]
-            user_name = get_user_name(self.robot, user_id)
+            user_name = Utils.get_user_name(self.robot, user_id)
             group_id = rev["group_id"]
-            group_name = get_group_name(self.robot, group_id)
+            group_name = Utils.get_group_name(self.robot, group_id)
             reply_msg = re.search(r"(.+)", argv).group(1)
-            result = quick_reply(self.robot, rev, reply_msg)
-            if status_ok(result):
+            result = Utils.quick_reply(self.robot, rev, reply_msg)
+            if Utils.status_ok(result):
                 target_str = f"{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}"
                 if group_id:
                     target_str = (
@@ -725,7 +703,7 @@ class ExecuteCmd(object):
         if re.search(r"(get|GET)\s+(.+)", argv):
             url = re.search(r"\s+(.+)", argv).group(1)
             result = get(self.robot, url)
-            if status_ok(result):
+            if Utils.status_ok(result):
                 self.printf(f"GET请求发送成功，返回为{Fore.YELLOW}{result}{Fore.RESET}")
             else:
                 self.warnf(f"GET发送请求出错，返回为{Fore.YELLOW}{result}{Fore.RESET}")
@@ -734,7 +712,7 @@ class ExecuteCmd(object):
             url = temp[0]
             data = temp[1]
             result = post(self.robot, url, json.loads(data))
-            if status_ok(result):
+            if Utils.status_ok(result):
                 self.printf(f"POST请求发送成功，返回为{Fore.YELLOW}{result}{Fore.RESET}")
             elif result != {}:
                 self.warnf(f"POST发送请求出错，返回为{Fore.YELLOW}{result}{Fore.RESET}")
@@ -750,9 +728,9 @@ class ExecuteCmd(object):
             if re.search(r"(.+)", argv):
                 msg = re.search(r"(.+)", argv).group(1)
                 group_id = self.robot.config.rev_group[0]
-                group_name = get_group_name(self.robot, group_id)
-                result = send_msg(self.robot, "group", group_id, msg)
-                if status_ok(result):
+                group_name = Utils.get_group_name(self.robot, group_id)
+                result = Utils.send_msg(self.robot, "group", group_id, msg)
+                if Utils.status_ok(result):
                     self.printf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送消息：{msg}")
                 else:
                     self.warnf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送消息出错！{result.get("message")}")
@@ -766,7 +744,7 @@ class ExecuteCmd(object):
         if re.search(r"self\s+(\S+)$", argv):
             if re.search(r"self\s+(\d+)$", argv):
                 self.robot.self_id = re.search(r"self\s(\d+)$", argv).group(1)
-                self.robot.self_name = get_user_name(self.robot, self.robot.self_id)
+                self.robot.self_name = Utils.get_user_name(self.robot, self.robot.self_id)
                 self.robot.at_info = "[CQ:at,qq=" + str(self.robot.self_id) + "]"
                 self.printf(f"设置机器人为{Fore.MAGENTA}{self.robot.self_name}({self.robot.self_id}){Fore.RESET}成功")
             elif re.search(r"self\s+auto$", argv):
@@ -925,12 +903,12 @@ class ExecuteCmd(object):
         """群签到"""
         if re.search(r"(\d+)", argv):
             group_id = re.search(r"(\d+)", argv).group(1)
-            group_name = get_group_name(self.robot, group_id)
+            group_name = Utils.get_group_name(self.robot, group_id)
             if not group_name:
                 self.warnf(f"未查找到群聊ID: {group_id}")
                 return
-            result = group_sign(self.robot, group_id)
-            if status_ok(result):
+            result = Utils.group_sign(self.robot, group_id)
+            if Utils.status_ok(result):
                 self.printf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}进行打卡签到")
             else:
                 self.warnf(f"群签到出错 {result.get("message")}")
@@ -958,10 +936,10 @@ class ExecuteCmd(object):
         if re.search(r"(\d+)\s+(.+)", argv):
             inputs = re.search(r"(\d+)\s+(.+)", argv).groups()
             user_id = inputs[0]
-            user_name = get_user_name(self.robot, user_id)
+            user_name = Utils.get_user_name(self.robot, user_id)
             msg = "[CQ:tts,text=" + inputs[1] + " ]"
-            result = send_msg(self.robot, "private", user_id, msg)
-            if status_ok(result):
+            result = Utils.send_msg(self.robot, "private", user_id, msg)
+            if Utils.status_ok(result):
                 self.printf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送文本转语音消息：{inputs[1]}")
             else:
                 self.warnf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送文本转语音消息出错！{result.get("message")}")

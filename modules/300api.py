@@ -4,7 +4,8 @@ from urllib.parse import quote
 
 import httpx
 
-from src.utils import Module, set_emoji, handler
+from src.base import Module
+from src.utils import Utils
 
 class API(Module):
     """简单API模块"""
@@ -23,14 +24,14 @@ class API(Module):
         ],
     }
 
-    @handler(lambda self: self.group_at() and self.au(2)
+    @Utils.handler(lambda self: self.group_at() and self.au(2)
          and self.match(r"^(\S{2,16})(热搜|热榜|trending|hot)$"))
     def trending(self):
         """今日热榜"""
         platform = self.match(r"^(\S{2,16})(热搜|热榜|trending|hot)$").group(1)
         try:
             if not self.is_private():
-                set_emoji(self.robot, self.event.msg_id, 124)
+                Utils.set_emoji(self.robot, self.event.msg_id, 124)
             url = f"https://api.pearktrue.cn/api/dailyhot/?title={quote(platform)}"
             resp = httpx.get(url, timeout=5)
             resp.raise_for_status()
@@ -45,13 +46,13 @@ class API(Module):
         except Exception as e: # pylint: disable=broad-exception-caught
             return self.reply_forward(self.node(f"{e}"), source="今日热榜请求失败")
 
-    @handler(lambda self: self.group_at() and self.au(2)
+    @Utils.handler(lambda self: self.group_at() and self.au(2)
          and self.match(r"^(金价|黄金价格)$"))
     def gold_price(self):
         """今日黄金价格"""
         try:
             if not self.is_private():
-                set_emoji(self.robot, self.event.msg_id, 124)
+                Utils.set_emoji(self.robot, self.event.msg_id, 124)
             url = "https://api.pearktrue.cn/api/goldprice/"
             resp = httpx.get(url, timeout=5)
             resp.raise_for_status()
@@ -77,7 +78,7 @@ class API(Module):
         except Exception as e: # pylint: disable=broad-exception-caught
             return self.reply_forward(self.node(f"{e}"), source="今日热榜请求失败")
 
-    @handler(lambda self: self.group_at() and self.au(1)
+    @Utils.handler(lambda self: self.group_at() and self.au(1)
          and self.match(r"^(开启|打开|启用|允许|关闭|禁止|取消)?简单API$"))
     def toggle(self):
         """开启关闭模块"""

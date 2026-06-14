@@ -5,7 +5,8 @@ import random
 
 import httpx
 
-from src.utils import Module, handler, listener
+from src.base import Module
+from src.utils import Utils
 
 class KFC(Module):
     """疯狂星期四模块"""
@@ -28,7 +29,7 @@ class KFC(Module):
         "last_date": "",
     }
 
-    @listener(lambda self: self.au(2)
+    @Utils.listener(lambda self: self.au(2)
          and self.conv_config["enable"]
          and datetime.now().weekday() == 3
          and self.conv_config.get("last_date", "") != datetime.now().strftime("%Y%m%d")
@@ -47,7 +48,7 @@ class KFC(Module):
         except Exception as e: # pylint: disable=broad-exception-caught
             self.errorf(f"KFC模块请求失败: {e}")
 
-    @handler(lambda self: self.group_at() and self.au(2)
+    @Utils.handler(lambda self: self.group_at() and self.au(2)
          and self.match(r"^(KFC|kfc)$"))
     def kfc(self):
         """疯狂星期四语句"""
@@ -60,7 +61,7 @@ class KFC(Module):
         except Exception as e: # pylint: disable=broad-exception-caught
             return self.reply_forward(self.node(f"{e}"), source="KFC模块请求失败")
 
-    @handler(lambda self: self.group_at() and self.au(1)
+    @Utils.handler(lambda self: self.group_at() and self.au(1)
          and self.match(r"^(开启|打开|启用|允许|关闭|禁止|取消)?疯狂星期四$"))
     def toggle(self):
         """开启关闭模块"""

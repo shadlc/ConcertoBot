@@ -5,7 +5,8 @@ import random
 import datetime
 import sqlite3
 import re
-from src.utils import Module, handler, get_user_name
+from src.base import Module
+from src.utils import Utils
 
 
 class RPG(Module):
@@ -264,7 +265,7 @@ class RPG(Module):
         else:
             return "+2D6"
 
-    @handler(lambda self: self.au(2) and self.match(r"^\.help$"))
+    @Utils.handler(lambda self: self.au(2) and self.match(r"^\.help$"))
     def help(self):
         """显示帮助信息"""
         help_list = [
@@ -313,7 +314,7 @@ class RPG(Module):
         nodes = [self.node(help_text)]
         self.reply_forward(nodes, source="跑团功能帮助")
 
-    @handler(lambda self: self.au(2) and self.match(r"^\.r[0-9dD\+\-\s]*$"))
+    @Utils.handler(lambda self: self.au(2) and self.match(r"^\.r[0-9dD\+\-\s]*$"))
     def roll(self):
         """掷骰子"""
 
@@ -360,7 +361,7 @@ class RPG(Module):
             parts = re.findall(r"[+-]?\d*d?\d*", expr)
             parts = [p for p in parts if p]  # 去掉空串
             total = sum(process_dice_part(part, detail) for part in parts)
-            user_name = get_user_name(self.robot, self.event.user_id)
+            user_name = Utils.get_user_name(self.robot, self.event.user_id)
             msg = f"🎲 {user_name} 掷骰: {total}\n({', '.join(detail)})"
             # 记录日志
             self.add_log(
@@ -370,7 +371,7 @@ class RPG(Module):
             msg = f"骰子表达式错误: {expr}\n错误: {str(e)}"
         self.reply(msg)
 
-    @handler(lambda self: self.au(2) and self.match(r"^\.ra\s?\S*$"))
+    @Utils.handler(lambda self: self.au(2) and self.match(r"^\.ra\s?\S*$"))
     def check(self):
         """检定（关联人物卡）和事件判定"""
         # 获取消息内容
@@ -424,7 +425,7 @@ class RPG(Module):
                 elif success and roll <= probability // 2:
                     result_text = "困难成功"
 
-                user_name = get_user_name(self.robot, self.event.user_id)
+                user_name = Utils.get_user_name(self.robot, self.event.user_id)
                 msg = (
                     f"🎲 {user_name} {event_desc}: {roll}/{probability} → {result_text}"
                 )
@@ -473,7 +474,7 @@ class RPG(Module):
                 else:
                     result = "失败 ❌"
 
-                user_name = get_user_name(self.robot, self.event.user_id)
+                user_name = Utils.get_user_name(self.robot, self.event.user_id)
                 if target == 0:
                     msg = f"🎲 {user_name} {skill} 检定: {roll} (未设置{skill}，请使用 .st {skill} [数值] 设置)"
                 else:
@@ -491,12 +492,12 @@ class RPG(Module):
                     },
                 )
             else:
-                user_name = get_user_name(self.robot, self.event.user_id)
+                user_name = Utils.get_user_name(self.robot, self.event.user_id)
                 msg = f"🎲 {user_name} {skill} 检定: {roll}（未设置人物卡属性，无法判定成败）"
 
         self.reply(msg)
 
-    @handler(lambda self: self.au(2) and self.match(r"^\.sc\s+[\d/dfF]+$"))
+    @Utils.handler(lambda self: self.au(2) and self.match(r"^\.sc\s+[\d/dfF]+$"))
     def sanity_check(self):
         """理智检定"""
         try:
@@ -552,7 +553,7 @@ class RPG(Module):
             pc["SAN"] = new_san
             self.save_user_pc(pc)
 
-            user_name = get_user_name(self.robot, self.event.user_id)
+            user_name = Utils.get_user_name(self.robot, self.event.user_id)
             msg = f"🧠 {user_name} 理智检定: {roll}/{san} → {result}, 损失 {loss}点理智, 剩余 {new_san}{madness_msg}"
 
             # 记录日志
@@ -576,7 +577,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @handler(lambda self: self.au(2) and self.match(r"^\.st\s+\S+\s+\d+$"))
+    @Utils.handler(lambda self: self.au(2) and self.match(r"^\.st\s+\S+\s+\d+$"))
     def set_skill(self):
         """快速设置技能"""
         try:
@@ -594,7 +595,7 @@ class RPG(Module):
                     pc[skill] = value
                     self.save_user_pc(pc)
 
-                    user_name = get_user_name(self.robot, self.event.user_id)
+                    user_name = Utils.get_user_name(self.robot, self.event.user_id)
                     msg = f"📝 {user_name} 设置 {skill} = {value}"
 
         except ValueError:
@@ -604,7 +605,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @handler(lambda self: self.au(2) and self.match(r"^\.stlist$"))
+    @Utils.handler(lambda self: self.au(2) and self.match(r"^\.stlist$"))
     def show_skill_list(self):
         """显示标准技能列表"""
         msg = "📚 CoC 标准技能列表:\n"
@@ -614,7 +615,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @handler(lambda self: self.au(2) and self.match(r"^\.sr(?:\s+[\d\s]+)?$"))
+    @Utils.handler(lambda self: self.au(2) and self.match(r"^\.sr(?:\s+[\d\s]+)?$"))
     def set_special_dice(self):
         """设置特殊骰子"""
         try:
@@ -648,7 +649,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @handler(lambda self: self.au(2) and self.match(r"^\.srv$"))
+    @Utils.handler(lambda self: self.au(2) and self.match(r"^\.srv$"))
     def view_special_dice(self):
         """查看特殊骰子"""
         user_id = self.event.user_id
@@ -660,7 +661,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @handler(lambda self: self.au(2) and self.match(r"^\.sr\d*$"))
+    @Utils.handler(lambda self: self.au(2) and self.match(r"^\.sr\d*$"))
     def roll_special_dice(self):
         """掷特殊骰子"""
         user_id = self.event.user_id
@@ -700,7 +701,7 @@ class RPG(Module):
             results.append(roll)
 
         total = sum(results)
-        user_name = get_user_name(self.robot, self.event.user_id)
+        user_name = Utils.get_user_name(self.robot, self.event.user_id)
         if count > 1:
             msg = f"🎲 {user_name} 特殊骰子掷出: {results} -> 总和: {total}"
         else:
@@ -713,7 +714,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @handler(lambda self: self.au(2) and self.match(r"^\.ri(\+?-?\d+)?$"))
+    @Utils.handler(lambda self: self.au(2) and self.match(r"^\.ri(\+?-?\d+)?$"))
     def initiative(self):
         """先攻"""
         modifier = 0
@@ -734,7 +735,7 @@ class RPG(Module):
         battle = self.conv_config["battles"].get("current")
         if battle:
             user_id = self.event.user_id
-            user_name = get_user_name(self.robot, user_id)
+            user_name = Utils.get_user_name(self.robot, user_id)
             battle["initiatives"][user_id] = {
                 "name": user_name,
                 "roll": total,
@@ -743,7 +744,7 @@ class RPG(Module):
             }
             self.save_config()
 
-        user_name = get_user_name(self.robot, self.event.user_id)
+        user_name = Utils.get_user_name(self.robot, self.event.user_id)
         mod_str = f"+{modifier}" if modifier >= 0 else str(modifier)
         msg = f"⚔️ {user_name} 先攻: {roll}{mod_str} = {total}"
 
@@ -752,7 +753,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @handler(lambda self: self.au(2) and self.match(r"^\.init$"))
+    @Utils.handler(lambda self: self.au(2) and self.match(r"^\.init$"))
     def show_initiative(self):
         """显示先攻列表"""
         battle = self.conv_config["battles"].get("current")
@@ -764,9 +765,9 @@ class RPG(Module):
                 initiatives.items(), key=lambda x: x[1]["roll"], reverse=True
             )
             msg = "⚔️ 先攻列表:\n"
-            for i, (user_id, data) in enumerate(
+            for i, (_, data) in enumerate(
                 sorted_init, 1
-            ):  # pylint: disable=unused-variable
+            ):
                 status = "✅" if data.get("acted", False) else "⏳"
                 mod_str = (
                     f"+{data['modifier']}"
@@ -784,7 +785,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @handler(lambda self: self.au(2) and self.match(r"^\.hp([+-]\d+)$"))
+    @Utils.handler(lambda self: self.au(2) and self.match(r"^\.hp([+-]\d+)$"))
     def hp_change(self):
         """HP 管理"""
         try:
@@ -795,7 +796,7 @@ class RPG(Module):
             pc["HP"] = new_hp
             self.save_user_pc(pc)
 
-            user_name = get_user_name(self.robot, self.event.user_id)
+            user_name = Utils.get_user_name(self.robot, self.event.user_id)
             change_str = f"+{change}" if change >= 0 else str(change)
             msg = f"❤️ {user_name} HP: {hp} {change_str} = {new_hp}"
 
@@ -811,7 +812,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @handler(lambda self: self.au(2) and self.match(r"^\.mp([+-]\d+)$"))
+    @Utils.handler(lambda self: self.au(2) and self.match(r"^\.mp([+-]\d+)$"))
     def mp_change(self):
         """MP 管理"""
         try:
@@ -822,7 +823,7 @@ class RPG(Module):
             pc["MP"] = new_mp
             self.save_user_pc(pc)
 
-            user_name = get_user_name(self.robot, self.event.user_id)
+            user_name = Utils.get_user_name(self.robot, self.event.user_id)
             change_str = f"+{change}" if change >= 0 else str(change)
             msg = f"💙 {user_name} MP: {mp} {change_str} = {new_mp}"
 
@@ -838,7 +839,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @handler(lambda self: self.au(2) and self.match(r"^\.pc\s.*$"))
+    @Utils.handler(lambda self: self.au(2) and self.match(r"^\.pc\s.*$"))
     def pc_manage(self):
         """人物卡管理"""
         msg = ""
@@ -847,12 +848,12 @@ class RPG(Module):
             name = self.match(r"^\.pc new\s?(\S+)?").group(1) or "无名氏"
             pc = {"Name": name, "HP": 10, "MP": 10, "力量": 50, "体质": 50, "敏捷": 50, "理智": 50, "SAN": 50}
             self.save_user_pc(pc)
-            user_name = get_user_name(self.robot, self.event.user_id)
+            user_name = Utils.get_user_name(self.robot, self.event.user_id)
             msg = f"🧾 {user_name} 新建人物卡: {name}, HP={pc['HP']}, MP={pc['MP']}"
         elif self.match(r"^\.pc auto$"):
             pc = self.generate_coc_character()
             self.save_user_pc(pc)
-            user_name = get_user_name(self.robot, self.event.user_id)
+            user_name = Utils.get_user_name(self.robot, self.event.user_id)
             msg = f"🎲 {user_name} 自动生成人物卡: {pc['Name']}\n"
             msg += f"力量{pc.get('STR', 50)} 体质{pc.get('CON', 50)} 体型{pc.get('SIZ', 50)}\n"
             msg += f"敏捷{pc.get('DEX', 50)} 外貌{pc.get('APP', 50)} 智力{pc.get('INT', 50)}\n"
@@ -863,12 +864,12 @@ class RPG(Module):
             pc = self.get_user_pc()
             pc[key] = int(value)
             self.save_user_pc(pc)
-            user_name = get_user_name(self.robot, self.event.user_id)
+            user_name = Utils.get_user_name(self.robot, self.event.user_id)
             msg = f"📝 {user_name} 设置 {key} = {value}"
         elif self.match(r"^\.pc show$"):
             pc = self.get_user_pc()
             if pc:
-                user_name = get_user_name(self.robot, self.event.user_id)
+                user_name = Utils.get_user_name(self.robot, self.event.user_id)
                 msg = self.format_character_sheet(pc, user_name)
             else:
                 msg = "尚未建立人物卡"
@@ -876,10 +877,10 @@ class RPG(Module):
             target_id = self.match(r"^\.pc show\s+@?(\d+)$").group(1)
             pc = self.get_user_pc(target_id)
             if pc:
-                user_name = get_user_name(self.robot, target_id)
+                user_name = Utils.get_user_name(self.robot, target_id)
                 msg = self.format_character_sheet(pc, user_name)
             else:
-                user_name = get_user_name(self.robot, target_id)
+                user_name = Utils.get_user_name(self.robot, target_id)
                 msg = f"{user_name} 尚未建立人物卡"
         elif self.match(r"^\.pc del$"):
             db_path = self.get_data_path(self.config["database"])
@@ -894,7 +895,7 @@ class RPG(Module):
             conn.commit()
             conn.close()
 
-            user_name = get_user_name(self.robot, self.event.user_id)
+            user_name = Utils.get_user_name(self.robot, self.event.user_id)
             msg = f"🗑️ {user_name} 已删除人物卡"
 
             # 记录日志
@@ -962,7 +963,7 @@ class RPG(Module):
 
         return msg
 
-    @handler(lambda self: self.au(2) and self.match(r"^\.team\s.*$"))
+    @Utils.handler(lambda self: self.au(2) and self.match(r"^\.team\s.*$"))
     def team_manage(self):
         """队伍管理"""
         msg = ""
@@ -970,7 +971,7 @@ class RPG(Module):
         if self.match(r"^\.team create\s+(\S+)$"):
             team_name = self.match(r"^\.team create\s+(\S+)$").group(1)
             user_id = self.event.user_id
-            user_name = get_user_name(self.robot, user_id)
+            user_name = Utils.get_user_name(self.robot, user_id)
 
             # 检查是否已在其他队伍
             for tname, team in self.conv_config["teams"].items():
@@ -996,7 +997,7 @@ class RPG(Module):
                 msg = f"❌ 队伍 {team_name} 不存在"
             else:
                 user_id = self.event.user_id
-                user_name = get_user_name(self.robot, user_id)
+                user_name = Utils.get_user_name(self.robot, user_id)
 
                 # 检查是否已在其他队伍
                 for tname, team in self.conv_config["teams"].items():
@@ -1016,7 +1017,7 @@ class RPG(Module):
 
         elif self.match(r"^\.team leave$"):
             user_id = self.event.user_id
-            user_name = get_user_name(self.robot, user_id)
+            user_name = Utils.get_user_name(self.robot, user_id)
 
             # 查找用户所在的队伍
             found = False
@@ -1048,7 +1049,7 @@ class RPG(Module):
             found = False
             for team_name, team in self.conv_config["teams"].items():
                 if str(user_id) in team["members"]:
-                    leader_name = get_user_name(self.robot, team["leader"])
+                    leader_name = Utils.get_user_name(self.robot, team["leader"])
                     members = ", ".join(team["members"].values())
                     created_date = datetime.datetime.fromisoformat(
                         team["created"]
@@ -1066,7 +1067,7 @@ class RPG(Module):
             else:
                 msg = "👥 所有队伍:\n"
                 for team_name, team in teams.items():
-                    leader_name = get_user_name(self.robot, team["leader"])
+                    leader_name = Utils.get_user_name(self.robot, team["leader"])
                     member_count = len(team["members"])
                     created_date = datetime.datetime.fromisoformat(
                         team["created"]
@@ -1077,7 +1078,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @handler(lambda self: self.au(2) and self.match(r"^\.battle\s.*$"))
+    @Utils.handler(lambda self: self.au(2) and self.match(r"^\.battle\s.*$"))
     def battle_manage(self):
         """战斗管理"""
         msg = ""
@@ -1221,7 +1222,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @handler(lambda self: self.au(2) and self.match(r"^\.jrrp$"))
+    @Utils.handler(lambda self: self.au(2) and self.match(r"^\.jrrp$"))
     def jrrp(self):
         """今日人品"""
         # 基于用户ID和日期生成确定性的随机数
@@ -1243,7 +1244,7 @@ class RPG(Module):
         else:
             comment = "⚠️ 诸事不宜"
 
-        user_name = get_user_name(self.robot, self.event.user_id)
+        user_name = Utils.get_user_name(self.robot, self.event.user_id)
         msg = f"✨ {user_name} 今日人品值: {rp} {comment}"
 
         # 记录日志
@@ -1251,11 +1252,11 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @handler(lambda self: self.au(2) and self.match(r"^\.(coin|掷硬币)$"))
+    @Utils.handler(lambda self: self.au(2) and self.match(r"^\.(coin|掷硬币)$"))
     def coin(self):
         """掷硬币"""
         result = random.choice(["正面", "反面"])
-        user_name = get_user_name(self.robot, self.event.user_id)
+        user_name = Utils.get_user_name(self.robot, self.event.user_id)
         msg = f"🪙 {user_name} 硬币结果: {result}"
 
         # 记录日志
@@ -1263,7 +1264,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @handler(lambda self: self.au(2) and self.match(r"^\.coc$"))
+    @Utils.handler(lambda self: self.au(2) and self.match(r"^\.coc$"))
     def coc_help(self):
         """显示CoC相关帮助"""
         msg = "🐙 CoC 跑团帮助:\n"
@@ -1275,7 +1276,7 @@ class RPG(Module):
 
         self.reply(msg)
 
-    @handler(lambda self: self.au(2) and self.match(r"^\.log$"))
+    @Utils.handler(lambda self: self.au(2) and self.match(r"^\.log$"))
     def show_log(self):
         """显示最近的日志"""
         logs = self.conv_config.get("logs", [])
@@ -1287,7 +1288,7 @@ class RPG(Module):
                 timestamp = datetime.datetime.fromisoformat(log["timestamp"]).strftime(
                     "%H:%M"
                 )
-                user_name = get_user_name(self.robot, log["user_id"])
+                user_name = Utils.get_user_name(self.robot, log["user_id"])
                 msg += f"{timestamp} {user_name}: {log['action']}\n"
 
         self.reply(msg)

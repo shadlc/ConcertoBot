@@ -6,7 +6,7 @@ from typing import Dict, List, AsyncGenerator, Generator, Union
 
 import httpx
 
-from src.utils import Module
+from src.base import Module
 
 
 class LLM(Module):

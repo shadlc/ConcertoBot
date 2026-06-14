@@ -1,7 +1,7 @@
 """群组处理模块"""
 
-import asyncio
-from src.utils import Module, group_member_info, group_special_title, status_ok, handler, reply_id
+from src.base import Module
+from src.utils import Utils
 
 
 class Group(Module):
@@ -28,10 +28,10 @@ class Group(Module):
             self.robot.group_decrease_broadcasts = {}
         return True
 
-    @handler(lambda self: self.group_at() and self.au(1)
+    @Utils.handler(lambda self: self.group_at() and self.au(1)
         and self.match(r"^(为|给|替)\s*(\S+)\s*(设置|添加|增加|颁发|设立)(专属)*(头衔|称号)\s*(\S+)$"))
     def special_title(self):
-        member_info = group_member_info(
+        member_info = Utils.group_member_info(
             self.robot, self.event.group_id, self.event.self_id
         )
         if member_info.get("data", {}).get("role") != "owner":
@@ -44,13 +44,13 @@ class Group(Module):
         title = inputs[5]
         if user_id == "我":
             user_id = self.event.user_id
-        info = group_special_title(self.robot, self.event.group_id, user_id, title)
-        if status_ok(info):
+        info = Utils.group_special_title(self.robot, self.event.group_id, user_id, title)
+        if Utils.status_ok(info):
             self.reply(f"为{user_id}设置群头衔[{title}]成功!")
         else:
             self.reply(f"为{user_id}设置群头衔[{title}]失败!")
 
-    @handler(lambda self: self.group_at() and self.au(1)
+    @Utils.handler(lambda self: self.group_at() and self.au(1)
         and self.match(r"^(开启|启用|打开|记录|启动|关闭|禁用|取消)群成员广播"))
     def group_member_broadcast(self):
         msg = ""
@@ -63,7 +63,7 @@ class Group(Module):
         self.save_config()
         self.reply(msg)
 
-    @handler(lambda self: self.conv_config["member_broadcast"]["enable"]
+    @Utils.handler(lambda self: self.conv_config["member_broadcast"]["enable"]
          and self.event.notice_type == ("group_decrease"))
     def group_decrease(self):
         group_id = self.event.group_id
@@ -97,12 +97,12 @@ class Group(Module):
             msg = ", ".join(members) + "已退出群聊"
 
         # 发送广播
-        reply_id(self.robot, "group", group_id, msg)
+        Utils.reply_id(self.robot, "group", group_id, msg)
 
-    @handler(lambda self: self.conv_config["member_broadcast"]["enable"]
+    @Utils.handler(lambda self: self.conv_config["member_broadcast"]["enable"]
          and self.event.raw.get("request_type") == "group")
     def group_request(self):
         if self.event.raw.get("request_type") == "group":
             comment = self.event.raw.get("comment")
-            reply_id(self.robot, "group", self.event.group_id,
+            Utils.reply_id(self.robot, "group", self.event.group_id,
                 f"{self.event.user_name}({self.event.user_id})申请入群~\n{comment}")

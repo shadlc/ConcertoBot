@@ -18,7 +18,8 @@ try:
 except ImportError:
     HAS_PLAYWRIGHT = False
 
-from src.utils import MiniCron, Module, send_forward_msg, send_msg, set_emoji, handler
+from src.base import MiniCron, Module
+from src.utils import Utils
 
 
 class Bilibili(Module):
@@ -152,7 +153,7 @@ class Bilibili(Module):
 
         asyncio.run_coroutine_threadsafe(credential_refresh(), self.robot.loop)
 
-    @handler(
+    @Utils.handler(
         lambda self: self.at_or_private() and self.au(3) and self.match(r"^关注列表$")
     )
     def show_follow_list(self):
@@ -177,7 +178,7 @@ class Bilibili(Module):
             self.reply(msg)
         self.reply_forward(nodes, title, "哔哩哔哩")
 
-    @handler(
+    @Utils.handler(
         lambda self: self.at_or_private()
         and self.au(2)
         and self.match(r"^关注\s?(\S+)$")
@@ -213,7 +214,7 @@ class Bilibili(Module):
             msg = "查无此人"
         self.reply(msg)
 
-    @handler(
+    @Utils.handler(
         lambda self: self.at_or_private()
         and self.au(2)
         and self.match(r"^取关\s?(\S+)$")
@@ -236,7 +237,7 @@ class Bilibili(Module):
             msg = "查无此人"
         self.reply(msg)
 
-    @handler(
+    @Utils.handler(
         lambda self: self.at_or_private()
         and self.au(2)
         and self.match(r"^(\S+)\s?反?向?通知关键词\s+(\S+)?$")
@@ -263,7 +264,7 @@ class Bilibili(Module):
             msg = "查无此人"
         self.reply(msg)
 
-    @handler(
+    @Utils.handler(
         lambda self: self.at_or_private()
         and self.au(3)
         and self.match(r"^(开启|关闭)?\s?(\S+?)\s?最?新?动态(通知)?$")
@@ -278,7 +279,7 @@ class Bilibili(Module):
             uid = info["uid"]
             name = info["name"]
             if not flag:
-                set_emoji(self.robot, self.event.msg_id, 124)
+                Utils.set_emoji(self.robot, self.event.msg_id, 124)
                 dyn = self.robot.sync(self.get_latest_dynamic(int(uid)))
                 if dyn:
                     d_type = dyn["dynamic_type"]
@@ -330,7 +331,7 @@ class Bilibili(Module):
             msg = "查无此人"
         self.reply(msg)
 
-    @handler(
+    @Utils.handler(
         lambda self: self.at_or_private()
         and self.au(3)
         and self.match(r"^(开启|关闭)?\s?(\S+)\s?直播(通知)?$")
@@ -373,7 +374,7 @@ class Bilibili(Module):
             msg = "查无此人"
         self.reply(msg)
 
-    @handler(
+    @Utils.handler(
         lambda self: self.at_or_private()
         and self.au(3)
         and self.match(r"^(开启|关闭)?(\S+)\s?粉丝数(通知)?$")
@@ -404,7 +405,7 @@ class Bilibili(Module):
             msg = "查无此人"
         self.reply(msg)
 
-    @handler(
+    @Utils.handler(
         lambda self: self.at_or_private()
         and self.au(2)
         and self.match(r"^(开启|关闭)[b|B|哔]站通知$")
@@ -1022,10 +1023,10 @@ class Bilibili(Module):
         """回复消息"""
         if owner_id.startswith("g"):
             group_id = int(owner_id[1:])
-            return send_msg(self.robot, "group", group_id, msg)
+            return Utils.send_msg(self.robot, "group", group_id, msg)
         else:
             user_id = int(owner_id[1:])
-            return send_msg(self.robot, "private", user_id, msg)
+            return Utils.send_msg(self.robot, "private", user_id, msg)
 
     def reply_forward_back(
         self, owner_id: str, nodes: list, source=None, summary=None
@@ -1033,11 +1034,11 @@ class Bilibili(Module):
         """回复消息"""
         if owner_id.startswith("g"):
             group_id = int(owner_id[1:])
-            return send_forward_msg(
+            return Utils.send_forward_msg(
                 self.robot, nodes, group_id=group_id, source=source, summary=summary
             )
         else:
             user_id = int(owner_id[1:])
-            return send_forward_msg(
+            return Utils.send_forward_msg(
                 self.robot, nodes, user_id=user_id, source=source, summary=summary
             )
