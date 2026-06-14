@@ -31,6 +31,7 @@ class Config:
             "image_color": "disabled",
             "min_image_width": 10,
             "max_image_width": 100,
+            "handler_workers": 3,
             "disabled": [],
         }
         self.init_config()
@@ -53,6 +54,7 @@ class Config:
         self.image_color = self.raw.get("image_color", self.default["image_color"])
         self.min_image_width = self.raw.get("min_image_width", self.default["min_image_width"])
         self.max_image_width = self.raw.get("max_image_width", self.default["max_image_width"])
+        self.handler_workers = max(1, int(self.raw.get("handler_workers", self.default["handler_workers"])))
         self.disabled = self.raw.get("disabled", self.default["disabled"])
         os.makedirs(self.data_path, exist_ok=True)
         os.makedirs(self.log_path, exist_ok=True)

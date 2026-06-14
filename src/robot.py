@@ -7,13 +7,13 @@ import json
 import logging
 import os
 import random
-import re
 import sys
 import time
 import threading
 import traceback
 
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 from colorama import Fore
 import httpx
@@ -80,6 +80,10 @@ class Concerto:
         self.past_request = deque(maxlen=20)
         self.latest_data = {}
         self.loop = asyncio.new_event_loop()
+        self.message_executor = ThreadPoolExecutor(
+            max_workers=self.config.handler_workers,
+            thread_name_prefix="message-handler",
+        )
         self.start_info = """
     __                           __        
    /  )                  _/_    /  )    _/_
@@ -145,6 +149,7 @@ class Concerto:
         self.init()
         asyncio.set_event_loop(self.loop)
         self.loop.run_until_complete(self.main_loop())
+        self.message_executor.shutdown(wait=False, cancel_futures=True)
         self.warnf("正在关闭程序...")
         sys.exit(self.is_restart)
 
@@ -159,11 +164,11 @@ class Concerto:
             self.handle_console(rev)
 
     def listening_msg(self):
-        """监听来自qq的请求"""
+        """监听来自服务端的请求"""
         self.printf(f"正在监听: {Fore.GREEN}{self.config.host}:{self.config.port}{Fore.RESET}")
         while self.is_running:
             rev = receive_msg(self)
-            threading.Thread(target=self.handle_msg, args=(rev,), daemon=True).start()
+            self.message_executor.submit(self.handle_msg, rev)
 
     def handle_msg(self, rev: dict):
         """消息处理接口主函数"""
