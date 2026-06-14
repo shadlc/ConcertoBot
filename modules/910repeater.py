@@ -19,7 +19,8 @@ class Repeater(Module):
         ],
         1: [
             "[开启|关闭]复读机 | 打开或关闭复读机",
-            "禁止复读[关键词] | 不再对指定关键词进行复读",
+            "禁止复读 [关键词] | 不再对指定关键词进行复读",
+            "复读 [关键词] | 取消指定关键词的复读屏蔽",
         ],
     }
     GLOBAL_CONFIG = {}
@@ -77,20 +78,23 @@ class Repeater(Module):
         self.save_config()
         self.reply(msg)
 
-    @Utils.handler(lambda self: self.group_at() and self.au(2) and self.match(r"^(不|禁止)?(复读|复读)\s+(\S+)$"))
+    @Utils.handler(lambda self: self.group_at() and self.au(1) and self.match(r"^(不|禁止)?复读\s+(\S+)$"))
     def exclude(self):
         """复读排除"""
-        text = self.match(r"^(不|禁止)?(复读|复读)\s+(\S+)$").group(3)
+        text = self.match(r"^(不|禁止)?复读\s+(\S+)$").group(2)
         if self.match(r"(不|禁止)"):
-            self.conv_config["exclude"].append(text)
+            if text not in self.conv_config["exclude"]:
+                self.conv_config["exclude"].append(text)
             self.save_config()
             msg = f"成功将[{text}]添加到复读屏蔽词中!"
             self.reply(msg)
         else:
-            if text in self.conv_config["exclude"]:
+            if text not in self.conv_config["exclude"]:
                 self.reply(f"[{text}]从未在复读屏蔽词中存在!")
+                msg = f"[{text}]从未在复读屏蔽词中存在!"
             else:
                 self.conv_config["exclude"].remove(text)
+                self.save_config()
                 msg = f"成功将[{text}]从复读屏蔽词中移除!"
                 self.reply(msg)
         self.printf(f"会话[{self.owner_id}]{msg}")

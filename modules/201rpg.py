@@ -18,7 +18,7 @@ class RPG(Module):
         0: [
             "本模块为CoC风格跑团模块，无需使用@，而是.开头调用",
         ],
-        2: ["详细操作请输入.help获取"],
+        2: ["发送 .help 获取详细操作"],
     }
 
     # CoC 标准技能列表
@@ -270,26 +270,26 @@ class RPG(Module):
         """显示帮助信息"""
         help_list = [
             ".r | 掷6面骰",
-            ".r[dice表达式] | 掷骰（如 r1d20+5, r3d6）",
+            ".r[dice表达式] | 掷骰（如 .r1d20+5, .r3d6）",
             ".rXdY | 掷X个Y面骰，X不填入默认为1",
-            ".ra [宾语][概率][主语] | 掷100面骰进行事件判定",
+            ".ra [事项] [概率] [对象] | 按指定概率做事件判定（如 .ra 开门 60 调查员）",
             ".sr A B C D E F | 定义一个特殊6面骰，六个面的点数分别是ABCDEF",
             ".srv | 查看当前特殊6面骰",
-            ".srXd | 掷X个特殊6面骰，X不填入默认为1",
-            ".ra [技能/属性] | 检定（如 ra 力量）",
-            ".ri[+修正] | 掷先攻（如 ri+2）",
-            ".hp±数字 | 修改当前 HP（如 hp-5）",
-            ".mp±数字 | 修改当前 MP（如 mp-3）",
+            ".sr[数量] | 掷指定数量的特殊6面骰，数量不填默认为1",
+            ".ra [技能/属性] | 检定（如 .ra 力量）",
+            ".ri[+修正] | 掷先攻（如 .ri+2）",
+            ".hp±数字 | 修改当前 HP（如 .hp-5）",
+            ".mp±数字 | 修改当前 MP（如 .mp-3）",
             ".pc new [名字] | 新建人物卡",
             ".pc auto | 自动生成符合规则的人物卡",
-            ".pc set [属性]=值 | 设置属性（如 pc set 力量=60）",
+            ".pc set [属性]=值 | 设置属性（如 .pc set 力量=60）",
             ".pc show [@某人] | 查看自己或他人人物卡",
             ".pc del | 删除人物卡",
             ".st [技能名] [值] | 快速设置技能值",
             ".stlist | 显示标准调查员技能列表",
             ".jrrp | 今日人品（1~100）",
             ".coin | 掷硬币（正/反）",
-            ".sc [san值变化] | 理智检定（如 sc 1/1d6）",
+            ".sc [san值变化] | 理智检定（如 .sc 1/1d6）",
             ".coc | 显示CoC相关帮助信息",
             ".help | 显示模块帮助信息",
             ".log | 查看最近的骰子记录",
@@ -673,7 +673,7 @@ class RPG(Module):
             return
 
         # 获取骰子数量
-        expr = self.event.msg[2:]  # 去掉 ".sr"
+        expr = self.event.msg[3:]  # 去掉 ".sr"
         if expr:
             try:
                 count = int(expr)
@@ -719,7 +719,7 @@ class RPG(Module):
     def initiative(self):
         """先攻"""
         modifier = 0
-        expr = self.event.msg[2:]  # 去掉 "ri"
+        expr = self.event.msg[3:]  # 去掉 ".ri"
 
         if expr:
             try:
@@ -790,7 +790,7 @@ class RPG(Module):
     def hp_change(self):
         """HP 管理"""
         try:
-            change = int(self.match(r"^hp([+-]\d+)$").group(1))
+            change = int(self.match(r"^\.hp([+-]\d+)$").group(1))
             pc = self.get_user_pc()
             hp = pc.get("HP", 10)
             new_hp = max(0, hp + change)

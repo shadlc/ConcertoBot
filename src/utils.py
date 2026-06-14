@@ -26,10 +26,10 @@ from PIL import Image
 from colorama import Back, Fore, Style
 
 from src import api
-from src.base import Event, Module
 
 if TYPE_CHECKING:
     from src.robot import Concerto
+    from src.base import Event, Module
 
 
 def listening(host: str, port: int, timeout: int = 5) -> tuple[dict | str]:

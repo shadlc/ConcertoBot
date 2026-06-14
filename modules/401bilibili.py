@@ -28,18 +28,22 @@ class Bilibili(Module):
     ID = "Bilibili"
     NAME = "哔哩哔哩模块"
     HELP = {
+        2: [
+            "开启B站通知 / 关闭B站通知 | 开关本会话全部B站通知",
+            "关注 [UP主] | 关注一个新的UP主",
+            "取关 [UP主] | 取关一个UP主",
+            "[UP主] 通知关键词 [匹配规则] | 设置通知过滤关键词(正则匹配)",
+            "[UP主] 反向通知关键词 [匹配规则] | 设置通知排除关键词(正则匹配)",
+        ],
         3: [
             "关注列表 | 查看当前关注的UP主列表",
             "[UP主] 动态 | 获取UP主的最新动态",
             "[UP主] 直播 | 获取UP主的直播间状态",
             "[UP主] 粉丝数 | 查看该UP粉丝数",
-            "[UP主] 动态 [开启|关闭] | 开关UP主动态通知",
-            "[UP主] 直播 [开启|关闭] | 开关UP主直播通知",
-            "[UP主] 粉丝数 [开启|关闭] | 开关UP主粉丝数通知",
-            "关注 [UP主] | 关注一个新的UP主",
-            "取关 [UP主] | 取关一个UP主",
-            "[UP主] 通知关键词 [匹配规则] | 设置通知过滤关键词(正则匹配)",
-            "[UP主] 通知 [开启|关闭] | 开关UP主的通知",
+            "开启[UP主]动态 / 关闭[UP主]动态 | 开关UP主动态通知",
+            "开启[UP主]直播 / 关闭[UP主]直播 | 开关UP主直播通知",
+            "开启[UP主]粉丝数 / 关闭[UP主]粉丝数 | 开关UP主粉丝数通知",
+            "[UP主] 通知开启 / [UP主] 通知关闭 | 开关UP主的全部通知",
         ],
     }
     GLOBAL_CONFIG = {
@@ -273,6 +277,30 @@ class Bilibili(Module):
     @Utils.handler(
         lambda self: self.at_or_private()
         and self.au(3)
+        and self.match(r"^(\S+)\s?通知\s?(开启|关闭)$")
+    )
+    def notice_control(self):
+        """UP主通知总开关"""
+        user_match, flag = self.match(r"^(\S+)\s?通知\s?(开启|关闭)$").groups()
+        info = self.robot.sync(self.get_info(user_match))
+        if not info:
+            return self.reply("查无此人")
+        uid = info["uid"]
+        name = info["name"]
+        if uid not in self.conv_config["sub"]:
+            return self.reply("请先关注UP主~")
+
+        status = flag == "开启"
+        self.conv_config["sub"][uid]["dynamic_notice"] = status
+        self.conv_config["sub"][uid]["live_notice"] = status
+        self.conv_config["sub"][uid]["fans_notice"] = status
+        self.robot.persist_mods[self.ID].config = self.config.copy()
+        self.save_config()
+        return self.reply(f"已{flag}对{name}的全部通知~")
+
+    @Utils.handler(
+        lambda self: self.at_or_private()
+        and self.au(3)
         and self.match(r"^(开启|关闭)?\s?(\S+?)\s?最?新?动态(通知)?$")
     )
     def dynamic_control(self):
@@ -401,7 +429,7 @@ class Bilibili(Module):
                 msg += f"\n[CQ:image,file={avatar}]"
             elif uid in self.conv_config["sub"]:
                 status = flag == "开启"
-                self.conv_config["sub"]["fans_notice"] = status
+                self.conv_config["sub"][uid]["fans_notice"] = status
                 self.robot.persist_mods[self.ID].config = self.config.copy()
                 self.save_config()
                 msg = f"已{"开启" if status else "关闭"}对{name}的粉丝数通知~"
