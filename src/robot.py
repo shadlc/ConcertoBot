@@ -6,7 +6,9 @@ import importlib
 import json
 import logging
 import os
+import platform
 import random
+import signal
 import sys
 import time
 import threading
@@ -14,6 +16,7 @@ import traceback
 
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
+from logging.handlers import TimedRotatingFileHandler
 from typing import Any, Callable
 from colorama import Fore
 import httpx
@@ -40,6 +43,27 @@ from src.command import ExecuteCmd
 
 logger = logging.getLogger()
 
+
+def configure_logging(log_path: str) -> None:
+    """每个进程仅配置一次文件日志"""
+    logger.setLevel(logging.INFO)
+    os.makedirs(log_path, exist_ok=True)
+    log_file = os.path.abspath(os.path.join(log_path, "bot.log"))
+    for handler in logger.handlers:
+        if (
+            isinstance(handler, TimedRotatingFileHandler)
+            and getattr(handler, "baseFilename", "") == log_file
+        ):
+            return
+    handler = TimedRotatingFileHandler(
+        log_file,
+        when="midnight",
+        interval=1,
+        encoding="utf-8",
+    )
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(handler)
+
 class Memory(object):
     """独立聊天记录存储"""
     def __init__(self):
@@ -57,6 +81,7 @@ class Concerto:
         self.config_file = "data/config.json"
         self.config = Config(self.config_file)
         self.cmd = {}
+        ExecuteCmd("", self)
 
         self.func = {}
         self.func_owner = {}
@@ -94,12 +119,41 @@ class Concerto:
             random.choice([Fore.RED,Fore.GREEN,Fore.YELLOW,Fore.BLUE,Fore.MAGENTA,Fore.CYAN,Fore.WHITE])
             + self.start_info + Fore.RESET, flush=True)
 
-    def update_robot_name_placeholder(self) -> None:
-        """更新机器人名称"""
+    def setup_console_completion(self) -> None:
+        """命令自动补全"""
+        if platform.system() != "Linux":
+            return
+        try:
+            import readline # pylint: disable=import-error
+        except ImportError:
+            return
+
+        def completer(text, state):
+            options = [cmd for cmd in self.cmd if cmd.startswith(text)]
+            if state < len(options):
+                return options[state]
+            return None
+
+        readline.parse_and_bind("tab: complete")
+        readline.set_completer(completer)
+
+    def setup_signal_handler(self) -> None:
+        """捕获Ctrl C信号"""
+        def handle_signal(signum, frame): # pylint: disable=unused-argument
+            self.stop()
+            raise SystemExit()
+
+        signal.signal(signal.SIGINT, handle_signal)
+
+    def setup_runtime(self) -> None:
+        """配置进程级运行时行为"""
+        configure_logging(self.config.log_path)
+        self.setup_console_completion()
+        self.setup_signal_handler()
 
     def init(self) -> bool:
         """初始化并尝试连接到API"""
-        self.printf(f"正在连接API[{Fore.GREEN}{self.config.api_base}{Fore.RESET}]...", end="", console=False)
+        self.printf(f"正在连接API [{Fore.GREEN}{self.config.api_base}{Fore.RESET}]...")
         connected = False
         while not connected:
             self.printf(".", end="", flush=True)
@@ -108,22 +162,26 @@ class Concerto:
                 connected = status_ok(result)
                 app_name = result.get("data",{}).get("app_name")
                 app_version = result.get("data",{}).get("app_version")
-                self.printf(f"已连接至 {Fore.YELLOW}{app_name}v{app_version}{Fore.RESET}", flush=True)
+                self.printf(f"已连接至 {Fore.YELLOW}{app_name}v{app_version}{Fore.RESET}")
                 self.api_name = f"{app_name}v{app_version}"
                 result = api.get(self, "/get_login_info")
                 self.self_name = result["data"]["nickname"]
                 self.self_id = str(result["data"]["user_id"])
                 self.at_info = "[CQ:at,qq=" + str(self.self_id) + "]"
                 self.placeholder_dict["ROBOT_NAME"] = [self.self_name]
-                self.printf(f"已接入账号: {Fore.MAGENTA}{self.self_name}({self.self_id}){Fore.RESET}")
             except httpx.RequestError:
                 time.sleep(1)
                 continue
             time.sleep(1)
         self.import_modules()
+        # 全部模块加载完再监听消息，避免消息处理逻辑遗留
         threading.Thread(target=self.listening_msg, daemon=True, name="消息监听").start()
         threading.Thread(target=self.listening_console, daemon=True, name="键盘监听").start()
-        self.printf(f"已成功唤醒{self.self_name}, 加载模块{len(self.modules)}个, 注册处理函数{get_handler_amount(self)}个!")
+        self.printf(
+            f"已成功唤醒{Fore.MAGENTA}{self.self_name}({self.self_id}){Fore.RESET}, "
+            f"加载模块{Fore.MAGENTA}{len(self.modules)}{Fore.RESET}个, "
+            f"注册处理函数{Fore.MAGENTA}{get_handler_amount(self)}{Fore.RESET}个!"
+        )
         return connected
 
     def stop(self):
@@ -146,11 +204,13 @@ class Concerto:
 
     def run(self) -> None:
         """运行机器人"""
-        self.init()
-        asyncio.set_event_loop(self.loop)
-        self.loop.run_until_complete(self.main_loop())
-        self.message_executor.shutdown(wait=False, cancel_futures=True)
-        self.warnf("正在关闭程序...")
+        try:
+            self.init()
+            asyncio.set_event_loop(self.loop)
+            self.loop.run_until_complete(self.main_loop())
+        finally:
+            self.message_executor.shutdown(wait=False, cancel_futures=True)
+            self.warnf("正在关闭程序...")
         sys.exit(self.is_restart)
 
     def listening_console(self):
@@ -164,8 +224,8 @@ class Concerto:
             self.handle_console(rev)
 
     def listening_msg(self):
-        """监听来自服务端的请求"""
-        self.printf(f"正在监听: {Fore.GREEN}{self.config.host}:{self.config.port}{Fore.RESET}")
+        """监听来自API的请求"""
+        self.printf(f"反向监听地址已启用 [{Fore.GREEN}{self.config.host}:{self.config.port}{Fore.RESET}]")
         while self.is_running:
             rev = receive_msg(self)
             self.message_executor.submit(self.handle_msg, rev)
@@ -181,11 +241,11 @@ class Concerto:
         group_id = event.group_id
 
         # 如果是调试模式，输出所有接收到的原始信息
-        if self.config.is_debug and not event.post_type == "meta_event":
-            self.printf(
-                f"{Fore.YELLOW}[DATA]{Fore.RESET} 接收数据包 "
-                f"{Fore.YELLOW}{json.dumps(rev, ensure_ascii=False)}{Fore.RESET}"
-            )
+        self.printf(
+            f"{Fore.YELLOW}[DATA]{Fore.RESET} 接收数据包 "
+            f"{Fore.YELLOW}{json.dumps(rev, ensure_ascii=False)}{Fore.RESET}",
+            level="DEBUG"
+        )
 
         # 数据存储到对应的data中, 并获取data
         data = {}

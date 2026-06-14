@@ -1,7 +1,7 @@
 """配置类"""
 
 import os
-import sys
+import shutil
 import time
 import json
 import logging
@@ -34,8 +34,7 @@ class Config:
             "handler_workers": 3,
             "disabled": [],
         }
-        self.init_config()
-        self.raw = self.read()
+        self.raw = self.init_config()
         self.host = self.raw.get("host", self.default["host"])
         self.port = self.raw.get("port", self.default["port"])
         self.api_base = self.raw.get("api_base", self.default["api_base"])
@@ -59,36 +58,66 @@ class Config:
         os.makedirs(self.data_path, exist_ok=True)
         os.makedirs(self.log_path, exist_ok=True)
 
-    def init_config(self):
+    def init_config(self) -> dict:
         """初始化配置文件"""
+        if path := os.path.dirname(self.config_file):
+            os.makedirs(path, exist_ok=True)
         try:
-            if path := os.path.dirname(self.config_file):
-                os.makedirs(path, exist_ok=True)
-            open(self.config_file, encoding="utf-8")
-        except (FileNotFoundError, FileNotFoundError, json.JSONDecodeError):
-            json.dump(self.default, open(self.config_file, mode="w", encoding="utf-8"), ensure_ascii=False, indent=2)
+            config_data = self.load_config_file()
+        except FileNotFoundError:
+            print("未找到配置文件，将会创建默认配置")
+            config_data = {}
+        except json.JSONDecodeError as error:
+            backup_file = self.backup_damaged_config()
+            logger.error("配置文件损坏，已备份至 %s: %s", backup_file, error)
+            print(f"配置文件损坏，已备份至 {backup_file}，将会创建默认配置")
+            config_data = {}
+        if not isinstance(config_data, dict):
+            backup_file = self.backup_damaged_config()
+            logger.error("配置文件结构无效，已备份至 %s", backup_file)
+            print(f"配置文件结构无效，已备份至 {backup_file}，将会创建默认配置")
+            config_data = {}
+        merged = dict(self.default)
+        merged.update(config_data)
+        if merged != config_data:
+            self.write_config_file(merged)
+        return merged
+
+    def backup_damaged_config(self) -> str:
+        """在覆写前备份损坏的配置文件"""
+        backup_file = f"{self.config_file}.broken.{time.strftime('%Y%m%d%H%M%S')}.bak"
+        shutil.copyfile(self.config_file, backup_file)
+        return backup_file
+
+    def load_config_file(self):
+        """读取配置文件"""
+        with open(self.config_file, encoding="utf-8") as file:
+            return json.load(file)
+
+    def write_config_file(self, config_data: dict) -> None:
+        """写入配置文件"""
+        with open(self.config_file, mode="w", encoding="utf-8") as file:
+            json.dump(config_data, file, ensure_ascii=False, indent=2)
 
     def read(self, key: str = "") -> list | dict | str | int | bool:
         """获取指定配置"""
         try:
+            json_data = self.init_config()
             if key:
-                json_data = json.load(open(self.config_file, encoding="utf-8")).get(key)
-            else:
-                json_data = json.load(open(self.config_file, encoding="utf-8"))
+                json_data = json_data.get(key)
             return json_data
         except FileNotFoundError as e:
             logger.error("配置文件未找到: %s", e)
         except json.JSONDecodeError as e:
-            logger.error("解析配置文件失败: %s，程序会在5秒后自动退出", e)
-            time.sleep(5)
-            sys.exit(0)
+            logger.error("解析配置文件失败: %s", e)
 
     def save(self, key, value: list | dict | str | int | bool = "") -> None:
         """保存指定配置文件"""
         try:
-            json_data = json.load(open(self.config_file, encoding="utf-8"))
+            json_data = self.init_config()
             json_data[key] = value
-            json.dump(json_data, open(self.config_file, mode="w", encoding="utf-8"), ensure_ascii=False, indent=2)
+            self.write_config_file(json_data)
+            self.raw = json_data
         except FileNotFoundError as e:
             logger.error("配置文件未找到: %s", e)
         except json.JSONDecodeError as e:

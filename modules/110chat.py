@@ -1028,7 +1028,7 @@ class Chat(Module):
         return base64_images
 
     def init_db(self, conn: sqlite3.Connection, db_name: str):
-        """确保数据库内指定表存在。
+        """确保数据库内指定表存在
         repeat表结构: owner_id, user_id, date, text, update_ts
         chat表结构: owner_id, user_id, date, text, update_ts
         tally表结构: owner_id, user_id, date, text, sticker, image, others, update_ts

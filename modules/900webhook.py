@@ -59,7 +59,7 @@ class Webhook(Module):
 
     def hooking(self):
         """监听外部请求"""
-        self.printf(f"正在监听: {Fore.GREEN}{self.config["host"]}:{self.config["port"]}{Fore.RESET}")
+        self.printf(f"正在监听 [{Fore.GREEN}{self.config["host"]}:{self.config["port"]}{Fore.RESET}]")
         while True:
             try:
                 data = self.receive_msg()

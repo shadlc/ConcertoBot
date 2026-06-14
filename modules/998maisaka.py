@@ -135,7 +135,7 @@ class IncomingTarget:
     user_id: str = ""
 
 class MaimClientRuntime:
-    """管理 API-Server 客户端生命周期。"""
+    """管理 API-Server 客户端生命周期"""
 
     def __init__(self, owner: MaiSaka, logger: logging.Logger) -> None:
         self._owner = owner
@@ -209,7 +209,7 @@ class MaimClientRuntime:
             self._owner.errorf(f"停止麦麦客户端失败:\n{traceback.format_exc()}")
 
 class ConcertoToMaimCodec:
-    """将 ConcertoBot 事件编码为 API-Server 消息。"""
+    """将 ConcertoBot 事件编码为 API-Server 消息"""
 
     def __init__(self, owner: MaiSaka) -> None:
         self.owner = owner
@@ -627,7 +627,7 @@ class ConcertoToMaimCodec:
         "396": "[表情：狼狗]", "397": "[表情：抛媚眼]"}
 
 class MaimToConcertoCodec:
-    """将 API-Server 消息转换为 ConcertoBot 行为。"""
+    """将 API-Server 消息转换为 ConcertoBot 行为"""
 
     def __init__(self, owner: MaiSaka) -> None:
         self.owner = owner
@@ -994,7 +994,7 @@ class MaiSaka(Module):
             error_msg = str(exc) if isinstance(exc, RuntimeError) else traceback.format_exc()
             self.errorf(f"发送消息失败: {error_msg}(第{self.failed_times}次)")
             if self.failed_times == 3:
-                self.robot.admin_notify(f"多次尝试发送消息至麦麦机器人后失败，请检查连接。\n{error_msg}")
+                self.robot.admin_notify(f"多次尝试发送消息至麦麦机器人后失败，请检查连接\n{error_msg}")
             return False
 
     def convert_image_to_gif(self, image_base64: str) -> str:

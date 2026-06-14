@@ -1522,8 +1522,6 @@ class Module:
         :param end: 末尾字符
         :param console: 是否增加一行<console>
         """
-        if level == "DEBUG" and not self.robot.config.is_debug:
-            return
         self.robot.warnf(
             f"{Fore.CYAN}[{self.ID}]{Fore.YELLOW} {msg}",
             end=end,
@@ -1538,8 +1536,6 @@ class Module:
         :param end: 末尾字符
         :param console: 是否增加一行<console>
         """
-        if level == "DEBUG" and not self.robot.config.is_debug:
-            return
         self.robot.errorf(
             f"{Fore.CYAN}[{self.ID}]{Fore.RED} {msg}",
             end=end,

@@ -1,4 +1,4 @@
-"""内置占位符文案。"""
+"""内置占位符文案"""
 
 PLACEHOLDER_DICT = {
     "ROBOT_NAME": [
