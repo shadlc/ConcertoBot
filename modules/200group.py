@@ -1,5 +1,11 @@
 """群组处理模块"""
 
+from collections import deque
+import random
+import time
+
+from colorama import Fore
+
 from src.base import Module
 from src.utils import Utils
 
@@ -15,7 +21,16 @@ class Group(Module):
             "(开启|关闭)群成员广播 | 将退群和入群申请消息广播到群内(默认关闭)",
         ],
     }
+    GLOBAL_CONFIG = {
+        "group_decrease_delay": 3,
+        "self_introduction": True,
+        "self_intro": "你的名字叫{self_name}，你申请加入了群聊{group_name}，现在请简短礼貌的向大家介绍自己，无需其他内容",
+        "welcome": "你的名字叫{self_name}，刚刚有新成员{user_name}加入了群聊{group_name}，现在请作为群友简短友好诙谐地欢迎，无需其他内容",
+    }
     CONV_CONFIG = {
+        "notice_cooldown_until": 0,
+        "welcome_newbie": True,
+        "welcome": None,
         "member_broadcast": {
             "enable": False
         }
@@ -23,11 +38,35 @@ class Group(Module):
     HANDLE_NOTICE = True
     HANDLE_REQUEST = True
 
-    def premise(self):
-        """初始化群成员退出广播的临时缓存"""
-        if not hasattr(self.robot, "group_decrease_broadcasts"):
-            self.robot.group_decrease_broadcasts = {}
-        return True
+    def get_group_decrease_broadcasts(self) -> dict:
+        """读取群成员变动广播缓存"""
+        broadcasts = self.robot.data.get("group_decrease_broadcasts")
+        if broadcasts is None:
+            broadcasts = {}
+            self.robot.data["group_decrease_broadcasts"] = broadcasts
+        return broadcasts
+
+    def render_llm_notice(self, template: str, **kwargs) -> str:
+        """按模板渲染并调用导出 LLM 能力生成群通知文案"""
+        if not template:
+            return ""
+        llm_chat = self.robot.func.get("llm_chat")
+        if not llm_chat:
+            return ""
+        return llm_chat(template.format(**kwargs))
+
+    def group_prefix(self) -> str:
+        """生成统一的群日志前缀"""
+        return f"群{Fore.MAGENTA}{self.event.group_name}({self.event.group_id}){Fore.RESET}内"
+
+    def can_send_notice(self) -> bool:
+        """检查群通知节流是否已结束"""
+        return time.time() >= self.conv_config.get("notice_cooldown_until", 0)
+
+    def mark_notice_sent(self) -> None:
+        """记录最近一次群通知发送时间"""
+        self.conv_config["notice_cooldown_until"] = time.time() + 1
+        self.save_config()
 
     @Utils.handler(lambda self: self.group_at() and self.au(1)
         and self.match(r"^(为|给|替)\s*(\S+)\s*(设置|添加|增加|颁发|设立)(专属)*(头衔|称号)\s*(\S+)$"))
@@ -66,25 +105,50 @@ class Group(Module):
         self.save_config()
         self.reply(msg)
 
-    @Utils.handler(lambda self: self.conv_config["member_broadcast"]["enable"]
-         and self.event.notice_type == ("group_decrease"))
+    @Utils.listener(lambda self: self.event.notice_type == "group_decrease")
     def group_decrease(self):
-        """收集短时间内的退群事件，延迟合并广播"""
+        """记录群成员退出、被踢或群解散通知，并按需广播"""
+        if self.event.sub_type == "leave":
+            self.printf(
+                f"{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}主动退"
+                f"群{Fore.MAGENTA}{self.event.group_name}({self.event.group_id}){Fore.RESET}"
+            )
+        elif self.event.sub_type == "kick":
+            self.printf(
+                f"{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}被踢出"
+                f"群{Fore.MAGENTA}{self.event.group_name}({self.event.group_id}){Fore.RESET}"
+            )
+        elif self.event.sub_type == "disband":
+            operator_name = Utils.get_user_name(self.robot, self.event.operator_id)
+            self.printf(
+                f"{Fore.MAGENTA}{operator_name}({self.event.operator_id}){Fore.RESET}已将"
+                f"群{Fore.MAGENTA}{self.event.group_name}({self.event.group_id}){Fore.RESET}解散"
+            )
+            return
+        if not self.conv_config["member_broadcast"]["enable"]:
+            return
         group_id = self.event.group_id
-        pending = self.robot.group_decrease_broadcasts.setdefault(group_id, {"events": [], "timer": None})
+        pending = self.get_group_decrease_broadcasts().setdefault(
+            group_id, {"events": [], "timer": None}
+        )
 
         # 取消已有的定时器（重置延迟）
         if pending["timer"] is not None:
             pending["timer"].cancel()
         # 记录当前退出成员信息
-        pending["events"].append((self.event.user_id, self.event.user_name))
+        pending["events"].append(
+            (self.event.sub_type, self.event.user_id, self.event.user_name)
+        )
         # 设置新的定时器，3秒后统一发送
-        pending["timer"] = self.robot.loop.call_later(3, self.send_group_decrease_broadcast, group_id)
+        delay = max(float(self.config.get("group_decrease_delay", 3) or 0), 0)
+        pending["timer"] = self.robot.loop.call_later(
+            delay, self.send_group_decrease_broadcast, group_id
+        )
 
     def send_group_decrease_broadcast(self, group_id):
         """延迟发送群成员退出广播"""
         # 取出该群组的待处理数据
-        pending = self.robot.group_decrease_broadcasts.pop(group_id, None)
+        pending = self.get_group_decrease_broadcasts().pop(group_id, None)
         if pending is None:
             return
 
@@ -92,16 +156,150 @@ class Group(Module):
         if not events:
             return
 
-        # 构建合并后的消息
-        if len(events) == 1:
-            uid, name = events[0]
-            msg = f"{name}({uid})已退出群聊"
-        else:
-            members = [f"{name}({uid})" for uid, name in events]
-            msg = ", ".join(members) + "已退出群聊"
+        leaves = [f"{name}({uid})" for sub_type, uid, name in events if sub_type == "leave"]
+        kicks = [f"{name}({uid})" for sub_type, uid, name in events if sub_type == "kick"]
+        lines = []
+        if kicks:
+            lines.append("以下成员被移出群聊：")
+            lines.append("、".join(kicks))
+        if leaves:
+            lines.append("以下成员已退出群聊：")
+            lines.append("、".join(leaves))
+        if not lines:
+            return
 
         # 发送广播
-        Utils.reply_id(self.robot, "group", group_id, msg)
+        Utils.reply_id(self.robot, "group", group_id, "\n".join(lines))
+
+    @Utils.listener(lambda self: self.event.notice_type == "group_recall")
+    def group_recall(self):
+        """记录群撤回消息，并缓存可供后续查询的撤回内容"""
+        self.printf(
+            f"在群{Fore.MAGENTA}{self.event.group_name}({self.event.group_id}){Fore.RESET}检测到一条撤回消息"
+        )
+        recall_time = time.strftime("%Y年%m月%d日%H:%M:%S", time.localtime(self.event.time))
+        if self.event.group_id not in self.robot.config.rev_group:
+            return
+        if (
+            self.event.user_id == self.robot.self_id
+            and self.event.operator_id != self.robot.self_id
+            and self.event.operator_id not in self.robot.config.admin_list
+            and random.randint(0, 2) == 0
+            and self.can_send_notice()
+        ):
+            self.mark_notice_sent()
+            msg = f"{self.event.operator_name}在{recall_time}将{self.robot.self_name}的消息撤回，{self.robot.self_name}很难过"
+            Utils.reply_event(self.robot, self.event, msg)
+            return
+        if self.event.user_id == self.robot.self_id:
+            return
+        for message in getattr(self.data, "past_message", []):
+            if self.event.msg_id != message.get("message_id"):
+                continue
+            latest_recall = self.robot.data.setdefault("latest_recall", {})
+            if self.owner_id not in latest_recall:
+                latest_recall[self.owner_id] = deque(maxlen=20)
+            latest_recall[self.owner_id].append(message)
+            break
+
+    @Utils.listener(lambda self: self.event.notice_type == "group_upload")
+    def group_upload(self):
+        """记录群文件上传通知"""
+        file_name = self.event.raw["file"]["name"]
+        file_size = Utils.calc_size(self.event.raw["file"]["size"])
+        self.printf(
+            f"{self.group_prefix()}"
+            f"{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}上传了"
+            f"文件{Fore.YELLOW}{file_name}({file_size})"
+        )
+
+    @Utils.listener(lambda self: self.event.notice_type == "group_admin")
+    def group_admin(self):
+        """记录群管理员变更通知"""
+        if self.event.sub_type == "set":
+            self.printf(
+                f"{self.group_prefix()}"
+                f"{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}被设为管理员"
+            )
+        elif self.event.sub_type == "unset":
+            self.printf(
+                f"{self.group_prefix()}"
+                f"管理员{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}被取缔"
+            )
+
+    @Utils.listener(lambda self: self.event.notice_type == "group_increase")
+    def group_increase(self):
+        """处理群成员加入通知，并按配置欢迎新人或自我介绍"""
+        if self.event.sub_type == "approve":
+            self.printf(
+                f"{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}已被同意加入"
+                f"群{Fore.MAGENTA}{self.event.group_name}({self.event.group_id}){Fore.RESET}"
+            )
+        elif self.event.sub_type == "invite":
+            self.printf(
+                f"{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}已被邀请加入"
+                f"群{Fore.MAGENTA}{self.event.group_name}({self.event.group_id}){Fore.RESET}"
+            )
+        if self.event.user_id == self.robot.self_id and self.config.get("self_introduction"):
+            msg = "%SELF_INTRODUCTION%"
+            llm_msg = self.render_llm_notice(
+                self.config.get("self_intro"),
+                self_name=self.robot.self_name,
+                group_name=self.event.group_name,
+            )
+            if llm_msg:
+                msg = llm_msg
+            Utils.reply_id(self.robot, "group", self.event.group_id, msg)
+            return
+        if (
+            self.event.group_id in self.robot.config.rev_group
+            and self.conv_config.get("welcome_newbie")
+            and self.can_send_notice()
+        ):
+            self.mark_notice_sent()
+            msg = self.event.user_name + " %WELCOME_NEWBIE%"
+            welcome_template = self.conv_config.get("welcome") or self.config.get("welcome")
+            llm_msg = self.render_llm_notice(
+                welcome_template,
+                self_name=self.robot.self_name,
+                user_name=self.event.user_name,
+                group_name=self.event.group_name,
+            )
+            if llm_msg:
+                msg = llm_msg
+            Utils.reply_id(self.robot, "group", self.event.group_id, msg)
+
+    @Utils.listener(lambda self: self.event.notice_type == "group_ban")
+    def group_ban(self):
+        """记录群禁言和全员禁言状态变化"""
+        duration = self.event.raw.get("duration", 0)
+        if duration:
+            duration = "永久" if int(duration) >= 268435455 else f"{duration}秒"
+        if self.event.user_id == 0:
+            if self.event.sub_type == "ban":
+                self.printf(
+                    f"{self.group_prefix()}"
+                    f"{Fore.MAGENTA}{self.event.operator_name}({self.event.operator_id}){Fore.RESET}设置了"
+                    f"{Fore.YELLOW}{duration}{Fore.RESET}的全员禁言"
+                )
+            elif self.event.sub_type == "lift_ban":
+                self.printf(
+                    f"{self.group_prefix()}"
+                    f"{Fore.MAGENTA}{self.event.operator_name}({self.event.operator_id}){Fore.RESET}解除了全员禁言"
+                )
+        else:
+            if self.event.sub_type == "ban":
+                self.printf(
+                    f"{self.group_prefix()}"
+                    f"{Fore.MAGENTA}{self.event.operator_name}({self.event.operator_id}){Fore.RESET}为"
+                    f"{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}设置了{Fore.YELLOW}{duration}{Fore.RESET}的禁言"
+                )
+            elif self.event.sub_type == "lift_ban":
+                self.printf(
+                    f"{self.group_prefix()}"
+                    f"{Fore.MAGENTA}{self.event.operator_name}({self.event.operator_id}){Fore.RESET}解除了"
+                    f"{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}的禁言"
+                )
 
     @Utils.handler(lambda self: self.conv_config["member_broadcast"]["enable"]
          and self.event.raw.get("request_type") == "group")
