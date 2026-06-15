@@ -85,7 +85,7 @@ reload Hello
 | `CONFIG` | 自定义配置文件名；不填则使用 `data/<id小写>.json` |
 | `GLOBAL_CONFIG` | 全局默认配置 |
 | `CONV_CONFIG` | 每个群/用户的默认配置 |
-| `AUTO_INIT` | 启动加载后是否立刻初始化一次 |
+| `PERSISTENT` | 模块加载时额外创建一个持久实例，适合后台任务或导出函数 |
 | `HANDLE_MESSAGE` | 是否处理普通消息，默认 `True` |
 | `HANDLE_MESSAGE_SENT` | 是否处理机器人自己发出的消息 |
 | `HANDLE_NOTICE` | 是否处理通知事件 |
@@ -267,7 +267,10 @@ data/greeter/cache/items.json
 
 ## 9. 长生命周期模块
 
-如果模块需要启动时注册能力、启动后台线程、开启定时任务或维护连接，可使用 `AUTO_INIT = True`。框架会在加载模块时创建一个持久实例，并自动注册导出函数。后续事件仍会创建普通模块实例，持久实例只负责后台任务和导出能力。
+如果模块需要启动时注册能力、启动后台线程、开启定时任务或维护连接，可使用 `PERSISTENT = True`。框架会在加载模块时额外创建一个持久实例；后续事件仍会创建普通模块实例。通常可以这样理解：
+
+- 普通实例：处理当前事件。
+- 持久实例：维护后台线程、定时任务、连接，或提供导出函数。
 
 ```python
 import asyncio
@@ -276,7 +279,8 @@ import asyncio
 class MyService(Module):
     ID = "MyService"
     NAME = "后台服务模块"
-    AUTO_INIT = True
+    PERSISTENT = True
+    HANDLE_MESSAGE = False
 
     def __init__(self, event, auth=0):
         super().__init__(event, auth)
@@ -285,9 +289,6 @@ class MyService(Module):
         self.running = True
         self.schedule_background_task(self.async_worker())
         self.schedule_background_thread(self.worker)
-
-    def premise(self):
-        return False
 
     async def async_worker(self):
         while self.running:
@@ -304,13 +305,22 @@ class MyService(Module):
         super().unload()
 ```
 
-如果需要主动读取持久实例，可使用 `self.get_persist()`。如果只是判断当前模块是否已经存在持久实例，直接用 `self.is_persisted()` 更清楚。需要“一次性启动”的代码可以放在 `__init__()` 里，并在 `super().__init__()` 之后用 `if self.is_persisted(): return` 提前返回。
+说明：
+
+- 如果模块本身不处理消息，只做后台服务或导出函数，建议显式设置 `HANDLE_MESSAGE = False`，避免为每条消息创建无意义实例。
+- 如果需要主动读取持久实例，可使用 `self.get_persist()`。
+- 如果只是判断当前模块是否已经存在持久实例，直接用 `self.is_persisted()` 更清楚。
+- 一次性启动逻辑放在 `super().__init__()` 之后，并用 `if self.is_persisted(): return` 提前返回。
+- 对纯后台模块，通常设置 `HANDLE_MESSAGE = False` 就够了，不必再额外让 `premise()` 返回 `False`。
 
 卸载时，框架只会调用持久实例上的 `unload()`。如果模块需要清理线程、连接、浏览器实例或外部资源，请重写 `unload()`，并在方法内调用 `super().unload()` 或 `self.stop_background()`。默认清理会取消通过 `schedule_background_task()` 注册的协程、停止通过 `add_cron()` / `track_cron()` 跟踪的 `MiniCron`，并尝试等待通过 `schedule_background_thread()` 注册的线程退出。
 
 ## 10. 定时任务
 
 `MiniCron` 支持五段 cron 表达式：
+
+- 星期字段支持 `0-6`，其中 `0` 表示周日；也兼容把 `7` 写成周日。
+- 如果“日”和“星期”都不是 `*`，按常见 cron 语义，只要任一字段匹配就会触发。
 
 ```python
 from src.base import MiniCron, Module
@@ -319,10 +329,8 @@ from src.base import MiniCron, Module
 class Clock(Module):
     ID = "Clock"
     NAME = "整点提醒"
-    AUTO_INIT = True
-
-    def premise(self):
-        return False
+    PERSISTENT = True
+    HANDLE_MESSAGE = False
 
     def __init__(self, event, auth=0):
         super().__init__(event, auth)
@@ -335,9 +343,9 @@ class Clock(Module):
         self.printf("整点任务触发")
 ```
 
-通过 `self.add_cron(cron)` 注册的计划任务会自动启动，并在默认 `unload()` 中停止。长生命周期后台协程可在 `__init__()` 中用 `self.schedule_background_task(coro)` 启动；后台线程可用 `self.schedule_background_thread(target, *args, **kwargs)` 启动。`AUTO_INIT` 模块会由基类自动持久化。
+通过 `self.add_cron(cron)` 注册的计划任务会自动启动，并在默认 `unload()` 中停止。长生命周期后台协程也可在 `__init__()` 中用 `self.schedule_background_task(coro)` 启动；后台线程可用 `self.schedule_background_thread(target, *args, **kwargs)` 启动。
 
-如果模块需要自行控制 `cron.run()` 的重试、异常处理或运行时机，不要直接访问 `background_crons`，请至少调用 `self.track_cron(cron)`，确保卸载时框架会执行 `cron.stop()`。如果模块在运行时动态创建内部协程，请用 `self.schedule_background_task(coro)` 纳入卸载清理；动态创建线程请用 `self.schedule_background_thread(target, *args, **kwargs)` 纳入卸载清理。如果模块自己创建线程、socket 或外部连接，仍需要重写 `unload()` 做额外清理，并调用 `super().unload()` 或 `self.stop_background()`。
+如果模块需要自行控制 `cron.run()` 的重试、异常处理或运行时机，不要直接访问 `background_crons`，请至少调用 `self.track_cron(cron)`，确保卸载时框架会执行 `cron.stop()`。运行时动态创建协程或线程时，也应分别用 `self.schedule_background_task(coro)`、`self.schedule_background_thread(target, *args, **kwargs)` 纳入统一清理。
 
 ## 11. HTTP 监听
 
@@ -353,7 +361,8 @@ from src.base import HttpListener, Module
 class WebhookDemo(Module):
     ID = "WebhookDemo"
     NAME = "HTTP 回调示例"
-    AUTO_INIT = True
+    PERSISTENT = True
+    HANDLE_MESSAGE = False
 
     GLOBAL_CONFIG = {
         "host": "127.0.0.1",
@@ -365,10 +374,7 @@ class WebhookDemo(Module):
         if self.is_persisted():
             return
         self.running = True
-        self.schedule_background_thread(self.listen_http)
-
-    def premise(self):
-        return False
+        self.schedule_background_thread(self.listen_http, name="Webhook HTTP 监听")
 
     def listen_http(self):
         while self.running:
@@ -398,11 +404,11 @@ class WebhookDemo(Module):
 - `HttpListener.close(host, port)`：关闭指定监听端口，模块 `unload()` 时应调用。
 - `HttpListener.close_all()`：关闭所有监听器，通常由机器人停止或重启流程调用。
 
-`body` 已经是解码后的请求体。`Transfer-Encoding: chunked` 会在 `HttpListener` 内部完成分块读取和拼接，模块里直接 `json.loads(body)` 即可，不需要再手动拆 chunk。
+`body` 已经是解码后的请求体。`Transfer-Encoding: chunked` 会在 `HttpListener` 内部完成分块读取和拼接，模块里直接 `json.loads(body)` 即可，不需要再手动拆 chunk。若监听器只做后台回调处理，建议像上例一样设置 `HANDLE_MESSAGE = False`。
 
 ## 12. 向其他模块暴露能力
 
-可以用 `@Utils.export_func` 标记要暴露的能力。对 `AUTO_INIT = True` 的模块，基类会在持久实例初始化完成后自动注册到 `robot.func`：
+可以用 `@Utils.export_func` 标记要暴露的能力。对 `PERSISTENT = True` 的模块，框架会在持久实例创建后自动注册到 `robot.func`：
 
 ```python
 from src.base import Module
@@ -412,10 +418,8 @@ from src.utils import Utils
 class Tools(Module):
     ID = "Tools"
     NAME = "工具能力"
-    AUTO_INIT = True
-
-    def premise(self):
-        return False
+    PERSISTENT = True
+    HANDLE_MESSAGE = False
 
     @Utils.export_func
     def echo(self, text: str) -> str:
