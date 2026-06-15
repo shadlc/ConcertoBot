@@ -8,6 +8,7 @@ import logging
 import os
 import random
 import signal
+import socket
 import sys
 import time
 import threading
@@ -23,7 +24,7 @@ import httpx
 from src import api
 from src.config import Config
 from src.placeholders import PLACEHOLDER_DICT
-from src.base import Event, Module
+from src.base import Event, HttpListener, Memory, Module
 from src.utils import Utils
 from src.command import ExecuteCmd
 
@@ -50,8 +51,10 @@ def configure_logging(log_path: str) -> None:
     handler.setFormatter(logging.Formatter("%(message)s"))
     logger.addHandler(handler)
 
-class Memory(object):
+
+class Memory:
     """独立聊天记录存储"""
+
     def __init__(self):
         """初始化消息和通知的短期历史缓存"""
         self.past_message = deque(maxlen=20)
@@ -180,11 +183,13 @@ class Concerto:
         """关闭机器人"""
         self.is_running = False
         self.is_restart = False
+        HttpListener.close_all()
 
     def restart(self) -> None:
         """重启机器人"""
         self.is_running = False
         self.is_restart = True
+        HttpListener.close_all()
 
     async def main_loop(self):
         """主事件循环"""
@@ -219,8 +224,36 @@ class Concerto:
         """监听来自API的请求"""
         self.printf(f"反向监听地址已启用 [{Fore.GREEN}{self.config.host}:{self.config.port}{Fore.RESET}]")
         while self.is_running:
-            rev = Utils.receive_msg(self)
-            self.message_executor.submit(self.handle_msg, rev)
+            rev = self.receive_msg()
+            if rev:
+                self.message_executor.submit(self.handle_msg, rev)
+
+    def receive_msg(self):
+        """接收反向 HTTP 上报数据"""
+        body = None
+        try:
+            header, body = HttpListener.receive_once(
+                self.config.host,
+                int(self.config.port),
+                accept_timeout=1,
+            )
+            if "application/json" not in header.get("Content-Type", ""):
+                self.warnf(f"收到一非JSON数据\n{body}", level="DEBUG")
+                return {}
+            return json.loads(body)
+        except socket.timeout:
+            return {}
+        except socket.gaierror as e:
+            self.errorf(f"绑定地址有误! {self.config.host} 不是一个正确的可绑定地址，程序终止! {e}")
+            self.stop()
+        except OSError as e:
+            if not self.is_running:
+                return {}
+            self.errorf(f"端口{self.config.port}已被占用，程序终止! {e}")
+            self.stop()
+        except json.JSONDecodeError:
+            self.warnf(f"{body} JSON数据解析失败! {traceback.format_exc()}")
+            return {}
 
     def handle_msg(self, rev: dict):
         """消息处理接口主函数"""
@@ -296,31 +329,19 @@ class Concerto:
     def module_handle(self, event: Event, handle_type: str, auth=3):
         """具体模块处理"""
         try:
-            if handle_type == "message":
-                for mod in list(self.modules.values()):
-                    if mod.HANDLE_MESSAGE:
-                        if mod(event, auth).handled:
-                            break
-            elif handle_type == "message_sent":
-                for mod in list(self.modules.values()):
-                    if mod.HANDLE_MESSAGE_SENT:
-                        if mod(event, auth).handled:
-                            break
-            elif handle_type == "notice":
-                for mod in list(self.modules.values()):
-                    if mod.HANDLE_NOTICE:
-                        if mod(event, auth).handled:
-                            break
-            elif handle_type == "request":
-                for mod in list(self.modules.values()):
-                    if mod.HANDLE_REQUEST:
-                        if mod(event, auth).handled:
-                            break
-            elif handle_type == "event":
-                for mod in list(self.modules.values()):
-                    if mod.HANDLE_EVENT:
-                        if mod(event, auth).handled:
-                            break
+            handle_attr = {
+                "message": "HANDLE_MESSAGE",
+                "message_sent": "HANDLE_MESSAGE_SENT",
+                "notice": "HANDLE_NOTICE",
+                "request": "HANDLE_REQUEST",
+                "event": "HANDLE_EVENT",
+            }.get(handle_type)
+            if not handle_attr:
+                return
+            for mod in list(self.modules.values()):
+                if getattr(mod, handle_attr):
+                    if self.create_module(mod, event, auth).handled:
+                        break
         except Exception: # pylint: disable=broad-exception-caught
             if not self.config.is_error_reply:
                 return
@@ -333,6 +354,12 @@ class Concerto:
                 if event.group_id not in self.config.rev_group:
                     return
                 Utils.reply_event(self, event, error_msg)
+
+    def create_module(self, module_class: type[Module], event: Event, auth: int = 0) -> Module:
+        """创建模块实例，并在初始化完成后执行框架级自动注册"""
+        module = module_class(event, auth)
+        module.auto_bootstrap()
+        return module
 
     def message(self, event: Event, auth=3):
         """处理消息事件
@@ -422,14 +449,29 @@ class Concerto:
             self.printf(f"{Fore.CYAN}[EVENT] {Fore.RESET}接收到API的第{Fore.MAGENTA}{received}{Fore.RESET}个心跳包")
         self.module_handle(event, "event", auth)
 
-    def activate_func(self, func: Callable):
+    def register_func(self, func: Callable, name: str | None = None):
         """添加可调用函数"""
-        func_name = func.__name__
+        func_name = name or func.__name__
         self.func[func_name] = func
         owner = getattr(getattr(func, "__self__", None), "ID", None)
         if owner:
             self.func_owner[func_name] = owner
-        self.printf(f"新增可调用函数: {Fore.MAGENTA}{func_name}{Fore.RESET}", level="DEBUG")
+
+    def get_persist_mod(self, module_id: str):
+        """读取长生命周期模块实例"""
+        return self.persist_mods.get(module_id)
+
+    def register_persist_mod(self, module: Module) -> bool:
+        """注册长生命周期模块实例，避免模块直接操作 persist_mods"""
+        module_id = module.ID
+        if module_id in self.persist_mods:
+            return False
+        self.persist_mods[module_id] = module
+        return True
+
+    def unregister_persist_mod(self, module_id: str):
+        """移除长生命周期模块实例"""
+        return self.persist_mods.pop(module_id, None)
 
     def import_modules(self):
         """从modules目录导入插件模块"""
@@ -546,7 +588,7 @@ class Concerto:
                     self.module_names[obj.ID] = module_name
                     loaded.append(obj.ID)
                     if getattr(obj, "AUTO_INIT", False):
-                        obj(Event(self))
+                        self.create_module(obj, Event(self))
         if not is_module and not disabled:
             self.warnf(f"文件[{item}]内没有有效模块，已跳过")
         return loaded
@@ -572,26 +614,23 @@ class Concerto:
             self.warnf(f"插件 {Fore.MAGENTA}{target}{Fore.YELLOW} 未加载❌")
             return False
         module = self.modules.get(module_id)
-        instance = self.persist_mods.get(module_id)
+        instance = self.get_persist_mod(module_id)
         if instance:
-            for hook_name in ("shutdown", "stop", "close", "on_unload", "unload"):
-                hook = getattr(instance, hook_name, None)
-                if not callable(hook):
-                    continue
+            hook = getattr(instance, "unload", None)
+            if callable(hook):
                 try:
                     result = hook()
                     if asyncio.iscoroutine(result):
                         asyncio.run_coroutine_threadsafe(result, self.loop).result(timeout=5)
                 except Exception:  # pylint: disable=broad-exception-caught
-                    self.errorf(f"卸载插件 {Fore.MAGENTA}{module_id}{Fore.RESET} 执行卸载方法 {hook_name} 时失败:\n{traceback.format_exc()}")
-                break
+                    self.errorf(f"卸载插件 {Fore.MAGENTA}{module_id}{Fore.RESET} 执行卸载方法时失败:\n{traceback.format_exc()}")
         for func_name, func in list(self.func.items()):
             owner = self.func_owner.get(func_name)
             bound_owner = getattr(getattr(func, "__self__", None), "ID", None)
             if owner == module_id or bound_owner == module_id or func_name == module_id:
                 self.func.pop(func_name, None)
                 self.func_owner.pop(func_name, None)
-        self.persist_mods.pop(module_id, None)
+        self.unregister_persist_mod(module_id)
         self.modules.pop(module_id, None)
         self.module_files.pop(module_id, None)
         module_name = self.module_names.pop(module_id, None)
@@ -670,7 +709,7 @@ class Concerto:
         """
         if module.ID in self.modules:
             self.errorf(
-                f"{Fore.RED}[{module.ID}]{Fore.RESET} 重名模块{Fore.YELLOW}{module.NAME}({module_file}){Fore.RESET}载入失败！❌"
+                f"{Fore.RED}[{module.ID}]{Fore.RESET} 重名模块{Fore.YELLOW}{module.NAME}({module_file}){Fore.RESET}载入失败! ❌"
             )
             return False
         self.modules[module.ID] = module

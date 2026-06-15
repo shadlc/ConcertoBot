@@ -12,14 +12,13 @@ import logging
 import os
 import re
 import html
-import socket
 import json
 import random
 import tempfile
 import threading
 import traceback
 
-from typing import TYPE_CHECKING, Coroutine
+from typing import TYPE_CHECKING, Callable, Coroutine
 
 import httpx
 from PIL import Image
@@ -30,92 +29,6 @@ from src import api
 if TYPE_CHECKING:
     from src.robot import Concerto
     from src.base import Event, Module
-
-
-def listening(host: str, port: int, timeout: int = 5) -> tuple[dict | str]:
-    """监听指定地址与端口"""
-    try:
-        server = socket.socket()
-        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server.bind((host, port))
-        server.listen()
-        client, _ = server.accept()
-        client.settimeout(timeout)
-        # client.setblocking(False)
-        response = bytearray()
-        while b"\r\n\r\n" not in response:
-            chunk = client.recv(1024)
-            if not chunk:
-                break
-            response.extend(chunk)
-        header_bytes, remaining = response.split(b"\r\n\r\n", 1)
-        lines = header_bytes.decode("iso-8859-1").splitlines()
-        method, path, version = lines[0].split(" ", 2)
-        headers = {"Method": method, "Path": path, "HTTP-Version": version}
-        content_length = 0
-        transfer_encoding = None
-        for line in lines[1:]:
-            if ":" in line:
-                key, value = line.split(":", 1)
-                key, value = key.strip(), value.strip()
-                headers[key] = value
-                if key.lower() == "content-length":
-                    content_length = int(value)
-                elif key.lower() == "transfer-encoding":
-                    transfer_encoding = value.lower()
-        body = bytearray()
-        if transfer_encoding != "chunked":
-            body.extend(remaining)
-            while len(body) < content_length:
-                chunk = client.recv(1024)
-                if not chunk:
-                    break
-                body.extend(chunk)
-        else:
-            buffer = bytearray(remaining)
-            while True:
-                while b"\r\n" not in buffer:
-                    buffer.extend(client.recv(1024))
-                line, _, buffer = buffer.partition(b"\r\n")
-                chunk_size = int(line.decode("ascii"), 16)
-                if chunk_size == 0:
-                    while len(buffer) < 2:
-                        buffer.extend(client.recv(1024))
-                    buffer = buffer[2:]
-                    break
-                while len(buffer) < chunk_size + 2:
-                    buffer.extend(client.recv(1024))
-                body.extend(buffer[:chunk_size])
-                buffer = buffer[chunk_size + 2 :]
-        client.sendall(b"HTTP/1.1 200 OK\r\n\r\n")
-        body = body.decode("utf-8")
-    finally:
-        client.close()
-        server.close()
-    return headers, body
-
-
-def receive_msg(robot: Concerto):
-    """接收数据"""
-    body = None
-    try:
-        header, body = listening(robot.config.host, int(robot.config.port))
-        if header.get("Content-Type") != "application/json":
-            robot.warnf(f"收到一非JSON数据\n{body}", level="DEBUG")
-            return {}
-        rev_json = json.loads(body)
-        return rev_json
-    except OSError as e:
-        robot.errorf(f"端口{robot.config.port}已被占用，程序终止！ {e}")
-        robot.stop()
-    except socket.gaierror as e:
-        robot.errorf(
-            f"绑定地址有误！ {robot.config.host} 不是一个正确的可绑定地址，程序终止！ {e}"
-        )
-        robot.stop()
-    except json.JSONDecodeError as e:
-        robot.warnf(f"{body} JSON数据解析失败！ {traceback.format_exc()}")
-        return {}
 
 
 def import_json(file: str):
@@ -1233,9 +1146,7 @@ def _register_handler(condition, handled=True):
             if not condition(self):
                 # self.robot.printf(f"未满足[{method_name}]的执行条件", level="DEBUG")
                 return None
-            self.printf(
-                f"执行{Fore.YELLOW}[{method_name}]{Fore.RESET}方法", level="DEBUG"
-            )
+            self.printf(f"执行{Fore.YELLOW}[{method_name}]{Fore.RESET}方法", level="DEBUG")
             try:
                 self.handled = handled
                 result = func(self, *args, **kwargs)
@@ -1269,10 +1180,20 @@ def run_coroutine_sync(coroutine: Coroutine):
     raise RuntimeError("当前事件循环正在运行，无法在同步装饰器中阻塞执行协程")
 
 
+def export_func(func: Callable | None = None, *, name: str | None = None):
+    """标记一个方法为可注册到 robot.func 的模块能力"""
+    def decorator(target: Callable):
+        target._is_exported_func = True   # pylint: disable=protected-access
+        target._exported_func_name = name or target.__name__  # pylint: disable=protected-access
+        return target
+
+    if func is None:
+        return decorator
+    return decorator(func)
+
+
 class Utils:
     """用于 IDE 自动补全的静态工具入口"""
-    listening = staticmethod(listening)
-    receive_msg = staticmethod(receive_msg)
     import_json = staticmethod(import_json)
     save_json = staticmethod(save_json)
     merge = staticmethod(merge)
@@ -1347,3 +1268,4 @@ class Utils:
     listener = staticmethod(listener)
     _register_handler = staticmethod(_register_handler)
     run_coroutine_sync = staticmethod(run_coroutine_sync)
+    export_func = staticmethod(export_func)

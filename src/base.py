@@ -5,9 +5,12 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta
 import html
+import inspect
 import os
 from pathlib import Path
 import re
+import socket
+import threading
 import traceback
 from typing import TYPE_CHECKING, Callable, Coroutine, Dict, Optional, Set, Union
 
@@ -19,6 +22,170 @@ if TYPE_CHECKING:
     from src.robot import Concerto
 
 
+class HttpListener:
+    """复用 server socket 的轻量 HTTP 请求监听器"""
+
+    _instances: dict[tuple[str, int], HttpListener] = {}
+    _instances_lock = threading.Lock()
+
+    def __init__(self, host: str, port: int) -> None:
+        self.host = host
+        self.port = int(port)
+        self.closed = False
+        self.accept_lock = threading.Lock()
+        self.server = socket.socket()
+        self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server.bind((host, self.port))
+        self.server.listen()
+
+    @classmethod
+    def get(cls, host: str, port: int) -> HttpListener:
+        """读取或创建指定地址的长生命周期监听器"""
+        key = (host, int(port))
+        with cls._instances_lock:
+            listener = cls._instances.get(key)
+            if listener is None or listener.closed:
+                listener = cls(host, int(port))
+                cls._instances[key] = listener
+            return listener
+
+    @classmethod
+    def receive_once(
+        cls,
+        host: str,
+        port: int,
+        timeout: int = 5,
+        accept_timeout: float | None = None,
+    ) -> tuple[dict, str]:
+        """通过指定地址的监听器接收一个 HTTP 请求"""
+        return cls.get(host, int(port)).receive(timeout, accept_timeout)
+
+    @classmethod
+    def close(cls, host: str, port: int) -> None:
+        """关闭并移除指定地址的监听器"""
+        key = (host, int(port))
+        with cls._instances_lock:
+            listener = cls._instances.pop(key, None)
+        if listener:
+            listener._close()  # pylint: disable=protected-access
+
+    @classmethod
+    def close_all(cls) -> None:
+        """关闭所有 HTTP 请求监听器"""
+        with cls._instances_lock:
+            listeners = list(cls._instances.values())
+            cls._instances.clear()
+        for listener in listeners:
+            listener._close()  # pylint: disable=protected-access
+
+    def receive(
+        self,
+        timeout: int = 5,
+        accept_timeout: float | None = None,
+    ) -> tuple[dict, str]:
+        """接收并解析一个 HTTP 请求"""
+        client = None
+        with self.accept_lock:
+            if self.closed:
+                raise OSError(f"监听器已关闭: {self.host}:{self.port}")
+            self.server.settimeout(accept_timeout)
+            client, _ = self.server.accept()
+        try:
+            client.settimeout(timeout)
+            headers, body = self._read_request(client)
+            client.sendall(
+                b"HTTP/1.1 200 OK\r\n"
+                b"Connection: close\r\n"
+                b"Content-Length: 0\r\n\r\n"
+            )
+            return headers, body.decode("utf-8")
+        finally:
+            if client:
+                client.close()
+
+    def _close(self) -> None:
+        """关闭监听端口"""
+        self.closed = True
+        try:
+            self.server.close()
+        except OSError:
+            pass
+
+    def _read_request(self, client: socket.socket) -> tuple[dict, bytes]:
+        """读取请求头与请求体"""
+        response = bytearray()
+        while b"\r\n\r\n" not in response:
+            chunk = client.recv(1024)
+            if not chunk:
+                break
+            response.extend(chunk)
+        if b"\r\n\r\n" not in response:
+            return {}, b""
+        header_bytes, remaining = response.split(b"\r\n\r\n", 1)
+        headers = self._parse_headers(header_bytes)
+        content_length = int(headers.get("Content-Length", 0) or 0)
+        transfer_encoding = headers.get("Transfer-Encoding", "").lower()
+        if transfer_encoding == "chunked":
+            return headers, self._read_chunked_body(client, remaining)
+        body = bytearray(remaining)
+        while len(body) < content_length:
+            chunk = client.recv(1024)
+            if not chunk:
+                break
+            body.extend(chunk)
+        return headers, bytes(body)
+
+    def _parse_headers(self, header_bytes: bytes) -> dict:
+        """解析 HTTP 请求头"""
+        lines = header_bytes.decode("iso-8859-1").splitlines()
+        if not lines:
+            return {}
+        request_line = lines[0].split(" ", 2)
+        if len(request_line) != 3:
+            return {}
+        method, path, version = request_line
+        headers = {"Method": method, "Path": path, "HTTP-Version": version}
+        for line in lines[1:]:
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            key = "-".join(part.capitalize() for part in key.strip().split("-"))
+            headers[key] = value.strip()
+        return headers
+
+    def _read_chunked_body(
+        self,
+        client: socket.socket,
+        remaining: bytes | bytearray,
+    ) -> bytes:
+        """读取 Transfer-Encoding: chunked 的请求体"""
+        body = bytearray()
+        buffer = bytearray(remaining)
+        while True:
+            while b"\r\n" not in buffer:
+                chunk = client.recv(1024)
+                if not chunk:
+                    return bytes(body)
+                buffer.extend(chunk)
+            line, _, buffer = buffer.partition(b"\r\n")
+            chunk_size = int(line.decode("ascii"), 16)
+            if chunk_size == 0:
+                while len(buffer) < 2:
+                    chunk = client.recv(1024)
+                    if not chunk:
+                        return bytes(body)
+                    buffer.extend(chunk)
+                break
+            while len(buffer) < chunk_size + 2:
+                chunk = client.recv(1024)
+                if not chunk:
+                    return bytes(body)
+                buffer.extend(chunk)
+            body.extend(buffer[:chunk_size])
+            buffer = buffer[chunk_size + 2 :]
+        return bytes(body)
+
+
 class MiniCron:
     """简单Crontab，支持同步和异步函数"""
 
@@ -27,17 +194,25 @@ class MiniCron:
         expr: str,
         task: Union[Callable[[], None], Callable[[], Coroutine]],
         loop=None,
+        name: str | None = None,
     ) -> None:
         """
         expr: crontab 表达式 (如 "0 8-12/1 * * *" 表示8点到12点每小时执行)
         task: 要执行的函数，无参数，可以是同步函数或异步函数
+        name: 计划任务名称，用于日志展示；不传则使用 cron 表达式
         """
         self.expr: str = expr
+        self.name = name
         self.task: Union[Callable[[], None], Callable[[], Coroutine]] = task
         self.loop: asyncio.AbstractEventLoop = loop or asyncio.get_event_loop()
         self.cron_fields: Dict[str, Set[int]] = self.parse_cron(expr)
-        self.is_async = asyncio.iscoroutinefunction(task)
+        self.is_async = inspect.iscoroutinefunction(task)
         self.running = False
+
+    @property
+    def display_name(self) -> str:
+        """返回用于日志展示的计划任务名称"""
+        return self.name or self.expr
 
     def parse_field(self, field: str, min_val: int, max_val: int) -> Set[int]:
         """解析单个字段，返回允许的整数集合"""
@@ -225,13 +400,16 @@ class Module:
         self.config = {}
         self.conv_config = {}
         self.data = {}
+        self.background_tasks = {}
+        self.background_crons = []
+        self.background_threads = []
         self.init_config()
         if not self.premise():
             return
         self.activate()
 
     def premise(self):
-        """前置条件"""
+        """模块执行的前置条件"""
         return True
 
     def activate(self):
@@ -242,6 +420,116 @@ class Module:
             attr = getattr(self, attr_name)
             if callable(attr) and hasattr(attr, "_is_handler"):
                 attr()
+
+    def get_persist(self):
+        """读取当前模块 ID 对应的长生命周期实例"""
+        return self.robot.get_persist_mod(self.ID)
+
+    def is_persisted(self) -> bool:
+        """判断当前模块是否已经存在长生命周期实例"""
+        return self.get_persist() is not None
+
+    def auto_bootstrap(self) -> None:
+        """AUTO_INIT 模块创建完成后注册为持久实例"""
+        if not getattr(type(self), "AUTO_INIT", False):
+            return
+        persist = self.robot.get_persist_mod(self.ID)
+        if persist is not None and persist is not self:
+            return
+        if persist is None and not self.robot.register_persist_mod(self):
+            return
+        self._register_exported_funcs()
+
+    def schedule_background_task(
+        self,
+        coroutine: Coroutine,
+        *,
+        name: str | None = None,
+    ):
+        """在机器人事件循环中注册后台协程，并在卸载时统一取消"""
+        task_name = name or "未命名后台协程"
+        future = asyncio.run_coroutine_threadsafe(coroutine, self.robot.loop)
+        self.background_tasks[future] = task_name
+        self.printf(f"启动后台协程 [{Fore.MAGENTA}{task_name}{Fore.RESET}]")
+        return future
+
+    def schedule_background_thread(
+        self,
+        target: Callable,
+        *args,
+        name: str | None = None,
+        daemon: bool = True,
+        **kwargs,
+    ) -> threading.Thread:
+        """启动并跟踪模块后台线程，卸载时由基类尝试 join"""
+        thread = threading.Thread(
+            target=target,
+            args=args,
+            kwargs=kwargs,
+            daemon=daemon,
+            name=name,
+        )
+        self.background_threads.append(thread)
+        self.printf(f"启动后台线程 [{Fore.MAGENTA}{thread.name}{Fore.RESET}]")
+        thread.start()
+        return thread
+
+    def track_cron(self, cron: MiniCron) -> MiniCron:
+        """记录 MiniCron，供自定义运行逻辑在卸载时统一停止"""
+        if cron not in self.background_crons:
+            self.background_crons.append(cron)
+        return cron
+
+    def add_cron(self, cron: MiniCron):
+        """注册 MiniCron 并在卸载时统一停止"""
+        self.track_cron(cron)
+        return self.schedule_background_task(
+            cron.run(),
+            name=f"计划任务 {cron.display_name}",
+        )
+
+    def _iter_exported_methods(self):
+        """按 MRO 顺序返回通过 Utils.export_func 标记的方法"""
+        seen = set()
+        for cls in type(self).mro():
+            for attr_name, raw_attr in cls.__dict__.items():
+                if attr_name in seen:
+                    continue
+                seen.add(attr_name)
+                if callable(raw_attr) and hasattr(raw_attr, "_is_exported_func"):
+                    yield attr_name, raw_attr, getattr(self, attr_name)
+
+    def _register_exported_funcs(self) -> None:
+        """注册通过 Utils.export_func 标记的模块能力"""
+        for attr_name, raw_attr, method in self._iter_exported_methods():
+            func_name = getattr(raw_attr, "_exported_func_name", attr_name)
+            self.robot.register_func(method, func_name)
+            self.printf(f"新增全局可调用函数 [{Fore.MAGENTA}{func_name}{Fore.RESET}]")
+
+    def stop_background(self) -> None:
+        """停止当前模块记录的后台任务和定时任务"""
+        for cron in self.background_crons:
+            self.printf(f"停止计划任务 [{cron.display_name}]")
+            cron.stop()
+        for future, task_name in self.background_tasks.items():
+            if not future.done():
+                self.printf(f"停止后台协程 [{task_name}]")
+                future.cancel()
+        for thread in self.background_threads:
+            if thread is not threading.current_thread() and thread.is_alive():
+                self.printf(f"等待后台线程退出 [{thread.name}]")
+                thread.join(timeout=2)
+                if thread.is_alive():
+                    self.warnf(f"后台线程未在超时时间内退出 [{thread.name}]")
+                else:
+                    self.printf(f"后台线程已退出 [{thread.name}]")
+        self.background_crons.clear()
+        self.background_tasks.clear()
+        self.background_threads.clear()
+
+    def unload(self) -> None:
+        """默认卸载钩子：清理通过基类注册的后台任务"""
+        self.stop_background()
 
     def au(self, max_level=3, min_level=0):
         """检查权限等级"""
@@ -299,28 +587,31 @@ class Module:
             self.errorf(
                 f"配置文件 {self.config_file} 解析发生错误!\n{traceback.format_exc()}"
             )
-        self.GLOBAL_CONFIG = self.GLOBAL_CONFIG or {}  # pylint: disable=invalid-name
-        self.config = Utils.merge(self.GLOBAL_CONFIG, self.config)
+        global_default = self.GLOBAL_CONFIG or {}
+        self.config = Utils.merge(global_default, self.config)
         if self.CONV_CONFIG is None:
             self.save_config()
             return
         if self.owner_id not in self.config:
             self.config[self.owner_id] = {}
-        self.CONV_CONFIG = self.CONV_CONFIG or {}  # pylint: disable=invalid-name
-        self.config[self.owner_id] = Utils.merge(self.CONV_CONFIG, self.config[self.owner_id])
+        conv_default = self.CONV_CONFIG or {}
+        self.config[self.owner_id] = Utils.merge(conv_default, self.config[self.owner_id])
         self.conv_config = self.config[self.owner_id]
         self.save_config()
 
     def save_config(self, config_content=None, owner_id=""):
         """保存模块配置"""
-        if owner_id and config_content:
+        if owner_id and config_content is not None:
             self.config[owner_id] = config_content
-        elif config_content:
+        elif config_content is not None:
             self.config = config_content
         if self.config == Utils.import_json(self.config_file):
             return
         try:
             Utils.save_json(self.config_file, self.config)
+            persist = self.get_persist()
+            if persist is not None and persist is not self:
+                persist.config = self.config.copy()
         except Exception:  # pylint: disable=broad-exception-caught
             self.errorf(
                 f"配置文件 {self.config_file} 保存失败!\n{traceback.format_exc()}"

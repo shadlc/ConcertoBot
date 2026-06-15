@@ -41,7 +41,7 @@ def post(robot: Concerto, url, data, timeout=60):
         header = {"Content-Type": "application/json"}
         resp = httpx.post(post_url, headers=header, data=data, timeout=timeout, follow_redirects=True)
         resp.raise_for_status()
-        rev_json = data.json()
+        rev_json = resp.json()
         robot.printf(
             f"{Fore.YELLOW}[DATA]{Fore.RESET} POST请求{Fore.MAGENTA}[{post_url}]{Fore.RESET}"
             f"后返回{Fore.YELLOW}{rev_json}{Fore.RESET}",
