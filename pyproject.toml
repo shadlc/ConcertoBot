@@ -24,3 +24,9 @@ url = "https://mirrors.aliyun.com/pypi/simple/"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pylint.basic]
+module-rgx = "^([a-z_][a-z0-9_]*|[0-9]{3}[a-z][a-z0-9_]*)$"
+
+[tool.pylint.format]
+max-line-length = 200
