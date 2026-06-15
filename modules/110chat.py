@@ -1,6 +1,5 @@
 """消息处理模块"""
 
-import asyncio
 import base64
 import datetime
 import html
@@ -79,15 +78,13 @@ class Chat(Module):
             "this_year": "今年", "last_year": "去年"
         }
         super().__init__(event, auth)
-        if self.ID in self.robot.persist_mods:
+        if self.is_persisted():
             return
-        self.robot.persist_mods[self.ID] = self
-        asyncio.run_coroutine_threadsafe(self.init_task(), self.robot.loop)
+        self.setup_crons()
 
-    async def init_task(self) -> None:
+    def setup_crons(self) -> None:
         """初始化定时任务"""
         # 词云与发言排行统计定时任务
-        await asyncio.sleep(5)
         for owner, config in self.config.items():
             if not re.match(r"[ug]\d+", owner):
                 continue
@@ -95,9 +92,13 @@ class Chat(Module):
             crontab = record.get("auto_cron")
             if not crontab:
                 continue
-            cron = MiniCron(crontab, lambda o=owner,c=record: self.scheduled_task(o, c), loop=self.robot.loop)
-            self.printf(f"已为[{owner}]开启词云与发言排行统计定时任务[{crontab}]")
-            asyncio.run_coroutine_threadsafe(cron.run(), self.robot.loop)
+            cron = MiniCron(
+                crontab,
+                lambda o=owner,c=record: self.scheduled_task(o, c),
+                loop=self.robot.loop,
+                name=f"{owner} 词云与发言排行统计",
+            )
+            self.add_cron(cron)
 
     async def scheduled_task(self, owner_id: str, config: dict) -> None:
         """根据配置发送词云与排行统计"""
@@ -165,22 +166,23 @@ class Chat(Module):
                         rows = self.read_chat(gen_type, user_name)
                         text = "\n".join([r[3] for r in rows if r[3]])
                         msg = msg.replace("正在生成", f"正在生成{user_name}内的")
-                        msg += f"共{len(text.split("\n"))}条有效发言..."
+                        msg += f"共{len(text.splitlines())}条有效发言..."
                     else:
                         rows = self.read_chat(gen_type, self.owner_id, user_id)
                         text = "\n".join([r[3] for r in rows if r[3]])
                         user_name = Utils.get_user_name(self.robot, user_id)
                         msg = msg.replace("正在生成", f"正在生成{user_name}的")
-                        msg += f"共{len(text.split("\n"))}条有效发言..."
+                        msg += f"共{len(text.splitlines())}条有效发言..."
                 else:
                     rows = self.read_chat(gen_type, self.owner_id, user_id)
                     text = "\n".join([r[3] for r in rows if r[3]])
-                    msg += f"共{len(text.split("\n"))}条有效发言..."
+                    msg += f"共{len(text.splitlines())}条有效发言..."
                 if not text:
                     msg = "没有消息记录哦~"
                     self.reply(msg, reply=True)
                     return
-                self.printf(f"{self.owner_id}{f"内{user_id}的" if user_id else ""}有效发言共{len(text.split("\n"))}条")
+                user_scope = f"内{user_id}的" if user_id else ""
+                self.printf(f"{self.owner_id}{user_scope}有效发言共{len(text.splitlines())}条")
                 msg += "请耐心等待..."
                 self.reply(msg, reply=True)
                 Utils.set_emoji(self.robot, self.event.msg_id, 60)
@@ -260,7 +262,8 @@ class Chat(Module):
                     msg = "没有消息记录哦~"
                     self.reply(msg, reply=True)
                     return
-                self.printf(f"{self.owner_id}{f"内{user_id}的" if user_id else ""}发言共{count}条")
+                user_scope = f"内{user_id}的" if user_id else ""
+                self.printf(f"{self.owner_id}{user_scope}发言共{count}条")
                 Utils.set_emoji(self.robot, self.event.msg_id, 60)
                 try:
                     url = self.generate_statistics(rows)
@@ -465,7 +468,7 @@ class Chat(Module):
         nodes = []
         for uid, user in self.conv_config["users"].items():
             msg = f"QQ: {uid}"
-            msg += f"\n昵称: {user["nickname"]}"
+            msg += f"\n昵称: {user['nickname']}"
             label = user["label"] if user["label"] else "无"
             msg += f"\n称号: {label}"
             nodes.append(self.node(msg))

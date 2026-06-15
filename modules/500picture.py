@@ -1,6 +1,5 @@
 """图片处理模块"""
 
-import asyncio
 import base64
 import io
 import json
@@ -55,15 +54,13 @@ class Picture(Module):
     def __init__(self, event, auth=0):
         """初始化图片模块并启动煎蛋图定时任务"""
         super().__init__(event, auth)
-        if self.ID in self.robot.persist_mods:
+        if self.is_persisted():
             return
-        self.robot.persist_mods[self.ID] = self
-        asyncio.run_coroutine_threadsafe(self.init_task(), self.robot.loop)
+        self.setup_crons()
 
-    async def init_task(self) -> None:
+    def setup_crons(self) -> None:
         """初始化定时任务"""
         # 煎蛋无聊图定时任务
-        await asyncio.sleep(5)
         for owner, chat in self.config.items():
             if not re.match(r"[ug]\d+", owner):
                 continue
@@ -76,30 +73,26 @@ class Picture(Module):
                 crontab,
                 lambda o=owner, c=config: self.jiandan_msg_task(o, c),
                 loop=self.robot.loop,
+                name=f"{owner} 自动煎蛋无聊图(概率{prob:.2%})",
             )
-            self.printf(
-                f"已为[{owner}]开启煎蛋无聊图定时任务[{crontab}]，概率{prob:.2%}"
-            )
-            asyncio.run_coroutine_threadsafe(cron.run(), self.robot.loop)
+            self.add_cron(cron)
 
     async def jiandan_msg_task(self, owner: str, config: dict) -> None:
-        """自动发送煎蛋无聊图"""
+        """自动煎蛋无聊图"""
         ran_int = random.random()
         prob = config["probability"]
         if ran_int > prob:
-            return self.printf(
-                f"[煎蛋无聊图][{owner}]因概率未达而取消({ran_int:.2}>{prob:.2})"
-            )
+            return self.printf(f"[煎蛋无聊图][{owner}]因概率未达而未发送({ran_int:.2}>{prob:.2})")
         data_list = await self.get_jiandan()
         if not data_list:
-            return self.printf(f"[煎蛋无聊图][{owner}]因无有效数据而取消")
+            return self.printf(f"[煎蛋无聊图][{owner}]因无有效数据而未发送")
         data = None
         for item in data_list:
             if item.get("id") not in config["hist"]:
                 data = item
                 break
         if not data:
-            return self.printf(f"[煎蛋无聊图][{owner}]因无新评论而取消")
+            return self.printf(f"[煎蛋无聊图][{owner}]因无新评论而未发送")
         config["hist"].append(data.get("id"))
         config["hist"] = config["hist"][-10:]
         self.save_config()
@@ -212,8 +205,8 @@ class Picture(Module):
             data = self.retry(lambda: self.get_lolicon_image(r18_mode, tags))
             self.printf(f"Lolicon API返回结果:\n{data}", level="DEBUG")
             if data:
-                author = f"{data["author"]}(uid: {data["uid"]})"
-                title = f"{data["title"]}(pid: {data["pid"]})"
+                author = f"{data['author']}(uid: {data['uid']})"
+                title = f"{data['title']}(pid: {data['pid']})"
                 tags = ", ".join(data["tags"])
                 url = data.get("urls", {}).get("url")
                 if data["r18"]:
@@ -378,7 +371,7 @@ class Picture(Module):
             if not self.is_private():
                 Utils.set_emoji(self.robot, self.event.msg_id, 124)
             self.printf("正在从HuggingFace调用Real-CUGAN模型")
-            enhanced_image = self.realCUGAN(resp.content, scale, con)
+            enhanced_image = self.real_cugan(resp.content, scale, con)
             enhanced_image_url = re.sub(
                 r"data:image/.*;base64,", "base64://", enhanced_image
             )
@@ -389,9 +382,9 @@ class Picture(Module):
             self.errorf(traceback.format_exc())
             self.reply(f"{e}", reply=True)
 
-    def realCUGAN(self, img: bytes, scale: int, con: str) -> str:
-        """
-        Real-CUGAN增强图片清晰度
+    def real_cugan(self, img: bytes, scale: int, con: str) -> str:
+        """Real-CUGAN 增强图片清晰度
+
         :param img: 输入的图片字节流
         :param scale: 放大倍数（如2、3、4）
         :param con: 增强模型的配置（如"conservative", "no-denoise"等）
@@ -413,7 +406,9 @@ class Picture(Module):
             )
             response.raise_for_status()
             result = response.json()
-            enhanced_image = result["data"][0]
+            enhanced_image = result.get("data", [None])[0]
+            if not enhanced_image:
+                raise RuntimeError("Real-CUGAN 未返回增强图片数据")
             return enhanced_image
         except Exception as e:  # pylint: disable=broad-exception-caught
             raise RuntimeError(f"群星之路被遮蔽，星辉无法汇聚: {str(e)}") from e
@@ -483,7 +478,7 @@ class Picture(Module):
                 if isinstance(creator, list):
                     author = ", ".join(creator)
                 if data.get("member_name"):
-                    author = f"{data.get("member_name")} (uid: {data.get("member_id")})"
+                    author = f"{data.get('member_name')} (uid: {data.get('member_id')})"
                 msg = f"{title}"
                 msg += f"\n作者: {author}"
                 msg += f"\n相似度: {similarity}%"

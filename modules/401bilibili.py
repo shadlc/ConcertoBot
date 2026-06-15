@@ -66,7 +66,7 @@ class Bilibili(Module):
     AUTO_INIT = True
 
     def __init__(self, event, auth=0):
-        """初始化 B 站状态缓存并启动后台轮询任务"""
+        """初始化B站状态缓存并启动后台轮询任务"""
         self.type_msg = {
             "DYNAMIC_TYPE_AV": "投稿了一个视频",
             "DYNAMIC_TYPE_FORWARD": "转发了一条动态",
@@ -76,13 +76,13 @@ class Bilibili(Module):
             "DYNAMIC_TYPE_LIVE_RCMD": "开播啦",
         }
         super().__init__(event, auth)
-        if self.ID in self.robot.persist_mods:
-            return
-        self.robot.persist_mods[self.ID] = self
         self.live_status = {}
         self.dynamics = {}
         self.browser = None
-        asyncio.run_coroutine_threadsafe(self.init_task(), self.robot.loop)
+        self.playwright = None
+        if self.is_persisted():
+            return
+        self.schedule_background_task(self.init_task(), name="延迟10秒初始化任务")
 
     def premise(self):
         """刷新登录凭据对象并复用持久化模块状态"""
@@ -94,12 +94,25 @@ class Bilibili(Module):
             dedeuserid=self.config["env"]["dedeuserid"],
             ac_time_value=self.config["env"]["ac_time_value"],
         )
-        if self.ID in self.robot.persist_mods:
-            bilibili: Bilibili = self.robot.persist_mods[self.ID]
-            self.live_status = bilibili.live_status
-            self.dynamics = bilibili.dynamics
-            self.browser = bilibili.browser
         return super().premise()
+
+    def unload(self) -> None:
+        """停止后台轮询并关闭浏览器资源"""
+        self.stop_background()
+        if self.browser or self.playwright:
+            try:
+                self.robot.loop.create_task(self._close_browser())
+            except RuntimeError:
+                pass
+
+    async def _close_browser(self) -> None:
+        """关闭浏览器"""
+        if self.browser:
+            await self.browser.close()
+            self.browser = None
+        if self.playwright:
+            await self.playwright.stop()
+            self.playwright = None
 
     async def init_task(self, interval=20):
         """初始化任务"""
@@ -109,7 +122,7 @@ class Bilibili(Module):
         fans = len(self.get_uid_list("fans"))
         self.printf(f"实时检测开启~ 共监控{dynamic}个用户动态, {live}个用户直播, {fans}个用户粉丝数")
         async def dynamic_loop():
-            """循环检查已关注 UP 主的新动态"""
+            """动态轮询"""
             while True:
                 try:
                     await self.dynamic_check(interval)
@@ -117,15 +130,17 @@ class Bilibili(Module):
                     self.warnf(f"动态轮询异常!\n{traceback.format_exc()}")
                 await asyncio.sleep(interval)
 
-        asyncio.run_coroutine_threadsafe(dynamic_loop(), self.robot.loop)
+        self.schedule_background_task(dynamic_loop(), name="动态轮询")
 
         async def fans_loop():
-            """按 cron 配置检查粉丝数变化"""
+            """粉丝数轮询"""
             cron = MiniCron(
                 self.config["env"]["cron"],
                 lambda: sync(self.fans_check()),
                 loop=self.robot.loop,
+                name="B站粉丝数检查",
             )
+            self.track_cron(cron)
             while True:
                 try:
                     await cron.run()
@@ -133,10 +148,10 @@ class Bilibili(Module):
                     self.warnf(f"粉丝数轮询异常!\n{traceback.format_exc()}")
                 await asyncio.sleep(interval)
 
-        asyncio.run_coroutine_threadsafe(fans_loop(), self.robot.loop)
+        self.schedule_background_task(fans_loop(), name="粉丝数轮询")
 
         async def live_loop():
-            """循环检查已关注 UP 主的直播状态"""
+            """直播轮询"""
             while True:
                 try:
                     await self.live_check()
@@ -144,10 +159,10 @@ class Bilibili(Module):
                     self.warnf(f"直播轮询异常!\n{traceback.format_exc()}")
                 await asyncio.sleep(interval)
 
-        asyncio.run_coroutine_threadsafe(live_loop(), self.robot.loop)
+        self.schedule_background_task(live_loop(), name="直播轮询")
 
-        async def credential_refresh():
-            """定期刷新并保存 B 站登录凭据"""
+        async def credential_refresh_loop():
+            """登录凭据状态轮询"""
             while True:
                 if await self.credential.check_refresh():
                     await self.credential.refresh()
@@ -157,11 +172,10 @@ class Bilibili(Module):
                     self.config["env"]["buvid4"] = self.credential.buvid4
                     self.config["env"]["dedeuserid"] = self.credential.dedeuserid
                     self.config["env"]["ac_time_value"] = self.credential.ac_time_value
-                    self.robot.persist_mods[self.ID].config = self.config.copy()
                     self.save_config()
                 await asyncio.sleep(interval * 1000)
 
-        asyncio.run_coroutine_threadsafe(credential_refresh(), self.robot.loop)
+        self.schedule_background_task(credential_refresh_loop(), name="登录凭据状态轮询")
 
     @Utils.handler(
         lambda self: self.at_or_private() and self.au(3) and self.match(r"^关注列表$")
@@ -215,7 +229,6 @@ class Bilibili(Module):
                     "live_notice": True,
                     "fans_notice": False,
                 }
-                self.robot.persist_mods[self.ID].config = self.config.copy()
                 self.save_config()
                 msg = f"已将{name}(UID:{uid})添加至关注列表"
             msg += "\n===================="
@@ -241,7 +254,6 @@ class Bilibili(Module):
             else:
                 msg = f"已将{name}(UID:{uid})取关"
                 del self.conv_config["sub"][uid]
-                self.robot.persist_mods[self.ID].config = self.config.copy()
                 self.save_config()
         else:
             msg = "查无此人"
@@ -266,7 +278,6 @@ class Bilibili(Module):
                 else:
                     self.conv_config["sub"][uid]["keyword"] = pattern
                     msg = f"已成功为{name}设置正则匹配关键词【{pattern}】"
-                self.robot.persist_mods[self.ID].config = self.config.copy()
                 self.save_config()
             else:
                 msg = "未关注该UP主，请先关注！"
@@ -294,7 +305,6 @@ class Bilibili(Module):
         self.conv_config["sub"][uid]["dynamic_notice"] = status
         self.conv_config["sub"][uid]["live_notice"] = status
         self.conv_config["sub"][uid]["fans_notice"] = status
-        self.robot.persist_mods[self.ID].config = self.config.copy()
         self.save_config()
         return self.reply(f"已{flag}对{name}的全部通知~")
 
@@ -325,7 +335,7 @@ class Bilibili(Module):
                             msg += f"\n[CQ:image,file=base64://{screenshot_base64}]"
                             self.reply(msg)
                             return
-                    title = f"[哔哩哔哩] {dyn["author"]}{self.type_msg.get(d_type, "发布了新动态")}"
+                    title = f"[哔哩哔哩] {dyn['author']}{self.type_msg.get(d_type, '发布了新动态')}"
                     nodes = []
                     nodes.append(self.node(dyn["url"]))
                     msg = dyn["content"]
@@ -344,7 +354,7 @@ class Bilibili(Module):
                         nodes.append(self.node(msg))
                     if ori := dyn["origin"]:
                         msg = "以下是转发内容:\n\n"
-                        msg += f"{ori["author"]}:\n"
+                        msg += f"{ori['author']}:\n"
                         msg += ori["content"]
                         for img in ori["imgs"]:
                             msg += f"[CQ:image,file={img}]"
@@ -356,7 +366,6 @@ class Bilibili(Module):
             elif uid in self.conv_config["sub"]:
                 status = flag == "开启"
                 self.conv_config["sub"][uid]["dynamic_notice"] = status
-                self.robot.persist_mods[self.ID].config = self.config.copy()
                 self.save_config()
                 msg = f"已{flag}对{name}的动态观测~"
             else:
@@ -399,9 +408,8 @@ class Bilibili(Module):
             elif uid in self.conv_config["sub"]:
                 status = flag == "开启"
                 self.conv_config["sub"][uid]["live_notice"] = status
-                self.robot.persist_mods[self.ID].config = self.config.copy()
                 self.save_config()
-                msg = f"已{"开启" if status else "关闭"}对{name}的直播通知~"
+                msg = f"已{'开启' if status else '关闭'}对{name}的直播通知~"
             else:
                 msg = "请先关注UP主~"
         else:
@@ -430,9 +438,8 @@ class Bilibili(Module):
             elif uid in self.conv_config["sub"]:
                 status = flag == "开启"
                 self.conv_config["sub"][uid]["fans_notice"] = status
-                self.robot.persist_mods[self.ID].config = self.config.copy()
                 self.save_config()
-                msg = f"已{"开启" if status else "关闭"}对{name}的粉丝数通知~"
+                msg = f"已{'开启' if status else '关闭'}对{name}的粉丝数通知~"
             else:
                 msg = "请先关注UP主~"
         else:
@@ -449,7 +456,6 @@ class Bilibili(Module):
         flag = self.match(r"(开启|关闭)").group(1)
         status = flag == "开启"
         self.conv_config["enable"] = status
-        self.robot.persist_mods[self.ID].config = self.config.copy()
         self.save_config()
         msg = f"已{flag}B站通知~"
         self.reply(msg)
@@ -462,11 +468,11 @@ class Bilibili(Module):
         if self.browser:
             return self.browser
 
-        p = await async_playwright().start()
+        self.playwright = await async_playwright().start()
         browser_config = {}
         if proxy := self.config["proxy"]:
             browser_config["proxy"] = {"server": proxy}
-        self.browser = await p.chromium.launch(**browser_config)
+        self.browser = await self.playwright.chromium.launch(**browser_config)
         return self.browser
 
     async def get_dynamic_screenshot(self, dynamic_id, style="mobile") -> str:
@@ -640,7 +646,7 @@ class Bilibili(Module):
                                 self.reply_back(owner_id, msg)
                                 await asyncio.sleep(3)
                         continue
-                title = f"[哔哩哔哩] {dyn["author"]}{self.type_msg.get(d_type, "发布了新动态")}"
+                title = f"[哔哩哔哩] {dyn['author']}{self.type_msg.get(d_type, '发布了新动态')}"
                 if d_type == "DYNAMIC_TYPE_AV":
                     video_title = dyn["content"].split("\n")[0]
                     if len(video_title) < 40:
@@ -658,7 +664,7 @@ class Bilibili(Module):
                     nodes.append(self.node(msg))
                 if ori := dyn["origin"]:
                     msg = "以下是转发内容:\n\n"
-                    msg += f"{ori["author"]}:\n"
+                    msg += f"{ori['author']}:\n"
                     msg += ori["content"]
                     for img in ori["imgs"]:
                         msg += f"[CQ:image,file={img}]"
@@ -801,7 +807,6 @@ class Bilibili(Module):
                 if uid in self.config[owner_id]["sub"]:
 
                     self.config[owner_id]["sub"][uid][key] = value
-        self.robot.persist_mods[self.ID].config = self.config.copy()
         self.save_config()
 
     async def get_user_dynamics(self, uid: str, need_top=False) -> list:
@@ -976,10 +981,10 @@ class Bilibili(Module):
 
     def parse_user_info(self, uid: str, info) -> str:
         """打印用户数据"""
-        result = f"[CQ:image,file={info["avatar"]},subType=1]"
-        result += f"\n用户名：{info["name"]}"
+        result = f"[CQ:image,file={info['avatar']},subType=1]"
+        result += f"\n用户名：{info['name']}"
         result += f"\nUID：{uid}"
-        result += f"\n粉丝数：{info["fans"]}"
+        result += f"\n粉丝数：{info['fans']}"
         keyword = info["keyword"] if info["keyword"] != "" else "无(全部通知)"
         result += f"\n通知关键词：{keyword}"
         dynamic = "开启" if info["dynamic_notice"] else "关闭"

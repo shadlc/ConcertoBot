@@ -11,7 +11,7 @@ from collections import deque
 
 from colorama import Fore
 
-from src.base import Module
+from src.base import HttpListener, Module
 from src.utils import Utils
 
 
@@ -43,25 +43,30 @@ class Webhook(Module):
     }
     CONV_CONFIG = None
     AUTO_INIT = True
+    HANDLE_MESSAGE = False
 
     def __init__(self, event, auth=0):
         """初始化外部请求监听状态并启动监听线程"""
         super().__init__(event, auth)
-        if self.ID in self.robot.persist_mods:
+        if self.is_persisted():
             return
-        self.robot.persist_mods[self.ID] = self
+        self.is_hooking = True
         self.latest_warning_time = 0
         self.msg_deque = deque(maxlen=100)
         self.msg_imm_deque = deque(maxlen=100)
-        threading.Thread(target=self.hooking, daemon=True, name=self.NAME).start()
+        self.schedule_background_thread(self.hooking, name="Webhook外部请求监听")
 
     def hooking(self):
-        """监听外部请求"""
-        self.printf(f"正在监听 [{Fore.GREEN}{self.config["host"]}:{self.config["port"]}{Fore.RESET}]")
-        while True:
+        """Webhook监听外部请求"""
+        self.printf(f"正在监听 [{Fore.GREEN}{self.config['host']}:{self.config['port']}{Fore.RESET}]")
+        while self.is_hooking:
             try:
                 data = self.receive_msg()
+                if data is None:
+                    continue
             except Exception: # pylint: disable=broad-exception-caught
+                if not self.is_hooking:
+                    return
                 self.errorf("加载失败, 模块已停止运行!")
                 return
             try:
@@ -77,25 +82,33 @@ class Webhook(Module):
                     self.latest_warning_time = time.time()
                 time.sleep(5)
 
+    def unload(self):
+        """停止外部请求监听循环"""
+        self.is_hooking = False
+        HttpListener.close(self.config["host"], self.config["port"])
+        super().unload()
+
     def receive_msg(self):
         """接收外部请求并返回数据字典"""
         try:
-            header, body = Utils.listening(self.config["host"], self.config["port"])
-            if "application/json" not in header.get("Content-Type"):
+            header, body = HttpListener.receive_once(
+                self.config["host"],
+                self.config["port"],
+                accept_timeout=1,
+            )
+            if "application/json" not in header.get("Content-Type", ""):
                 self.warnf(f"收到一非JSON数据\n{body}", level="DEBUG")
                 return {}
-            elif header.get("Transfer-Encoding") == "chunked":
-                body = body.split("\r\n", maxsplit=1)[1].strip()
-                rev_json = json.loads(body)
-                return rev_json
-            else:
-                rev_json = json.loads(body)
-                return rev_json
-        except OSError as e:
-            self.errorf(f"端口{self.config["port"]}已被占用 {e}")
-            raise e
+            return json.loads(body)
+        except socket.timeout:
+            return None
         except socket.gaierror as e:
-            self.errorf(f"绑定地址有误！ {self.config["host"]} 不是一个正确的可绑定地址 {e}")
+            self.errorf(f"绑定地址有误！ {self.config['host']} 不是一个正确的可绑定地址 {e}")
+            raise e
+        except OSError as e:
+            if not self.is_hooking:
+                return None
+            self.errorf(f"端口{self.config['port']}已被占用 {e}")
             raise e
         except json.JSONDecodeError as e:
             self.warnf(f"JSON数据解析失败！ {e}")

@@ -7,6 +7,7 @@ from typing import Dict, List, AsyncGenerator, Generator, Union
 import httpx
 
 from src.base import Module
+from src.utils import Utils
 
 
 class LLM(Module):
@@ -38,35 +39,22 @@ class LLM(Module):
     }
     CONV_CONFIG = None
     AUTO_INIT = True
+    HANDLE_MESSAGE = False
 
     def __init__(self, event, auth=0):
-        """初始化 LLM 配置并注册可被其他模块调用的能力"""
+        """初始化 LLM 配置并输出已启用的模型能力"""
         super().__init__(event, auth)
-        if "LLM" not in self.robot.func:
-            self.robot.func["LLM"] = lambda: None
-            try:
-                model = self.get_request_params(model_type="chat")
-                self.printf(f"已为chat载入模型[{model["name"]}]")
-                self.robot.activate_func(self.llm_chat)
-                self.robot.activate_func(self.async_llm_chat)
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                self.warnf(f"未配置聊天模型，全局函数不可用 {e}")
-            try:
-                model = self.get_request_params(model_type="stt")
-                self.printf(f"已为stt载入模型[{model["name"]}]")
-                self.robot.activate_func(self.llm_stt)
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                self.warnf(f"未配置STT模型，全局函数不可用 {e}")
-            try:
-                model = self.get_request_params(model_type="tts")
-                self.printf(f"已为tts载入模型[{model["name"]}]")
-                self.robot.activate_func(self.llm_tts)
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                self.warnf(f"未配置TTS模型，全局函数不可用 {e}")
-
-    def premise(self):
-        """阻止本模块参与普通消息匹配，仅保留内部能力"""
-        return False
+        if self.is_persisted():
+            return
+        for model_type in ("chat", "stt", "tts"):
+            model_map = self.build_model_map(model_type)
+            if not model_map:
+                continue
+            models = ", ".join(
+                f"{model['name']}({model['model']})"
+                for model in model_map.values()
+            )
+            self.printf(f"已启用 [{model_type}] 模型 [{models}]")
 
     def build_model_map(self, model_type: str = "chat") -> Dict[str, Dict]:
         """构建模型名称到配置的映射"""
@@ -161,28 +149,35 @@ class LLM(Module):
         payload = self.build_payload(messages, params["model"], stream)
         url = f"{params['base_url']}/chat/completions"
         if not stream:
-            response = httpx.AsyncClient().post(
-                url, headers=headers, json=payload, timeout=params["timeout"]
-            )
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    url, headers=headers, json=payload, timeout=params["timeout"]
+                )
             response.raise_for_status()
-            data = await response.json()
+            data = response.json()
             return data["choices"][0]["message"]["content"]
 
         async def generator():
             """逐块读取异步流式响应内容"""
-            async with httpx.AsyncClient().stream(
-                "POST", url, headers=headers, json=payload, timeout=params["timeout"]
-            ) as response:
-                response.raise_for_status()
-                async for line in response.iter_lines():
-                    if line.startswith("data: "):
-                        content = self.parse_event(line[6:].strip())
-                        if content is None:
-                            return
-                        yield content
+            async with httpx.AsyncClient() as client:
+                async with client.stream(
+                    "POST",
+                    url,
+                    headers=headers,
+                    json=payload,
+                    timeout=params["timeout"],
+                ) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if line.startswith("data: "):
+                            content = self.parse_event(line[6:].strip())
+                            if content is None:
+                                return
+                            yield content
 
         return generator()
 
+    @Utils.export_func
     def llm_chat(
         self, msg: str, model_name: str = None, stream: bool = False
     ) -> Union[str, Generator]:
@@ -192,12 +187,13 @@ class LLM(Module):
             if system_prompt := self.config["system_prompt"]:
                 messages = [{"role": "system", "content": system_prompt}, *messages]
             params = self.get_request_params(model_name)
-            self.printf(f"调用chat模型 {params["model"]}")
+            self.printf(f"调用chat模型 {params['model']}")
             return self.sync_chat(messages, params, stream)
         except Exception:  # pylint: disable=broad-exception-caught
-            self.errorf(f"LLM请求失败: {traceback.print_exc()}")
+            self.errorf(f"LLM请求失败:\n{traceback.format_exc()}")
             return ""
 
+    @Utils.export_func
     async def async_llm_chat(
         self, msg: str, model_name: str = None, stream: bool = False
     ) -> Union[str, AsyncGenerator]:
@@ -207,20 +203,21 @@ class LLM(Module):
             if system_prompt := self.config["system_prompt"]:
                 messages = [{"role": "system", "content": system_prompt}, *messages]
             params = self.get_request_params(model_name)
-            self.printf(f"调用chat模型 {params["model"]}")
+            self.printf(f"调用chat模型 {params['model']}")
             return await self.async_chat(messages, params, stream)
         except Exception:  # pylint: disable=broad-exception-caught
-            self.errorf(f"LLM请求失败: {traceback.print_exc()}")
+            self.errorf(f"LLM请求失败:\n{traceback.format_exc()}")
             return ""
 
+    @Utils.export_func
     def llm_stt(self, file: dict, model_name: str = None) -> str:
         """同步语音转文本"""
         try:
             params = self.get_request_params(model_name, "stt")
-            url = f"{params["base_url"]}/audio/transcriptions"
-            headers = {"Authorization": f"Bearer {params["api_key"]}"}
+            url = f"{params['base_url']}/audio/transcriptions"
+            headers = {"Authorization": f"Bearer {params['api_key']}"}
             payload = {"model": params["model"]}
-            self.printf(f"调用stt模型 {params["model"]}")
+            self.printf(f"调用stt模型 {params['model']}")
             response = httpx.post(
                 url,
                 data=payload,
@@ -230,17 +227,17 @@ class LLM(Module):
             )
             data = response.json()
             return data.get("text") or data.get("message")
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            traceback.print_exc()
-            self.errorf(f"LLM请求失败: {e}")
+        except Exception:  # pylint: disable=broad-exception-caught
+            self.errorf(f"LLM请求失败:\n{traceback.format_exc()}")
             return ""
 
+    @Utils.export_func
     def llm_tts(self, text: str, model_name: str = None) -> bytes | str:
         """同步文本转语音"""
         try:
             params = self.get_request_params(model_name, "tts")
-            url = f"{params["base_url"]}/audio/speech"
-            headers = {"Authorization": f"Bearer {params["api_key"]}"}
+            url = f"{params['base_url']}/audio/speech"
+            headers = {"Authorization": f"Bearer {params['api_key']}"}
             payload = {
                 "model": params["model"],
                 "input": text,
@@ -256,7 +253,6 @@ class LLM(Module):
             if response.text.startswith("{"):
                 return response.json()["message"]
             return response.text
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            traceback.print_exc()
-            self.errorf(f"LLM请求失败: {e}")
+        except Exception:  # pylint: disable=broad-exception-caught
+            self.errorf(f"LLM请求失败:\n{traceback.format_exc()}")
             return ""

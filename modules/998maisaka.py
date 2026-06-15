@@ -160,9 +160,9 @@ class MaimClientRuntime:
             self._client = client
             self._ready = bool(connected and client.is_connected())
             if self._ready:
-                self._owner.printf(f"已连接到 {self._owner.config['url']}")
+                self._owner.printf(f"已连接到麦麦 API-Server [{Fore.GREEN}{self._owner.config['url']}{Fore.RESET}]")
             else:
-                self._owner.warnf(f"未能连接到麦麦 API-Server: {self._owner.config['url']}")
+                self._owner.warnf(f"未能连接到麦麦 API-Server [{Fore.GREEN}{self._owner.config['url']}{Fore.RESET}]")
             return self._ready
 
     async def reconnect(self) -> bool:
@@ -947,11 +947,9 @@ class MaiSaka(Module):
     def __init__(self, event, auth=0):
         """初始化麦麦适配器、编解码器和运行时连接"""
         super().__init__(event, auth)
-        if self.ID in self.robot.persist_mods:
+        if self.is_persisted():
             return
-        self.robot.persist_mods[self.ID] = self
         self.failed_times = 0
-        self.robot.func["notify_maisaka"] = self.notify_maisaka
 
         logger = logging.getLogger("maim_message")
         logger.level = logging.WARNING
@@ -971,18 +969,19 @@ class MaiSaka(Module):
         asyncio.run_coroutine_threadsafe(self.runtime.start(), self.robot.loop)
 
     def premise(self):
-        """复用持久化适配器状态并检查必要连接配置"""
-        if self.ID in self.robot.persist_mods:
-            maim: MaiSaka = self.robot.persist_mods[self.ID]
+        """检查必要连接配置，并复用持久实例的连接状态"""
+        maim : MaiSaka | None = self.get_persist()
+        if maim and maim is not self:
             self.failed_times = maim.failed_times
             self.runtime = maim.runtime
             self.codec_out = maim.codec_out
             self.codec_in = maim.codec_in
         return bool(self.config.get("url") and self.config.get("api_key"))
 
-    def shutdown(self) -> None:
+    def unload(self) -> None:
         """停止麦麦 API-Server 连接"""
         asyncio.run_coroutine_threadsafe(self.runtime.stop(), self.robot.loop).result(timeout=5)
+        super().unload()
 
     async def handle_api_message(self, message: APIMessageBase, metadata: dict) -> None:
         """处理麦麦 API-Server 推送的消息"""
@@ -1001,7 +1000,7 @@ class MaiSaka(Module):
         try:
             self.printf(f"{Fore.GREEN}[TO] {Fore.RESET}{_segment_preview(message.message_segment)}")
             send_status = await self.runtime.send_message(message)
-            persist_mod = self.robot.persist_mods.get(self.ID, self)
+            persist_mod = self.get_persist() or self
             if not send_status:
                 persist_mod.failed_times += 1
                 self.failed_times = persist_mod.failed_times
@@ -1053,7 +1052,7 @@ class MaiSaka(Module):
             self.errorf(traceback.format_exc())
             self.reply("重连失败，请检查日志")
 
-    @Utils.handler(lambda self: self.ID in self.robot.persist_mods
+    @Utils.handler(lambda self: self.get_persist()
          and self.conv_config.get("enable")
          and self.event.user_id not in self.conv_config.get("blacklist")
          and (self.event.msg or self.event.sub_type == "poke"))
@@ -1070,9 +1069,10 @@ class MaiSaka(Module):
 
         asyncio.run_coroutine_threadsafe(send_task(), self.robot.loop)
 
+    @Utils.export_func
     def notify_maisaka(self, content: str, group_id: str):
         """主动通知麦麦 (供其他模块调用)"""
-        if self.ID not in self.robot.persist_mods:
+        if not self.get_persist():
             return
         if not self.config.get(f"g{group_id}", {}).get("enable"):
             self.warnf(f"群{group_id}未开启麦麦")
