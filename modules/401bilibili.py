@@ -63,7 +63,7 @@ class Bilibili(Module):
         "enable": True,
         "sub": {}
     }
-    AUTO_INIT = True
+    PERSISTENT = True
 
     def __init__(self, event, auth=0):
         """初始化B站状态缓存并启动后台轮询任务"""

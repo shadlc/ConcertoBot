@@ -49,7 +49,7 @@ class Picture(Module):
             "probability": 0.5,
         },
     }
-    AUTO_INIT = True
+    PERSISTENT = True
 
     def __init__(self, event, auth=0):
         """初始化图片模块并启动煎蛋图定时任务"""

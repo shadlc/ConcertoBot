@@ -42,7 +42,7 @@ class Webhook(Module):
         },
     }
     CONV_CONFIG = None
-    AUTO_INIT = True
+    PERSISTENT = True
     HANDLE_MESSAGE = False
 
     def __init__(self, event, auth=0):

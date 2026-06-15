@@ -67,7 +67,7 @@ class Chat(Module):
         "users": {}
     }
     HANDLE_MESSAGE_SENT = True
-    AUTO_INIT = True
+    PERSISTENT = True
 
     def __init__(self, event, auth = 0):
         """初始化统计周期名称映射并启动定时统计任务"""

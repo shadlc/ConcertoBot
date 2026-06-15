@@ -24,7 +24,7 @@ import httpx
 from src import api
 from src.config import Config
 from src.placeholders import PLACEHOLDER_DICT
-from src.base import Event, HttpListener, Memory, Module
+from src.base import Event, HttpListener, Module
 from src.utils import Utils
 from src.command import ExecuteCmd
 
@@ -587,7 +587,7 @@ class Concerto:
                     self.module_files[obj.ID] = item_path
                     self.module_names[obj.ID] = module_name
                     loaded.append(obj.ID)
-                    if getattr(obj, "AUTO_INIT", False):
+                    if getattr(obj, "PERSISTENT", False):
                         self.create_module(obj, Event(self))
         if not is_module and not disabled:
             self.warnf(f"文件[{item}]内没有有效模块，已跳过")

@@ -942,7 +942,7 @@ class MaiSaka(Module):
         "blacklist": [],
     }
     HANDLE_NOTICE = True
-    AUTO_INIT = True
+    PERSISTENT = True
 
     def __init__(self, event, auth=0):
         """初始化麦麦适配器、编解码器和运行时连接"""

@@ -6,6 +6,7 @@ import asyncio
 from datetime import datetime, timedelta
 import html
 import inspect
+import logging
 import os
 from pathlib import Path
 import re
@@ -204,8 +205,14 @@ class MiniCron:
         self.expr: str = expr
         self.name = name
         self.task: Union[Callable[[], None], Callable[[], Coroutine]] = task
-        self.loop: asyncio.AbstractEventLoop = loop or asyncio.get_event_loop()
+        try:
+            self.loop: asyncio.AbstractEventLoop = loop or asyncio.get_running_loop()
+        except RuntimeError:
+            self.loop = loop or asyncio.get_event_loop()
         self.cron_fields: Dict[str, Set[int]] = self.parse_cron(expr)
+        _, _, day, _, weekday = expr.split()
+        self.day_is_any = day == "*"
+        self.weekday_is_any = weekday == "*"
         self.is_async = inspect.iscoroutinefunction(task)
         self.running = False
 
@@ -214,48 +221,78 @@ class MiniCron:
         """返回用于日志展示的计划任务名称"""
         return self.name or self.expr
 
-    def parse_field(self, field: str, min_val: int, max_val: int) -> Set[int]:
+    @staticmethod
+    def _normalize_weekday(value: int) -> int:
+        """将 cron 星期字段中的 7 归一化为周日 0"""
+        return 0 if value == 7 else value
+
+    def parse_field(
+        self,
+        field: str,
+        min_val: int,
+        max_val: int,
+        *,
+        allow_sunday_7: bool = False,
+    ) -> Set[int]:
         """解析单个字段，返回允许的整数集合"""
         if field == "*":
             return set(range(min_val, max_val + 1))
         values: Set[int] = set()
-        # 处理步长表达式 (如 8-12/1)
-        if "/" in field:
-            range_part, step_part = field.split("/", 1)
-            step = int(step_part)
-            if range_part == "*":
-                # */n 格式
-                values.update(range(min_val, max_val + 1, step))
-            elif "-" in range_part:
-                # start-end/step 格式 (如 8-12/1)
-                start_str, end_str = range_part.split("-")
-                start = int(start_str)
-                end = int(end_str)
-                values.update(range(start, end + 1, step))
+        field_max = 7 if allow_sunday_7 else max_val
+        for part in field.split(","):
+            if not part:
+                raise ValueError(f"无效 cron 字段: {field}")
+            if "/" in part:
+                range_part, step_part = part.split("/", 1)
+                step = int(step_part)
+                if step <= 0:
+                    raise ValueError(f"cron 步长必须大于 0: {part}")
             else:
-                # 单个值/step 格式
-                base = int(range_part)
-                values.update(range(base, max_val + 1, step))
-        else:
-            # 没有步长的普通处理
-            for part in field.split(","):
-                if "-" in part:
-                    start, end = map(int, part.split("-"))
-                    values.update(range(start, end + 1))
+                range_part = part
+                step = 1
+            if range_part == "*":
+                start, end = min_val, max_val
+            elif "-" in range_part:
+                start, end = map(int, range_part.split("-", 1))
+                if start > end:
+                    raise ValueError(f"cron 范围起始值不能大于结束值: {part}")
+            else:
+                start = end = int(range_part)
+            if start < min_val or end > field_max:
+                raise ValueError(
+                    f"cron 字段超出范围 {min_val}-{field_max}: {part}"
+                )
+            for value in range(start, end + 1, step):
+                if allow_sunday_7:
+                    values.add(self._normalize_weekday(value))
                 else:
-                    values.add(int(part))
+                    values.add(value)
         return values
 
     def parse_cron(self, expr: str) -> Dict[str, Set[int]]:
         """解析 cron 表达式，返回每个字段允许的整数集合"""
-        minute, hour, day, month, weekday = expr.split()
+        parts = expr.split()
+        if len(parts) != 5:
+            raise ValueError(f"cron 表达式必须包含 5 段: {expr}")
+        minute, hour, day, month, weekday = parts
         return {
             "minute": self.parse_field(minute, 0, 59),
             "hour": self.parse_field(hour, 0, 23),
             "day": self.parse_field(day, 1, 31),
             "month": self.parse_field(month, 1, 12),
-            "weekday": self.parse_field(weekday, 0, 6),  # 0=周日 … 6=周六
+            "weekday": self.parse_field(weekday, 0, 6, allow_sunday_7=True),
         }
+
+    def _match_day(self, current_time: datetime) -> bool:
+        """按 cron 常见语义匹配日和星期字段"""
+        day_match = current_time.day in self.cron_fields["day"]
+        cron_weekday = (current_time.weekday() + 1) % 7
+        weekday_match = cron_weekday in self.cron_fields["weekday"]
+        if self.day_is_any:
+            return weekday_match
+        if self.weekday_is_any:
+            return day_match
+        return day_match or weekday_match
 
     def next_time(self, from_time: Optional[datetime] = None) -> datetime:
         """计算下一个匹配 cron 表达式的时间点"""
@@ -274,9 +311,8 @@ class MiniCron:
             if (
                 from_time.minute in self.cron_fields["minute"]
                 and from_time.hour in self.cron_fields["hour"]
-                and from_time.day in self.cron_fields["day"]
                 and from_time.month in self.cron_fields["month"]
-                and from_time.weekday() in self.cron_fields["weekday"]
+                and self._match_day(from_time)
             ):
                 return from_time
             from_time += timedelta(minutes=1)
@@ -296,11 +332,21 @@ class MiniCron:
         self.running = True
         next_run: datetime = self.next_time()
         while self.running:
-            now: datetime = datetime.now()
-            sleep_seconds = (next_run - now).total_seconds()
-            if sleep_seconds > 0:
-                await asyncio.sleep(sleep_seconds)
-            await self.execute_task()
+            try:
+                now: datetime = datetime.now()
+                sleep_seconds = (next_run - now).total_seconds()
+                if sleep_seconds > 0:
+                    await asyncio.sleep(sleep_seconds)
+                if not self.running:
+                    break
+                await self.execute_task()
+            except asyncio.CancelledError:
+                self.running = False
+                raise
+            except Exception:  # pylint: disable=broad-exception-caught
+                logging.getLogger(__name__).exception(
+                    "计划任务 [%s] 执行失败", self.display_name
+                )
             next_run = self.next_time(datetime.now())
 
     def stop(self) -> None:
@@ -380,7 +426,7 @@ class Module:
     CONFIG = None
     GLOBAL_CONFIG = None
     CONV_CONFIG = None
-    AUTO_INIT = None
+    PERSISTENT = None
 
     HANDLE_MESSAGE = True
     HANDLE_MESSAGE_SENT = False
@@ -430,8 +476,8 @@ class Module:
         return self.get_persist() is not None
 
     def auto_bootstrap(self) -> None:
-        """AUTO_INIT 模块创建完成后注册为持久实例"""
-        if not getattr(type(self), "AUTO_INIT", False):
+        """PERSISTENT 模块创建完成后注册为持久实例"""
+        if not getattr(type(self), "PERSISTENT", False):
             return
         persist = self.robot.get_persist_mod(self.ID)
         if persist is not None and persist is not self:
@@ -485,7 +531,7 @@ class Module:
         self.track_cron(cron)
         return self.schedule_background_task(
             cron.run(),
-            name=f"计划任务 {cron.display_name}",
+            name=f"计划任务 ({cron.expr}) {cron.display_name}",
         )
 
     def _iter_exported_methods(self):
