@@ -48,20 +48,12 @@ class Notice(Module):
                 f"{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}的戳一戳"
             )
             if random.choice(range(5)) == 0:
-                self.printf(
-                    f"20%概率触发，尝试对{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}进行反戳"
-                )
+                self.printf(f"20%概率触发，尝试对{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}进行反戳")
                 Utils.poke(self.robot, self.event.user_id, self.event.group_id)
                 if self.event.target_id == self.robot.self_id:
                     Utils.reply_id(self.robot, "group", self.event.group_id, "%BE_POKED%")
         elif not self.event.group_id:
-            self.printf(
-                f"接收来自"
-                f"{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}的戳一戳"
-            )
-            self.printf(
-                f"尝试对{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}进行反戳"
-            )
+            self.printf(f"接收来自{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}的戳一戳，尝试进行反戳")
             Utils.poke(self.robot, self.event.user_id)
             if random.choice(range(5)) == 0:
                 Utils.reply_event(self.robot, self.event, "%BE_POKED%")
@@ -72,21 +64,15 @@ class Notice(Module):
     def typing(self):
         """记录好友或群成员正在输入的状态提示"""
         if status_text := self.event.raw.get("status_text"):
-            self.printf(
-                f"{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}{status_text}"
-            )
+            self.printf(f"{Fore.MAGENTA}{self.event.user_name}({self.event.user_id}){Fore.RESET}{status_text}")
 
     @Utils.listener(lambda self: self.event.notice_type == "client_status")
     def client_status(self):
         """记录机器人账号的客户端登录或登出状态"""
         if self.event.raw["online"]:
-            self.printf(
-                f"检测到本账号在客户端{Fore.MAGENTA}{self.event.raw["client"]["device_name"]}{Fore.RESET}登录"
-            )
+            self.printf(f"检测到本账号在客户端{Fore.MAGENTA}{self.event.raw["client"]["device_name"]}{Fore.RESET}登录")
         else:
-            self.printf(
-                f"检测到本账号在客户端{Fore.MAGENTA}{self.event.raw["client"]["device_name"]}{Fore.RESET}登出"
-            )
+            self.printf(f"检测到本账号在客户端{Fore.MAGENTA}{self.event.raw["client"]["device_name"]}{Fore.RESET}登出")
 
     @Utils.listener(lambda self: self.event.notice_type == "friend_add")
     def friend_add(self):
@@ -249,5 +235,6 @@ class Notice(Module):
         """记录主页点赞通知"""
         times = self.event.raw.get("times")
         self.printf(
-            f"{Fore.MAGENTA}{self.event.operator_id}({self.event.operator_nick}){Fore.RESET}给你的主页点了{Fore.YELLOW}{times}{Fore.RESET}个赞"
+            f"{Fore.MAGENTA}{self.event.operator_id}({self.event.operator_nick}){Fore.RESET}"
+            f"给你的主页点了{Fore.YELLOW}{times}{Fore.RESET}个赞"
         )

@@ -304,7 +304,7 @@ class Message(Module):
         if not Utils.status_ok(result):
             self.reply(f"语音消息发送失败 {result.get("message")}", reply=True)
 
-    @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(在吗|你好)$"))
+    @Utils.handler(lambda self: self.at_or_private() and self.match(r"^(在吗|你好)$"))
     def reply_msg(self):
         """回复常用问候并提示帮助入口"""
         self.reply("%MENTIONED%\n请@我并发送“帮助”来让我帮助您~")
