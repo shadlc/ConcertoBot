@@ -173,7 +173,7 @@ class Concerto:
         threading.Thread(target=self.listening_msg, daemon=True, name="消息监听").start()
         threading.Thread(target=self.listening_console, daemon=True, name="键盘监听").start()
         self.printf(
-            f"已成功唤醒{Fore.MAGENTA}{self.self_name}({self.self_id}){Fore.RESET}, "
+            f"已成功唤醒{Fore.MAGENTA}{self.self_name}({self.self_id}){Fore.RESET}, 模块加载完成~"
             f"加载模块{Fore.MAGENTA}{len(self.modules)}{Fore.RESET}个, "
             f"注册处理函数{Fore.MAGENTA}{Utils.get_handler_amount(self)}{Fore.RESET}个!"
         )

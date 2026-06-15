@@ -531,7 +531,7 @@ class Module:
         self.track_cron(cron)
         return self.schedule_background_task(
             cron.run(),
-            name=f"计划任务 ({cron.expr}) {cron.display_name}",
+            name=f"Cron ({cron.expr}) {cron.display_name}",
         )
 
     def _iter_exported_methods(self):

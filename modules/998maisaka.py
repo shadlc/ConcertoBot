@@ -52,11 +52,9 @@ def _build_message_id(prefix: str, *parts: Any) -> str:
 def _segment_preview(segment: Seg) -> str:
     """生成隐藏二进制内容的消息段日志预览"""
     payload = segment.to_dict()
-    text = re.sub(
-        r"type='(image|emoji|voice)',\s?data='.*?'",
-        r"type='\1', data='Base64File'",
-        str(payload)
-    )
+    text = json.dumps(payload).replace(" ", "")
+    text = re.sub(r"base64://[A-Za-z0-9+/=]+", "[Base64]", text)
+    text = re.sub(r'("data":\s*")([A-Za-z0-9+/=]{32,})(")', r"\1[Base64]\3", text)
     return text if len(text) <= 300 else f"{text[:300]}..."
 
 def _patch_log_queue_processor_shutdown() -> None:
@@ -65,54 +63,47 @@ def _patch_log_queue_processor_shutdown() -> None:
     """
     if getattr(LogQueueProcessor, "_concerto_shutdown_patch", False):
         return
-
     maim_log_queue.logging = logging
-
     async def _process_batch(self) -> None:
         """批量处理日志队列并允许取消时快速退出"""
         batch = []
-
         try:
             first_msg = await asyncio.to_thread(
-                self._queue.get,
+                self._queue.get,  # pylint: disable=protected-access
                 True,
-                self._batch_timeout,
+                self._batch_timeout,  # pylint: disable=protected-access
             )
             batch.append(first_msg)
-
-            while len(batch) < self._batch_size:
+            while len(batch) < self._batch_size:  # pylint: disable=protected-access
                 try:
-                    msg = self._queue.get_nowait()
+                    msg = self._queue.get_nowait()  # pylint: disable=protected-access
                     batch.append(msg)
                 except queue.Empty:
                     break
-
         except asyncio.CancelledError:
             return
         except queue.Empty:
             pass
         except Exception: # pylint: disable=broad-exception-caught
             pass
-
         if batch:
             for log_msg in batch:
-                await self._process_log_message(log_msg)
-
+                await self._process_log_message(log_msg)  # pylint: disable=protected-access
     async def _processor_loop(self) -> None:
         """运行可被正常取消的日志队列处理循环"""
-        self._running = True
-        while self._running:
+        self._running = True  # pylint: disable=protected-access
+        while self._running:  # pylint: disable=protected-access
             try:
-                await self._process_batch()
+                await self._process_batch()  # pylint: disable=protected-access
             except asyncio.CancelledError:
                 break
-
-    LogQueueProcessor._process_batch = _process_batch
-    LogQueueProcessor._processor_loop = _processor_loop
-    LogQueueProcessor._concerto_shutdown_patch = True
+    LogQueueProcessor._process_batch = _process_batch  # pylint: disable=protected-access
+    LogQueueProcessor._processor_loop = _processor_loop  # pylint: disable=protected-access
+    LogQueueProcessor._concerto_shutdown_patch = True  # pylint: disable=protected-access
 
 @dataclass
 class IncomingTarget:
+    """传入对象"""
     msg_type: str
     target_id: str
     group_id: str = ""
