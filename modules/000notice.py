@@ -70,9 +70,13 @@ class Notice(Module):
     def client_status(self):
         """记录机器人账号的客户端登录或登出状态"""
         if self.event.raw["online"]:
-            self.printf(f"检测到本账号在客户端{Fore.MAGENTA}{self.event.raw["client"]["device_name"]}{Fore.RESET}登录")
+            self.printf(
+                f"检测到本账号在客户端{Fore.MAGENTA}{self.event.raw['client']['device_name']}{Fore.RESET}登录"
+            )
         else:
-            self.printf(f"检测到本账号在客户端{Fore.MAGENTA}{self.event.raw["client"]["device_name"]}{Fore.RESET}登出")
+            self.printf(
+                f"检测到本账号在客户端{Fore.MAGENTA}{self.event.raw['client']['device_name']}{Fore.RESET}登出"
+            )
 
     @Utils.listener(lambda self: self.event.notice_type == "friend_add")
     def friend_add(self):

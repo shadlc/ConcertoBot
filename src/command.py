@@ -98,7 +98,7 @@ class ExecuteCmd(object):
                 if Utils.status_ok(result):
                     self.printf(f"已对{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}的请求作出回应")
                 else:
-                    self.printf(f"回应失败！{result.get("message")}")
+                    self.printf(f"回应失败！{result.get('message')}")
         else:
             self.printf(f"请使用 {Fore.CYAN}add agree/deny 备注{Fore.RESET} 同意或拒绝申请")
 
@@ -107,9 +107,9 @@ class ExecuteCmd(object):
         self.printf(f"向 {Fore.GREEN}{self.robot.config.api_base}{Fore.RESET} {Fore.YELLOW}{self.robot.api_name}{Fore.RESET} 请求的历史记录:")
         for request in self.robot.request_list:
             if re.search(r"^GET", request):
-                self.printf(f"{Fore.MAGENTA}[GET]{Fore.RESET} {request.replace("GET", "")}{Fore.MAGENTA}{Fore.RESET}")
+                self.printf(f"{Fore.MAGENTA}[GET]{Fore.RESET} {request.replace('GET', '')}{Fore.MAGENTA}{Fore.RESET}")
             else:
-                self.printf(f"{Fore.MAGENTA}[POST]{Fore.RESET} {request.replace("POST", "")}{Fore.MAGENTA}{Fore.RESET}")
+                self.printf(f"{Fore.MAGENTA}[POST]{Fore.RESET} {request.replace('POST', '')}{Fore.MAGENTA}{Fore.RESET}")
 
     def debug(self, argv=""): # pylint: disable=unused-argument
         """开关调试模式"""
@@ -142,7 +142,7 @@ class ExecuteCmd(object):
             if Utils.status_ok(result):
                 self.printf(f"成功设置新登陆设备为{Fore.MAGENTA}{device}{Fore.RESET}")
             else:
-                self.printf(f"设置失败！{result.get("message")}")
+                self.printf(f"设置失败！{result.get('message')}")
         else:
             self.printf(f"请使用 {Fore.CYAN}device 型号{Fore.RESET} 设置登陆设备型号")
 
@@ -170,7 +170,7 @@ class ExecuteCmd(object):
             if Utils.status_ok(result):
                 self.printf(f"向消息{Fore.MAGENTA}(mg_id: {msg_id}){raw_msg}{Fore.RESET}贴了表情❤")
             else:
-                self.warnf(f"贴表情出错 {result.get("message")}")
+                self.warnf(f"贴表情出错 {result.get('message')}")
         else:
             self.printf(f"请使用 {Fore.CYAN}emoji 消息ID{Fore.RESET} 进行贴表情")
 
@@ -195,30 +195,30 @@ class ExecuteCmd(object):
                     result["sex"] = "女"
                 else:
                     result["sex"] = "其他"
-                self.printf(f"用户{Fore.MAGENTA}{result["nickname"]}({user_id}){Fore.RESET}信息")
-                self.printf(f"性别：{result["sex"]}")
-                self.printf(f"年龄：{result["age"]}岁")
-                self.printf(f"QQ等级：{result["qqLevel"]}级")
-                self.printf(f"QID：{result["qid"]}")
-                self.printf(f"邮箱：{result["eMail"]}")
-                self.printf(f"手机号：{result["phoneNum"]}")
-                self.printf(f"生日：{result["birthday_year"]}-{result["birthday_month"]}-{result["birthday_day"]}")
-                self.printf(f"签名：{result["longNick"]}")
+                self.printf(f"用户{Fore.MAGENTA}{result['nickname']}({user_id}){Fore.RESET}信息")
+                self.printf(f"性别：{result['sex']}")
+                self.printf(f"年龄：{result['age']}岁")
+                self.printf(f"QQ等级：{result['qqLevel']}级")
+                self.printf(f"QID：{result['qid']}")
+                self.printf(f"邮箱：{result['eMail']}")
+                self.printf(f"手机号：{result['phoneNum']}")
+                self.printf(f"生日：{result['birthday_year']}-{result['birthday_month']}-{result['birthday_day']}")
+                self.printf(f"签名：{result['longNick']}")
             else:
-                self.printf(f"查无此号！{result.get("message")}")
+                self.printf(f"查无此号！{result.get('message')}")
         elif re.search(r"group\s+(\d+)", argv):
             group_id = re.search(r"group\s+(\d+)", argv).group(1)
             result = Utils.get_group_info(self.robot, group_id)
             if Utils.status_ok(result):
                 data = result.get("data")
-                self.printf(f"群{Fore.MAGENTA}{data.get("group_name")}({group_id}){Fore.RESET}信息")
-                self.printf(f"群简介：{data.get("fingerMemo", "")}")
-                self.printf(f"群创建时间：{time.strftime("%Y年%m月%d日 %H:%M:%S", time.localtime(data.get("groupCreateTime", 0)))}")
-                self.printf(f"群等级：{data.get("groupGrade", "未知")}级")
-                self.printf(f"群人数：{data.get("member_count")}人")
-                self.printf(f"入群问题：{data.get("groupQuestion", "无")}")
+                self.printf(f"群{Fore.MAGENTA}{data.get('group_name')}({group_id}){Fore.RESET}信息")
+                self.printf(f"群简介：{data.get('fingerMemo', '')}")
+                self.printf(f"群创建时间：{time.strftime('%Y年%m月%d日 %H:%M:%S', time.localtime(data.get('groupCreateTime', 0)))}")
+                self.printf(f"群等级：{data.get('groupGrade', '未知')}级")
+                self.printf(f"群人数：{data.get('member_count')}人")
+                self.printf(f"入群问题：{data.get('groupQuestion', '无')}")
             else:
-                self.printf(f"查无此群！{data.get("message")}")
+                self.printf(f"查无此群！{result.get('message')}")
         else:
             self.printf(f"请使用 {Fore.CYAN}get user/group QQ号/群号{Fore.RESET} 获取信息")
 
@@ -265,7 +265,7 @@ class ExecuteCmd(object):
             if Utils.status_ok(result):
                 self.printf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送消息：{Fore.YELLOW}{msg}")
             else:
-                self.warnf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送消息出错！{result.get("message")}")
+                self.warnf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送消息出错！{result.get('message')}")
         else:
             self.printf(f"请使用 {Fore.CYAN}groupmsg 群号 消息内容{Fore.RESET} 发送消息")
 
@@ -280,7 +280,7 @@ class ExecuteCmd(object):
             if Utils.status_ok(result):
                 self.printf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送文本转语音消息：{Fore.YELLOW}{inputs[1]}")
             else:
-                self.warnf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送文本转语音消息出错！{result.get("message")}")
+                self.warnf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送文本转语音消息出错！{result.get('message')}")
         else:
             self.printf(f"请使用 {Fore.CYAN}groupvoice 群号 文本{Fore.RESET} 发送文本转语音")
 
@@ -296,7 +296,7 @@ class ExecuteCmd(object):
             if Utils.status_ok(result):
                 self.printf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送AI声聊消息：{Fore.YELLOW}{match[1]}")
             else:
-                self.warnf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送AI声聊消息出错！{result.get("message")}")
+                self.warnf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送AI声聊消息出错！{result.get('message')}")
         else:
             self.printf(f"请使用 {Fore.CYAN}aivoice 文本 群号 声色{Fore.RESET} 发送AI声聊")
 
@@ -375,9 +375,9 @@ class ExecuteCmd(object):
             f"({self.robot.config.min_image_width}:{self.robot.config.max_image_width})"
         )
         self.printf("=======API版本信息=======")
-        self.printf(f"应用名：{Fore.YELLOW}{info["app_name"]}{Fore.RESET}")
-        self.printf(f"版本号：{Fore.YELLOW}{info["app_version"]}{Fore.RESET}")
-        self.printf(f"协议版本：{Fore.YELLOW}{info["protocol_version"]}{Fore.RESET}")
+        self.printf(f"应用名：{Fore.YELLOW}{info['app_name']}{Fore.RESET}")
+        self.printf(f"版本号：{Fore.YELLOW}{info['app_version']}{Fore.RESET}")
+        self.printf(f"协议版本：{Fore.YELLOW}{info['protocol_version']}{Fore.RESET}")
         self.printf("==========变量信息==========")
         self.printf(f"调试模式：{Fore.YELLOW}{self.robot.config.is_debug}{Fore.RESET}")
         self.printf(f"静默模式：{Fore.YELLOW}{self.robot.config.is_silence}{Fore.RESET}")
@@ -412,7 +412,7 @@ class ExecuteCmd(object):
             if Utils.status_ok(result):
                 self.printf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}进行{times}次点赞")
             else:
-                self.warnf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}进行{times}次点赞出错！{result.get("message")}")
+                self.warnf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}进行{times}次点赞出错！{result.get('message')}")
         else:
             self.printf(f"请使用 {Fore.CYAN}like 用户QQ (次数){Fore.RESET} 进行点赞")
 
@@ -442,7 +442,7 @@ class ExecuteCmd(object):
             if Utils.status_ok(result):
                 self.printf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送消息：{msg}")
             else:
-                self.warnf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送消息出错！{result.get("message")}")
+                self.warnf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送消息出错！{result.get('message')}")
         else:
             self.printf(f"请使用 {Fore.CYAN}msg QQ号 消息内容{Fore.RESET} 发送消息")
 
@@ -459,7 +459,7 @@ class ExecuteCmd(object):
             if Utils.status_ok(result):
                 self.printf(f"通过群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送消息：{msg}")
             else:
-                self.warnf(f"通过群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送消息失败！{result.get("message")}")
+                self.warnf(f"通过群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送消息失败！{result.get('message')}")
         else:
             self.printf(f"请使用 {Fore.CYAN}tmpmsg 群号 QQ号 消息内容{Fore.RESET} 发送群临时消息")
 
@@ -474,7 +474,7 @@ class ExecuteCmd(object):
             if Utils.status_ok(result):
                 self.printf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发布公告：{Fore.YELLOW}{notice}")
             else:
-                self.warnf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发布公告失败！ {result.get("message")}")
+                self.warnf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发布公告失败！ {result.get('message')}")
         else:
             self.printf(f"请使用 {Fore.CYAN}notice 群号 公告{Fore.RESET} 发布公告")
 
@@ -486,11 +486,11 @@ class ExecuteCmd(object):
             if Utils.status_ok(result):
                 result = result["data"]
                 self.printf(f"图片{Fore.MAGENTA}({img_id}){Fore.RESET}识别结果")
-                self.printf(f"文字语音：{result["language"]}")
+                self.printf(f"文字语音：{result['language']}")
                 self.printf("-------------------------------------")
                 for i in result["texts"]:
-                    self.printf(f"文字内容：{i["text"]}")
-                    self.printf(f"结果置信度：{i["confidence"]}%")
+                    self.printf(f"文字内容：{i['text']}")
+                    self.printf(f"结果置信度：{i['confidence']}%")
                     self.printf("-------------------------------------")
             else:
                 self.printf(f"调用OCR失败！结果为：{result}")
@@ -543,7 +543,7 @@ class ExecuteCmd(object):
             if Utils.status_ok(result):
                 self.printf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送戳一戳")
             else:
-                self.warnf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送戳一戳出错！{result.get("message")}")
+                self.warnf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送戳一戳出错！{result.get('message')}")
         elif (
             self.robot.latest_data
             and self.robot.data[self.robot.latest_data].past_message[-1]
@@ -556,7 +556,7 @@ class ExecuteCmd(object):
             if Utils.status_ok(result):
                 self.printf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送戳一戳")
             else:
-                self.warnf(f"贴表情出错 {result.get("message")}")
+                self.warnf(f"贴表情出错 {result.get('message')}")
         else:
             self.printf(f"请使用 {Fore.CYAN}poke 用户QQ{Fore.RESET} 发送戳一戳")
 
@@ -660,7 +660,7 @@ class ExecuteCmd(object):
                     )
                 self.printf(f"回复 -> {target_str}: {Fore.MAGENTA}{reply_msg}{Fore.RESET}")
             else:
-                self.warnf(f"回复消息出错！{result.get("message")}")
+                self.warnf(f"回复消息出错！{result.get('message')}")
         else:
             self.printf(f"请使用 {Fore.CYAN}reply 消息内容{Fore.RESET} 回复上一段信息")
 
@@ -728,7 +728,7 @@ class ExecuteCmd(object):
                 if Utils.status_ok(result):
                     self.printf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送消息：{msg}")
                 else:
-                    self.warnf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送消息出错！{result.get("message")}")
+                    self.warnf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}发送消息出错！{result.get('message')}")
             else:
                 self.printf(f"请使用 {Fore.CYAN}say 消息内容{Fore.RESET} 向主对接群发送消息")
         else:
@@ -906,7 +906,7 @@ class ExecuteCmd(object):
             if Utils.status_ok(result):
                 self.printf(f"向群{Fore.MAGENTA}{group_name}({group_id}){Fore.RESET}进行打卡签到")
             else:
-                self.warnf(f"群签到出错 {result.get("message")}")
+                self.warnf(f"群签到出错 {result.get('message')}")
         else:
             self.printf(f"请使用 {Fore.CYAN}sign 群聊ID{Fore.RESET} 进行群签到")
 
@@ -937,7 +937,7 @@ class ExecuteCmd(object):
             if Utils.status_ok(result):
                 self.printf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送文本转语音消息：{inputs[1]}")
             else:
-                self.warnf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送文本转语音消息出错！{result.get("message")}")
+                self.warnf(f"向{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}发送文本转语音消息出错！{result.get('message')}")
         else:
             self.printf(f"请使用 {Fore.CYAN}voice QQ号 文本{Fore.RESET} 发送文本转语音消息")
 

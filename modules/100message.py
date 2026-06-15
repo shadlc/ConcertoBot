@@ -178,10 +178,10 @@ class Message(Module):
         """查询协议端版本和当前已安装模块信息"""
         info = Utils.get_version_info(self.robot)
         msg = "=======API版本信息======="
-        msg += f"\n应用名：{info["app_name"]}"
-        msg += f"\n版本号：{info["app_version"]}"
-        msg += f"\n协议版本：{info["protocol_version"]}"
-        msg += f"\n已安装模块：{[f"{i.NAME}({i.ID})" for i in self.robot.modules.values()]}"
+        msg += f"\n应用名：{info['app_name']}"
+        msg += f"\n版本号：{info['app_version']}"
+        msg += f"\n协议版本：{info['protocol_version']}"
+        msg += f"\n已安装模块：{[f'{i.NAME}({i.ID})' for i in self.robot.modules.values()]}"
         self.reply(msg)
 
     @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^(撤回|闭嘴|嘘)(！|，)?(懂？)?$"))
@@ -261,7 +261,7 @@ class Message(Module):
             try:
                 data = httpx.get(url, timeout=3).json()
                 if data.get("code") != 200:
-                    msg = f"IP查询返回失败: {data.get("msg")}"
+                    msg = f"IP查询返回失败: {data.get('msg')}"
                 else:
                     ip = data.get("ip")
                     address = data.get("data").get("address")
@@ -302,7 +302,7 @@ class Message(Module):
         else:
             result = Utils.send_group_ai_record(self.robot, self.event.group_id, "lucy-voice-xueling", text)
         if not Utils.status_ok(result):
-            self.reply(f"语音消息发送失败 {result.get("message")}", reply=True)
+            self.reply(f"语音消息发送失败 {result.get('message')}", reply=True)
 
     @Utils.handler(lambda self: self.at_or_private() and self.match(r"^(在吗|你好)$"))
     def reply_msg(self):
