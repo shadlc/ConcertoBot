@@ -123,7 +123,7 @@ class Webhook(Module):
         if data.get("status") == "firing":
             msg_type = "GRAFANA_ALERT"
 
-        msg = json.dumps(data)
+        msg = json.dumps(data, ensure_ascii=False)
 
         if msg_type == "":
             self.warnf(f"接收到一条类型未知类型的外部请求 {msg}")
@@ -165,7 +165,7 @@ class Webhook(Module):
             return False
         reported = False
 
-        if json.dumps(data) in self.msg_deque:
+        if json.dumps(data, ensure_ascii=False) in self.msg_deque:
             reported = True
         elif (
             data.get("Item", {}).get("SeriesName")

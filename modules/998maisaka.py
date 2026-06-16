@@ -52,7 +52,7 @@ def _build_message_id(prefix: str, *parts: Any) -> str:
 def _segment_preview(segment: Seg) -> str:
     """生成隐藏二进制内容的消息段日志预览"""
     payload = segment.to_dict()
-    text = json.dumps(payload).replace(" ", "")
+    text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     text = re.sub(r"base64://[A-Za-z0-9+/=]+", "[Base64]", text)
     text = re.sub(r'("data":\s*")([A-Za-z0-9+/=]{32,})(")', r"\1[Base64]\3", text)
     return text if len(text) <= 300 else f"{text[:300]}..."
@@ -429,7 +429,8 @@ class ConcertoToMaimCodec:
         async def process_forward_message(items: list[Any], layer: int) -> list[Seg]:
             """递归解析合并转发中的子消息"""
             seg_list: list[Seg] = []
-            process_count = 0
+            image_count = 0
+            emoji_count = 0
             for sub_msg in items:
                 if not isinstance(sub_msg, Mapping):
                     continue
@@ -466,7 +467,6 @@ class ConcertoToMaimCodec:
                         if not seg_data:
                             continue
 
-                        process_count += 1
                         seg_list.append(Seg(type="text", data=("--" * layer) + f"【{user_nickname}】：合并转发消息内容：\n"))
                         seg_list.extend(seg_data)
                         continue
@@ -480,21 +480,22 @@ class ConcertoToMaimCodec:
                         continue
 
                     if message_type == "image":
-                        process_count += 1
                         sub_type = _safe_str(message_data.get("sub_type"))
                         image_url = _safe_str(message_data.get("url") or message_data.get("file"))
                         if not image_url:
                             continue
 
                         if sub_type in {"0", "4", "9"}:
-                            if process_count > 5:
+                            image_count += 1
+                            if image_count > 12:
                                 seg_data = Seg(type="text", data="[图片]\n")
                             else:
                                 seg_data = await self._build_image_segment(message_data)
                                 if seg_data is None:
                                     seg_data = Seg(type="text", data="[图片]\n")
                         else:
-                            if process_count > 3:
+                            emoji_count += 1
+                            if emoji_count > 6:
                                 seg_data = Seg(type="text", data="[表情]\n")
                             else:
                                 seg_data = await self._build_image_segment(message_data)

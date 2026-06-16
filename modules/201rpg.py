@@ -127,7 +127,7 @@ class RPG(Module):
                 self.owner_id,
                 str(user_id),
                 action,
-                json.dumps(details),
+                json.dumps(details, ensure_ascii=False),
                 datetime.datetime.now().isoformat(),
             ),
         )
@@ -177,7 +177,7 @@ class RPG(Module):
                 self.owner_id,
                 str(user_id),
                 pc_data.get("Name", "未命名"),
-                json.dumps(pc_data),
+                json.dumps(pc_data, ensure_ascii=False),
                 datetime.datetime.now().isoformat(),
             ),
         )
