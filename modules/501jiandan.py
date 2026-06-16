@@ -37,9 +37,9 @@ class Jiandan(Module):
     CONV_CONFIG = {
         "hist": [],
         "cron": "",
-        "probability": 0.5,
-        "batch_limit": None,
-        "llm_batch_limit": None,
+        "probability": 1,
+        "batch_limit": 2,
+        "llm_batch_limit": 5,
         "llm_model": None,
         "llm_prompt": None,
     }
