@@ -1,8 +1,7 @@
 """LLM模块"""
-
 import json
 import traceback
-from typing import Dict, List, AsyncGenerator, Generator, Union
+from typing import Any, AsyncGenerator, Generator
 
 import httpx
 
@@ -46,6 +45,8 @@ class LLM(Module):
         super().__init__(event, auth)
         if self.is_persisted():
             return
+
+        self.stream_end = object()
         for model_type in ("chat", "stt", "tts"):
             model_map = self.build_model_map(model_type)
             if not model_map:
@@ -56,9 +57,9 @@ class LLM(Module):
             )
             self.printf(f"已启用 [{model_type}] 模型 [{models}]")
 
-    def build_model_map(self, model_type: str = "chat") -> Dict[str, Dict]:
+    def build_model_map(self, model_type: str = "chat") -> dict[str, dict[str, Any]]:
         """构建模型名称到配置的映射"""
-        model_map = {}
+        model_map: dict[str, dict[str, Any]] = {}
         for model in self.config["models"]:
             if model.get("type") != model_type:
                 continue
@@ -67,29 +68,29 @@ class LLM(Module):
                 None,
             )
             if provider:
-                model_map[model["name"]] = model.copy()
-                provider["max_retry"] = provider.get("max_retry", 2)
-                provider["timeout"] = provider.get("timeout", 30)
-                provider["retry_interval"] = provider.get("retry_interval", 3)
-                model_map[model["name"]] |= provider
+                provider_info = {
+                    "max_retry": provider.get("max_retry", 2),
+                    "timeout": provider.get("timeout", 30),
+                    "retry_interval": provider.get("retry_interval", 3),
+                    **provider,
+                }
+                model_map[model["name"]] = model | provider_info
         return model_map
 
     def get_request_params(
         self, model_name: str | None = None, model_type: str = "chat"
-    ) -> Dict:
+    ) -> dict[str, Any]:
         """获取请求参数"""
         model_map = self.build_model_map(model_type)
-        if len(model_map) == 0:
+        if not model_map:
             raise ValueError("未找到任何可用模型!")
         if model_name:
             if model_name not in model_map:
                 raise ValueError(f"未找到模型[{model_name}]对应的配置!")
-            model_info = model_map[model_name]
-        else:
-            model_info = next(iter(model_map.values()))
-        return model_info
+            return model_map[model_name]
+        return next(iter(model_map.values()))
 
-    def build_headers(self, api_key: str, stream: bool) -> Dict[str, str]:
+    def build_headers(self, api_key: str, stream: bool) -> dict[str, str]:
         """构建请求头"""
         return {
             "Content-Type": "application/json",
@@ -97,34 +98,90 @@ class LLM(Module):
             "Accept": "text/event-stream" if stream else "application/json",
         }
 
-    def build_payload(self, messages: List[Dict], model: str, stream: bool) -> Dict:
+    def build_payload(
+        self, messages: list[dict[str, Any]], model: str, stream: bool
+    ) -> dict[str, Any]:
         """构建请求负载"""
         return {"model": model, "messages": messages, "stream": stream}
 
-    def parse_event(self, data: str) -> str:
+    def normalize_messages(
+        self,
+        msg: str | list[dict[str, Any]],
+        system_prompt: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """兼容纯文本与完整消息列表两种输入"""
+        if isinstance(msg, list):
+            messages: list[dict[str, Any]] = msg
+        else:
+            messages = [{"role": "user", "content": msg}]
+        if system_prompt is None:
+            system_prompt = self.config["system_prompt"]
+        if system_prompt:
+            messages = [{"role": "system", "content": system_prompt}, *messages]
+        return messages
+
+    def build_chat_request(
+        self, messages: list[dict[str, Any]], params: dict[str, Any], stream: bool
+    ) -> tuple[str, dict[str, str], dict[str, Any]]:
+        """构建聊天请求上下文"""
+        return (
+            f"{params['base_url']}/chat/completions",
+            self.build_headers(params["api_key"], stream),
+            self.build_payload(messages, params["model"], stream),
+        )
+
+    def extract_chat_content(self, data: dict[str, Any]) -> str:
+        """提取非流式响应中的文本内容"""
+        return data["choices"][0]["message"]["content"]
+
+    def parse_event(self, data: str) -> object | str | None:
         """解析单个 SSE 事件"""
         if data == "[DONE]":
-            return None
+            return self.stream_end
         try:
             item = json.loads(data)
             return item["choices"][0]["delta"]["content"]
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
             return None
 
+    def iter_stream_lines(self, lines: Generator[str, None, None]) -> Generator[str, None, None]:
+        """提取同步 SSE 文本片段"""
+        for line in lines:
+            if not line.startswith("data: "):
+                continue
+            content = self.parse_event(line[6:].strip())
+            if content is self.stream_end:
+                return
+            if content:
+                yield content
+
+    async def aiter_stream_lines(
+        self, lines: AsyncGenerator[str, None]
+    ) -> AsyncGenerator[str, None]:
+        """提取异步 SSE 文本片段"""
+        async for line in lines:
+            if not line.startswith("data: "):
+                continue
+            content = self.parse_event(line[6:].strip())
+            if content is self.stream_end:
+                return
+            if content:
+                yield content
+
     def sync_chat(
-        self, messages: List[Dict], params: Dict, stream: bool = False
-    ) -> Union[Dict, Generator]:
+        self,
+        messages: list[dict[str, Any]],
+        params: dict[str, Any],
+        stream: bool = False,
+    ) -> str | Generator[str, None, None]:
         """同步API请求核心逻辑"""
-        headers = self.build_headers(params["api_key"], stream)
-        payload = self.build_payload(messages, params["model"], stream)
-        url = f"{params['base_url']}/chat/completions"
+        url, headers, payload = self.build_chat_request(messages, params, stream)
         if not stream:
             response = httpx.post(
                 url, headers=headers, json=payload, timeout=params["timeout"]
             )
             response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
+            return self.extract_chat_content(response.json())
 
         def generator():
             """逐块读取同步流式响应内容"""
@@ -132,30 +189,25 @@ class LLM(Module):
                 "POST", url, headers=headers, json=payload, timeout=params["timeout"]
             ) as response:
                 response.raise_for_status()
-                for line in response.iter_lines():
-                    if line.startswith("data: "):
-                        content = self.parse_event(line[6:].strip())
-                        if content is None:
-                            return
-                        yield content
+                yield from self.iter_stream_lines(response.iter_lines())
 
         return generator()
 
     async def async_chat(
-        self, messages: List[Dict], params: Dict, stream: bool = False
-    ) -> Union[Dict, AsyncGenerator]:
+        self,
+        messages: list[dict[str, Any]],
+        params: dict[str, Any],
+        stream: bool = False,
+    ) -> str | AsyncGenerator[str, None]:
         """异步API请求核心逻辑"""
-        headers = self.build_headers(params["api_key"], stream)
-        payload = self.build_payload(messages, params["model"], stream)
-        url = f"{params['base_url']}/chat/completions"
+        url, headers, payload = self.build_chat_request(messages, params, stream)
         if not stream:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     url, headers=headers, json=payload, timeout=params["timeout"]
                 )
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
+                response.raise_for_status()
+                return self.extract_chat_content(response.json())
 
         async def generator():
             """逐块读取异步流式响应内容"""
@@ -168,24 +220,22 @@ class LLM(Module):
                     timeout=params["timeout"],
                 ) as response:
                     response.raise_for_status()
-                    async for line in response.aiter_lines():
-                        if line.startswith("data: "):
-                            content = self.parse_event(line[6:].strip())
-                            if content is None:
-                                return
-                            yield content
+                    async for content in self.aiter_stream_lines(response.aiter_lines()):
+                        yield content
 
         return generator()
 
     @Utils.export_func
     def llm_chat(
-        self, msg: str, model_name: str = None, stream: bool = False
-    ) -> Union[str, Generator]:
+        self,
+        msg: str | list[dict[str, Any]],
+        model_name: str = None,
+        stream: bool = False,
+        system_prompt: str | None = None,
+    ) -> str | Generator[str, None, None]:
         """同步生成文本"""
         try:
-            messages: List[Dict] = [{"role": "user", "content": msg}]
-            if system_prompt := self.config["system_prompt"]:
-                messages = [{"role": "system", "content": system_prompt}, *messages]
+            messages = self.normalize_messages(msg, system_prompt)
             params = self.get_request_params(model_name)
             self.printf(f"调用chat模型 {params['model']}")
             return self.sync_chat(messages, params, stream)
@@ -195,13 +245,15 @@ class LLM(Module):
 
     @Utils.export_func
     async def async_llm_chat(
-        self, msg: str, model_name: str = None, stream: bool = False
-    ) -> Union[str, AsyncGenerator]:
+        self,
+        msg: str | list[dict[str, Any]],
+        model_name: str = None,
+        stream: bool = False,
+        system_prompt: str | None = None,
+    ) -> str | AsyncGenerator[str, None]:
         """异步生成文本"""
         try:
-            messages: List[Dict] = [{"role": "user", "content": msg}]
-            if system_prompt := self.config["system_prompt"]:
-                messages = [{"role": "system", "content": system_prompt}, *messages]
+            messages = self.normalize_messages(msg, system_prompt)
             params = self.get_request_params(model_name)
             self.printf(f"调用chat模型 {params['model']}")
             return await self.async_chat(messages, params, stream)
