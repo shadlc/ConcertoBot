@@ -95,9 +95,7 @@ class Picture(Module):
     @Utils.handler(
         lambda self: self.au(2)
         and self.at_or_private()
-        and self.match(
-            r"^我?(要|来|发|看|给|有没有){0,3}?(更|超|超级|很|再|无敌|最强|大){0,3}?(来|发|看|给|瑟|涩|色|se)\S{0,10}(图|瑟|涩|色|se|好看|好康|可爱)的?"
-        )
+        and self.match(r"^来张(瑟|涩|色|se)图")
     )
     def lolicon(self):
         """调用Lolicon API获取图片"""
@@ -105,9 +103,7 @@ class Picture(Module):
         r18_mode = 0
         if len(self.event.text.split(" ")) > 1:
             tags = self.event.text.split(" ")[1:]
-        if len(tags) == 0 and self.match(r"[张个点只](\S+?)[的图瑟涩色]"):
-            tags.append(self.match(r"[张个点只](\S+?)[的图瑟涩色]").group(1))
-        if self.match(r"(更|超|超级|很|再|无敌|最强)"):
+        if self.match(r"[rR]18"):
             r18_mode = 1
         try:
             url = ""
