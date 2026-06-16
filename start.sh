@@ -3,12 +3,23 @@
 
 # clear
 
+if ! command -v uv >/dev/null 2>&1; then
+ echo "uv is required. Install it first: https://docs.astral.sh/uv/getting-started/installation/"
+ exit 1
+fi
+
+uv sync
+sync_status=$?
+if (($sync_status)); then
+ exit $sync_status
+fi
+
 is_restart=1
 
 while (($is_restart))
 do
  stty echo
- poetry run python main.py
+ uv run python main.py
  is_restart=$?
 done
 stty echo

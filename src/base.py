@@ -275,13 +275,17 @@ class MiniCron:
         if len(parts) != 5:
             raise ValueError(f"cron 表达式必须包含 5 段: {expr}")
         minute, hour, day, month, weekday = parts
-        return {
+        try:
+            parsed = {
             "minute": self.parse_field(minute, 0, 59),
             "hour": self.parse_field(hour, 0, 23),
             "day": self.parse_field(day, 1, 31),
             "month": self.parse_field(month, 1, 12),
             "weekday": self.parse_field(weekday, 0, 6, allow_sunday_7=True),
         }
+        except Exception as e:
+            raise ValueError("cron 表达式解析失败！") from e
+        return parsed
 
     def _match_day(self, current_time: datetime) -> bool:
         """按 cron 常见语义匹配日和星期字段"""
@@ -630,7 +634,7 @@ class Module:
             self.config = Utils.import_json(self.config_file)
             if not isinstance(self.config, dict):
                 raise TypeError(f"配置文件根节点必须是对象，实际为 {type(self.config).__name__}")
-        except Exception as e:  # pylint: disable=broad-exception-caught
+        except Exception as e:
             self.config = {}
             raise TypeError(f"配置文件 {self.config_file} 解析发生错误!") from e
         global_default = self.GLOBAL_CONFIG or {}
@@ -658,7 +662,7 @@ class Module:
             persist = self.get_persist()
             if persist is not None and persist is not self:
                 persist.config = self.config.copy()
-        except Exception as e:  # pylint: disable=broad-exception-caught
+        except Exception as e:
             raise TypeError(f"配置文件 {self.config_file} 保存失败!") from e
 
     def get_data_path(self, *paths: str) -> str:

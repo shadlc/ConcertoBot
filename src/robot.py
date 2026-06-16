@@ -580,11 +580,11 @@ class Concerto:
         module_name = os.path.splitext(item)[0]
         missing = Utils.scan_missing_modules(item_path)
         if missing:
-            self.errorf(f"缺少依赖: {', '.join(missing)} 无法加载模块{Fore.YELLOW}{item}{Fore.RESET} ❌")
+            self.errorf(f"缺少依赖: {', '.join(missing)} 无法加载模块{item} ❌")
             return []
         spec = importlib.util.spec_from_file_location(module_name, item_path)
         if spec is None or spec.loader is None:
-            self.errorf(f"导入规格创建失败，无法加载模块{Fore.YELLOW}{item}{Fore.RESET} ❌")
+            self.errorf(f"导入规格创建失败，无法加载模块{item} ❌")
             return []
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module

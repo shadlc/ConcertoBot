@@ -38,12 +38,18 @@ ConcertoBot 是一个面向个人使用和二次开发的 QQ 机器人框架。�
 ### 1. 准备环境
 
 - Python 3.12
-- Poetry
+- uv
 - 一个 OneBot 兼容实现，例如 NapCat
 
 ```bash
-pip install poetry
-poetry install --no-root
+uv sync
+```
+
+如果本机还没有 Python 3.12，也可以先让 uv 安装：
+
+```bash
+uv python install 3.12
+uv sync
 ```
 
 ### 2. 配置 OneBot HTTP
@@ -69,7 +75,7 @@ poetry install --no-root
 ### 3. 启动
 
 ```bash
-poetry run python main.py
+uv run python main.py
 ```
 
 也可以直接运行：

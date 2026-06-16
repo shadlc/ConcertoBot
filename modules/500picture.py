@@ -318,7 +318,7 @@ class Picture(Module):
             if not enhanced_image:
                 raise RuntimeError("Real-CUGAN 未返回增强图片数据")
             return enhanced_image
-        except Exception as e:  # pylint: disable=broad-exception-caught
+        except Exception as e:
             raise RuntimeError(f"群星之路被遮蔽，星辉无法汇聚: {str(e)}") from e
 
     def get_lolicon_image(

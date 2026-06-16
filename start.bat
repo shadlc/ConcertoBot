@@ -1,9 +1,15 @@
 @echo off
 setlocal
 
-set "PYTHON_EXE=%~dp0.venv\Scripts\python.exe"
-if not exist "%PYTHON_EXE%" set "PYTHON_EXE=python"
+where uv >nul 2>nul
+if errorlevel 1 (
+    echo uv is required. Install it first: https://docs.astral.sh/uv/getting-started/installation/
+    exit /b 1
+)
+
+call uv sync
+if errorlevel 1 exit /b %errorlevel%
 
 :startbot
-"%PYTHON_EXE%" main.py
+call uv run python main.py
 if errorlevel 1 goto startbot
