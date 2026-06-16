@@ -335,7 +335,7 @@ class ExecuteCmd(object):
                     self.printf(f"您未加入群{Fore.MAGENTA}{Utils.get_group_name(self.robot, str(uid))}({uid}){Fore.RESET}")
                     return
                 self.printf(f"群{Fore.MAGENTA}{Utils.get_group_name(self.robot, str(uid))}({uid}){Fore.RESET}中的历史消息:")
-                past_msg = data.get("messages") 
+                past_msg = data.get("messages")
                 for one_msg in past_msg:
                     msg_time = time.strftime("%m-%d %H:%M:%S", time.localtime(one_msg["time"]))
                     msg_id = one_msg["message_id"]

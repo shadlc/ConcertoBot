@@ -3,17 +3,16 @@
 import base64
 import io
 import json
-import random
 import re
 import time
 import traceback
-from typing import Any, Callable, Tuple
+from typing import Callable, Tuple
 from urllib.parse import quote
 
 import httpx
 from PIL import Image
 
-from src.base import MiniCron, Module
+from src.base import Module
 from src.utils import Utils
 
 
@@ -27,7 +26,6 @@ class Picture(Module):
             "图片 + 打分 / 回复图片发送打分 | 对图片色气度进行打分",
             "saucenao + 图片 / 回复图片发送saucenao | 使用SauceNAO搜索图片",
             "来张色图 | 调用Lolicon API获取图片",
-            "来张梗图 | 调用煎蛋无聊图获取图片",
             "图片 + 清晰术 / 回复图片发送清晰术 | 调用Real-CUGAN增强图片清晰度",
             "图片 + 搜图 / 回复图片发送搜图 | 调用谷歌搜图搜索图片",
             "图片 + 搜番 / 回复图片发送搜番 | 调用TraceMoe搜索番剧",
@@ -43,94 +41,8 @@ class Picture(Module):
         "image_search": True,
         "saucenao": True,
         "enhance": True,
-        "jiandan": {
-            "hist": [],
-            "cron": "",
-            "probability": 0.5,
-        },
     }
     PERSISTENT = True
-
-    def __init__(self, event, auth=0):
-        """初始化图片模块并启动煎蛋图定时任务"""
-        super().__init__(event, auth)
-        if self.is_persisted():
-            return
-        self.setup_crons()
-
-    def setup_crons(self) -> None:
-        """初始化定时任务"""
-        # 煎蛋无聊图定时任务
-        for owner, chat in self.config.items():
-            if not re.match(r"[ug]\d+", owner):
-                continue
-            config = chat.get("jiandan")
-            prob = config["probability"]
-            crontab = config["cron"]
-            if not crontab or prob == 0:
-                continue
-            cron = MiniCron(
-                crontab,
-                lambda o=owner, c=config: self.jiandan_msg_task(o, c),
-                loop=self.robot.loop,
-                name=f"{owner} 自动煎蛋无聊图(概率{prob:.2%})",
-            )
-            self.add_cron(cron)
-
-    async def jiandan_msg_task(self, owner: str, config: dict) -> None:
-        """自动煎蛋无聊图"""
-        ran_int = random.random()
-        prob = config["probability"]
-        if ran_int > prob:
-            return self.printf(f"[煎蛋无聊图][{owner}]因概率未达而未发送({ran_int:.2}>{prob:.2})")
-        data_list = await self.get_jiandan()
-        if not data_list:
-            return self.printf(f"[煎蛋无聊图][{owner}]因无有效数据而未发送")
-        data = None
-        for item in data_list:
-            if item.get("id") not in config["hist"]:
-                data = item
-                break
-        if not data:
-            return self.printf(f"[煎蛋无聊图][{owner}]因无新评论而未发送")
-        config["hist"].append(data.get("id"))
-        config["hist"] = config["hist"][-10:]
-        self.save_config()
-        msg = data.get("content").strip()
-        msg = msg.replace("/mw600/", "/large/").replace("/thumb180/", "/large/")
-        msg = re.sub(
-            r"""<img\s+src="([^"]+)"\s*/?>""", r"[CQ:image,sub_type=0,file=\1]", msg
-        )
-        Utils.reply_back(self.robot, owner, msg)
-        if notify_maisaka := self.robot.func.get("notify_maisaka"):
-            notify_maisaka(msg, owner[1:])
-
-    @Utils.handler(
-        lambda self: self.au(2)
-        and self.at_or_private()
-        and self.match(r"^(来|发)(张|个)(无聊|屌|弔|吊|梗)图$")
-    )
-    def jiandan_msg(self):
-        """获取煎蛋无聊图"""
-        if not self.is_private():
-            Utils.set_emoji(self.robot, self.event.msg_id, 124)
-        config = self.conv_config["jiandan"]
-        data_list = self.robot.sync(self.get_jiandan())
-        if not data_list:
-            return self.reply("未获取到任何有效数据")
-        data = None
-        for item in data_list:
-            if item.get("id") not in config["hist"]:
-                data = item
-                break
-        if not data:
-            return self.reply("未获取到新的评论")
-        config["hist"].append(data.get("id"))
-        config["hist"] = config["hist"][-10:]
-        self.save_config()
-        msg = data.get("content").strip()
-        msg = re.sub(r"""<img\s+src="([^"]+)"\s*/?>""", r"[CQ:image,file=\1]", msg)
-        self.reply(msg)
 
     @Utils.listener(
         lambda self: self.au(2)
@@ -640,53 +552,9 @@ class Picture(Module):
         else:
             return "TraceMoe返回无结果~"
 
-    async def get_jiandan(self, page=0, page_num=3, raise_error=False) -> str | None:
-        """获取一张煎蛋无聊图"""
-        page_str = f"第{page}页" if page else "最新一页"
-        try:
-            url = f"https://jandan.net/api/comment/post/26402?order=desc?page={page}"
-            self.printf(f"获取煎蛋无聊图{page_str}数据")
-            resp = await httpx.AsyncClient().get(url, timeout=3)
-            resp.raise_for_status()
-            data = resp.json().get("data", {}).get("list")
-            current_page = resp.json().get("data", {}).get("current_page", 0)
-            if not data:
-                return []
-            if page != 0:
-                return data
-            if page == 0 and page_num > 0:
-                for i in range(1, page_num + 1):
-                    data += await self.get_jiandan(current_page - i)
-            data = sorted(
-                data,
-                key=lambda x: x["vote_positive"] - x["vote_negative"],
-                reverse=True,
-            )
-            result = []
-            for item in data:
-                if (
-                    item["vote_positive"] > item["vote_negative"]
-                    and item["vote_positive"] > 0
-                    and item["vote_negative"] < 30
-                    and item["vote_positive"] < 100
-                ):
-                    # 排除煎蛋本平台相关帖子，宁缺毋滥
-                    if "蛋" in item.get("content"):
-                        continue
-                    result.append(item)
-            self.printf(f"共请求到{len(result)}条有效的帖子")
-            return result
-        except httpx.ConnectTimeout as e:
-            self.errorf(f"获取煎蛋无聊图{page_str}时网络请求超时 {e}")
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            self.errorf(f"获取煎蛋无聊图{page_str}失败 {traceback.format_exc()}")
-            if raise_error:
-                raise e
-            return []
-
     def retry(
-        self, func: Callable[..., Any], name="", max_retries=3, delay=1, failed_ok=False
-    ) -> Any:
+        self, func: Callable[..., object], name="", max_retries=3, delay=1, failed_ok=False
+    ) -> object:
         """多次尝试执行"""
         for attempt in range(1, max_retries + 1):
             try:
