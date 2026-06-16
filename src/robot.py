@@ -340,7 +340,8 @@ class Concerto:
                 return
             for mod in list(self.modules.values()):
                 if getattr(mod, handle_attr):
-                    if self.create_module(mod, event, auth).handled:
+                    module = self.create_module(mod, event, auth)
+                    if module and module.handled:
                         break
         except Exception: # pylint: disable=broad-exception-caught
             if not self.config.is_error_reply:
@@ -355,11 +356,23 @@ class Concerto:
                     return
                 Utils.reply_event(self, event, error_msg)
 
-    def create_module(self, module_class: type[Module], event: Event, auth: int = 0) -> Module:
+    def create_module(
+        self,
+        module_class: type[Module],
+        event: Event,
+        auth: int = 0,
+    ) -> Module | None:
         """创建模块实例，并在初始化完成后执行框架级自动注册"""
-        module = module_class(event, auth)
-        module.auto_bootstrap()
-        return module
+        try:
+            module = module_class(event, auth)
+            module.auto_bootstrap()
+            return module
+        except Exception:  # pylint: disable=broad-exception-caught
+            module_name = getattr(module_class, "NAME", module_class.__name__)
+            module_id = getattr(module_class, "ID", module_class.__name__)
+            self.errorf(f"模块 [{module_id}] {module_name} 初始化失败，已禁用 ❌\n{traceback.format_exc()}")
+            self.modules.pop(module_id, None)
+            return None
 
     def message(self, event: Event, auth=3):
         """处理消息事件
@@ -474,13 +487,13 @@ class Concerto:
         return self.persist_mods.pop(module_id, None)
 
     def import_modules(self):
-        """从modules目录导入插件模块"""
+        """从modules目录导入模块"""
         os.makedirs("modules", exist_ok=True)
         for item_path in self.module_py_files("modules"):
             self.load_module_file(item_path)
 
     def module_py_files(self, folder_path: str = "modules") -> list[str]:
-        """返回排序后的Python插件文件列表"""
+        """返回排序后的Python模块文件列表"""
         py_files = []
         for root, _, files in os.walk(folder_path):
             py_files += [os.path.join(root, f) for f in files if f.endswith(".py")]
@@ -488,7 +501,7 @@ class Concerto:
         return py_files
 
     def module_info_from_file(self, item_path: str) -> list[dict[str, str]]:
-        """从模块文件中读取插件ID和名称而不导入它"""
+        """从模块文件中读取模块ID和名称而不导入它"""
         try:
             with open(item_path, encoding="utf-8") as file:
                 tree = ast.parse(file.read(), filename=item_path)
@@ -518,7 +531,7 @@ class Concerto:
         return modules
 
     def find_module_info(self, target: str) -> dict[str, str] | None:
-        """通过ID、文件名或路径查找插件元数据"""
+        """通过ID、文件名或路径查找模块元数据"""
         target = target.strip().strip("\"'")
         if not target:
             return None
@@ -561,18 +574,26 @@ class Concerto:
         return None
 
     def load_module_file(self, item_path: str, respect_disabled: bool = True) -> list[str]:
-        """从单个模块文件加载插件"""
+        """从单个文件加载模块"""
         item_path = os.path.abspath(item_path)
         item = os.path.basename(item_path)
         module_name = os.path.splitext(item)[0]
         missing = Utils.scan_missing_modules(item_path)
         if missing:
-            self.errorf(f"无法加载模块{Fore.YELLOW}{item}{Fore.RESET}，缺少依赖: {', '.join(missing)}")
+            self.errorf(f"缺少依赖: {', '.join(missing)} 无法加载模块{Fore.YELLOW}{item}{Fore.RESET} ❌")
             return []
         spec = importlib.util.spec_from_file_location(module_name, item_path)
+        if spec is None or spec.loader is None:
+            self.errorf(f"导入规格创建失败，无法加载模块{Fore.YELLOW}{item}{Fore.RESET} ❌")
+            return []
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
-        spec.loader.exec_module(module)
+        try:
+            spec.loader.exec_module(module)
+        except Exception:  # pylint: disable=broad-exception-caught
+            sys.modules.pop(spec.name, None)
+            self.errorf(f"模块文件 {Fore.YELLOW}{item}{Fore.RESET} 导入失败 ❌\n{traceback.format_exc()}")
+            return []
         is_module = False
         disabled = False
         loaded = []
@@ -594,24 +615,24 @@ class Concerto:
         return loaded
 
     def load_plugin(self, target: str) -> bool:
-        """通过ID加载插件"""
+        """通过ID加载模块"""
         info = self.find_module_info(target)
         if not info:
-            self.warnf(f"插件未找到: {target}")
+            self.warnf(f"模块未找到: {target}")
             return False
         if info["id"] in self.config.disabled:
-            self.warnf(f"插件 {Fore.MAGENTA}{info['id']}{Fore.YELLOW} 已被禁用，请先使用 enable {info['id']} 启用")
+            self.warnf(f"模块 {Fore.MAGENTA}{info['id']}{Fore.YELLOW} 已被禁用，请先使用 enable {info['id']} 启用")
             return False
         if info["id"] in self.modules:
-            self.warnf(f"插件 {Fore.MAGENTA}{info['id']}{Fore.YELLOW} 已加载过")
+            self.warnf(f"模块 {Fore.MAGENTA}{info['id']}{Fore.YELLOW} 已加载过")
             return False
         return bool(self.load_module_file(info["path"]))
 
     def unload_plugin(self, target: str) -> bool:
-        """通过ID卸载插件"""
+        """通过ID卸载模块"""
         module_id = self.resolve_loaded_module_id(target)
         if not module_id:
-            self.warnf(f"插件 {Fore.MAGENTA}{target}{Fore.YELLOW} 未加载❌")
+            self.warnf(f"模块 {Fore.MAGENTA}{target}{Fore.YELLOW} 未加载❌")
             return False
         module = self.modules.get(module_id)
         instance = self.get_persist_mod(module_id)
@@ -623,7 +644,7 @@ class Concerto:
                     if asyncio.iscoroutine(result):
                         asyncio.run_coroutine_threadsafe(result, self.loop).result(timeout=5)
                 except Exception:  # pylint: disable=broad-exception-caught
-                    self.errorf(f"卸载插件 {Fore.MAGENTA}{module_id}{Fore.RESET} 执行卸载方法时失败:\n{traceback.format_exc()}")
+                    self.errorf(f"卸载模块 {Fore.MAGENTA}{module_id}{Fore.RESET} 执行卸载方法时失败\n{traceback.format_exc()}")
         for func_name, func in list(self.func.items()):
             owner = self.func_owner.get(func_name)
             bound_owner = getattr(getattr(func, "__self__", None), "ID", None)
@@ -637,11 +658,11 @@ class Concerto:
         if module_name:
             sys.modules.pop(module_name, None)
         module_name = module.NAME if module else module_id
-        self.printf(f"插件 {Fore.MAGENTA}{module_name}{Fore.YELLOW} 已卸载")
+        self.printf(f"模块 {Fore.MAGENTA}{module_name}{Fore.YELLOW} 已卸载")
         return True
 
     def reload_plugin(self, target: str) -> bool:
-        """重载插件"""
+        """重载模块"""
         if target.strip().lower() == "all":
             module_ids = list(self.modules.keys())
             ok = True
@@ -650,29 +671,29 @@ class Concerto:
             return ok
         info = self.find_module_info(target)
         if not info:
-            self.warnf(f"插件未找到: {target}")
+            self.warnf(f"模块未找到: {target}")
             return False
         if info["id"] in self.modules:
             self.unload_plugin(info["id"])
         return self.load_plugin(info["id"])
 
     def disable_plugin(self, target: str) -> bool:
-        """禁用插件并在需要时卸载它"""
+        """禁用模块并在需要时卸载它"""
         info = self.find_module_info(target)
         module_id = info["id"] if info else self.resolve_loaded_module_id(target)
         if not module_id:
-            self.warnf(f"插件未找到: {target}")
+            self.warnf(f"模块未找到: {target}")
             return False
         if module_id not in self.config.disabled:
             self.config.disabled.append(module_id)
             self.config.save("disabled", self.config.disabled)
         if module_id in self.modules:
             self.unload_plugin(module_id)
-        self.printf(f"插件 {Fore.MAGENTA}{module_id}{Fore.YELLOW} 已禁用❌")
+        self.printf(f"模块 {Fore.MAGENTA}{module_id}{Fore.YELLOW} 已禁用❌")
         return True
 
     def enable_plugin(self, target: str) -> bool:
-        """启用插件并在找到时加载它"""
+        """启用模块并在找到时加载它"""
         info = self.find_module_info(target)
         module_id = info["id"] if info else target.strip()
         for disabled_id in list(self.config.disabled):
@@ -683,15 +704,15 @@ class Concerto:
                 break
         info = self.find_module_info(module_id)
         if not info:
-            self.printf(f"插件 {Fore.MAGENTA}{module_id}{Fore.RESET} 已启用，但未找到有效内部模块")
+            self.warnf(f"模块 {Fore.MAGENTA}{module_id}{Fore.RESET} 已加载，但未找到有效内部模块 ⚠️")
             return False
-        self.printf(f"插件 {Fore.MAGENTA}{info['id']}{Fore.RESET} 已启用✔️")
+        self.printf(f"模块 {Fore.MAGENTA}{info['id']}{Fore.RESET} 已启用✔️")
         if info["id"] not in self.modules:
             self.load_plugin(info["id"])
         return True
 
     def resolve_loaded_module_id(self, target: str) -> str | None:
-        """解析已加载的插件ID，忽略大小写"""
+        """解析已加载的模块ID，忽略大小写"""
         target = target.strip()
         if target in self.modules:
             return target

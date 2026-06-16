@@ -348,7 +348,7 @@ class Jiandan(Module):
         except httpx.ConnectTimeout as e:
             self.errorf(f"获取煎蛋无聊图[{page_str}]时网络请求超时 {e}")
         except Exception as e:  # pylint: disable=broad-exception-caught
-            self.errorf(f"获取煎蛋无聊图[{page_str}]失败 {traceback.format_exc()}")
+            self.errorf(f"获取煎蛋无聊图[{page_str}]失败\n{traceback.format_exc()}")
             if raise_error:
                 raise e
             return []

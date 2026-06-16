@@ -714,7 +714,7 @@ class MaimToConcertoCodec:
                     self.owner.warnf(f"收到未知命令: {command}")
                     return
         except Exception: # pylint: disable=broad-exception-caught
-            self.owner.errorf(f"执行麦麦命令 {command} 失败:\n{traceback.format_exc()}")
+            self.owner.errorf(f"执行麦麦命令 {command} 失败\n{traceback.format_exc()}")
             return
 
         if info is None:
@@ -980,7 +980,7 @@ class MaiSaka(Module):
         try:
             await self.codec_in.dispatch(message, metadata)
         except Exception: # pylint: disable=broad-exception-caught
-            self.errorf(f"处理来自麦麦的消息失败:\n{traceback.format_exc()}")
+            self.errorf(f"处理来自麦麦的消息失败\n{traceback.format_exc()}")
 
     async def construct_message(self, event: Event | None = None, *, content_override: str | None = None) -> APIMessageBase | None:
         """基于当前或指定事件构造麦麦 API 消息"""

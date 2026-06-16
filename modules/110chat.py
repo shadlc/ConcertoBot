@@ -84,7 +84,7 @@ class Chat(Module):
 
     def setup_crons(self) -> None:
         """初始化定时任务"""
-        # 词云与发言排行统计定时任务
+        # 聊天统计定时任务
         for owner, config in self.config.items():
             if not re.match(r"[ug]\d+", owner):
                 continue
@@ -96,7 +96,7 @@ class Chat(Module):
                 crontab,
                 lambda o=owner,c=record: self.scheduled_task(o, c),
                 loop=self.robot.loop,
-                name=f"{owner} 词云与发言排行统计",
+                name=f"{owner} 聊天统计定时任务",
             )
             self.add_cron(cron)
 
@@ -116,7 +116,7 @@ class Chat(Module):
                 msg += f"[CQ:image,file={url}]"
             Utils.reply_back(self.robot, owner_id, msg)
         except Exception: # pylint: disable=broad-exception-caught
-            self.errorf(f"任务执行失败 {traceback.format_exc()}")
+            self.errorf(f"任务执行失败\n{traceback.format_exc()}")
 
     @Utils.listener(lambda self: self.at_or_private() and self.au(2) and self.match(r"词云"))
     def wordcloud(self):
@@ -749,8 +749,7 @@ class Chat(Module):
         font_path = self.get_data_path(self.config["font"])
         if not os.path.exists(font_path):
             font_path = ""
-            candidates = ["SimHei", "SimSun", "Microsoft YaHei", "STHeiti",
-                          "Songti", "NotoSansCJK", "PingFang"]
+            candidates = ["SimHei", "SimSun", "Microsoft YaHei", "STHeiti", "Songti", "NotoSansCJK", "PingFang"]
             for font in sorted(fm.findSystemFonts()):
                 for name in candidates:
                     if name.lower() in font.lower():
@@ -837,10 +836,13 @@ class Chat(Module):
         font = fm.FontProperties(fname=self.get_font())
         fm.fontManager.addfont(self.get_font())
         font_family = [font.get_name()]
-        if emoji_font_path := self.get_data_path(self.config["emoji-font"]):
+        emoji_font_path = self.get_data_path(self.config["emoji-font"])
+        if os.path.exists(emoji_font_path):
             fm.fontManager.addfont(emoji_font_path)
             emoji_font = fm.FontProperties(fname=emoji_font_path)
             font_family.append(emoji_font.get_name())
+        else:
+            self.warnf("未找到可用的Emoji字体，可能导致显示不完整!")
         plt.rcParams["font.family"] = font_family
         plt.rcParams['font.size'] = 18
         plt.figure(figsize=(19.2, 10.8), dpi=100)

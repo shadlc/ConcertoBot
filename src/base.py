@@ -628,11 +628,11 @@ class Module:
         self.config_file = os.path.join(self.robot.config.data_path, config_name)
         try:
             self.config = Utils.import_json(self.config_file)
-        except Exception:  # pylint: disable=broad-exception-caught
+            if not isinstance(self.config, dict):
+                raise TypeError(f"配置文件根节点必须是对象，实际为 {type(self.config).__name__}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
             self.config = {}
-            self.errorf(
-                f"配置文件 {self.config_file} 解析发生错误!\n{traceback.format_exc()}"
-            )
+            raise TypeError(f"配置文件 {self.config_file} 解析发生错误!") from e
         global_default = self.GLOBAL_CONFIG or {}
         self.config = Utils.merge(global_default, self.config)
         if self.CONV_CONFIG is None:
@@ -651,17 +651,15 @@ class Module:
             self.config[owner_id] = config_content
         elif config_content is not None:
             self.config = config_content
-        if self.config == Utils.import_json(self.config_file):
-            return
         try:
+            if self.config == Utils.import_json(self.config_file):
+                return
             Utils.save_json(self.config_file, self.config)
             persist = self.get_persist()
             if persist is not None and persist is not self:
                 persist.config = self.config.copy()
-        except Exception:  # pylint: disable=broad-exception-caught
-            self.errorf(
-                f"配置文件 {self.config_file} 保存失败!\n{traceback.format_exc()}"
-            )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            raise TypeError(f"配置文件 {self.config_file} 保存失败!") from e
 
     def get_data_path(self, *paths: str) -> str:
         """获取配置文件夹"""

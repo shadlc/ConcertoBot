@@ -549,7 +549,7 @@ class Bilibili(Module):
                     screenshot = await page.screenshot(clip=clip, full_page=True)
                     return base64.b64encode(screenshot).decode("utf-8")
         except Exception:  # pylint: disable=broad-exception-caught
-            self.errorf(f"截取动态【{url}】时发生错误：{traceback.format_exc()}")
+            self.errorf(f"截取动态【{url}】时发生错误\n{traceback.format_exc()}")
         finally:
             await page.close()
             await context.close()
@@ -598,7 +598,7 @@ class Bilibili(Module):
                     screenshot = await page.screenshot(clip=clip, full_page=True)
                     return base64.b64encode(screenshot).decode("utf-8")
         except Exception:  # pylint: disable=broad-exception-caught
-            self.errorf(f"截取动态【{url}】时发生错误：{traceback.format_exc()}")
+            self.errorf(f"截取动态【{url}】时发生错误\n{traceback.format_exc()}")
         finally:
             await context.close()
 
@@ -829,7 +829,7 @@ class Bilibili(Module):
         except ResponseCodeException as e:
             self.warnf(f"获取{name}({uid})的动态返回码异常 {e.code} {e.msg}")
         except Exception:  # pylint: disable=broad-exception-caught
-            self.warnf(f"用户{name}({uid})的动态获取失败: {traceback.format_exc()}")
+            self.warnf(f"用户{name}({uid})的动态获取失败\n{traceback.format_exc()}")
         return []
 
     async def get_new_dynamics(self, uid: str) -> list:
@@ -885,7 +885,7 @@ class Bilibili(Module):
         except ResponseCodeException as e:
             self.warnf(f"获取{name}({uid})的用户信息返回码异常 {e.code} {e.msg}")
         except Exception:  # pylint: disable=broad-exception-caught
-            self.warnf(f"查询{name}({uid})的用户信息请求失败: {traceback.format_exc()}")
+            self.warnf(f"查询{name}({uid})的用户信息请求失败\n{traceback.format_exc()}")
 
     def get_local_uid(self, user_match: str) -> int | None:
         """获取用户UID"""
@@ -925,7 +925,7 @@ class Bilibili(Module):
                     }
             return
         except Exception:  # pylint: disable=broad-exception-caught
-            self.warnf(f"查询用户信息请求失败: {traceback.format_exc()}")
+            self.warnf(f"查询用户信息请求失败\n{traceback.format_exc()}")
             return
 
     async def get_info(self, user_match: str) -> dict | None:

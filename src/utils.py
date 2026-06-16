@@ -1039,7 +1039,7 @@ def get_img_url(robot: Concerto, url: str) -> str:
             url = match.group(1)
         return url
     except Exception:  # pylint: disable=broad-exception-caught
-        robot.errorf(f"获取腾讯图床链接失败 {traceback.format_exc()}")
+        robot.errorf(f"获取腾讯图床链接失败\n{traceback.format_exc()}")
         return url
 
 def get_handler_amount(robot: Concerto):
@@ -1153,10 +1153,7 @@ def _register_handler(condition, handled=True):
                 if asyncio.iscoroutine(result):
                     return run_coroutine_sync(result)
                 if handled:
-                    self.printf(
-                        f"{Fore.YELLOW}[{method_name}]{Fore.RESET}方法已处理该事件",
-                        level="DEBUG",
-                    )
+                    self.printf(f"{Fore.YELLOW}[{method_name}]{Fore.RESET}方法已处理该事件", level="DEBUG")
                 return result
             except Exception:  # pylint: disable=broad-exception-caught
                 self.errorf(

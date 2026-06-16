@@ -49,11 +49,11 @@ class ExecuteCmd(object):
             "read": "读取转发消息内容",
             "recall": "撤回消息",
             "restart": "重启程序",
-            "reload": "重载插件",
-            "load": "加载插件",
-            "unload": "卸载插件",
-            "enable": "启用插件",
-            "disable": "禁用插件",
+            "reload": "重载模块",
+            "load": "加载模块",
+            "unload": "卸载模块",
+            "enable": "启用模块",
+            "disable": "禁用模块",
             "request": "手动调用API",
             "reply": "回复上一条消息",
             "qreply": "快捷回复上一条消息(不支持快捷撤回)",
@@ -597,39 +597,39 @@ class ExecuteCmd(object):
             self.printf(f"请使用 {Fore.CYAN}restart{Fore.RESET} 重启本程序")
 
     def reload(self, argv=""):
-        """重载插件"""
+        """重载模块"""
         if argv.strip():
             self.robot.reload_plugin(argv.strip())
         else:
-            self.printf(f"请使用 {Fore.CYAN}reload 插件ID/all{Fore.RESET} 重载插件")
+            self.printf(f"请使用 {Fore.CYAN}reload 模块ID/all{Fore.RESET} 重载模块")
 
     def load(self, argv=""):
-        """加载插件"""
+        """加载模块"""
         if argv.strip():
             self.robot.load_plugin(argv.strip())
         else:
-            self.printf(f"请使用 {Fore.CYAN}load 插件ID/文件名{Fore.RESET} 加载插件")
+            self.printf(f"请使用 {Fore.CYAN}load 模块ID/文件名{Fore.RESET} 加载模块")
 
     def unload(self, argv=""):
-        """卸载插件"""
+        """卸载模块"""
         if argv.strip():
             self.robot.unload_plugin(argv.strip())
         else:
-            self.printf(f"请使用 {Fore.CYAN}unload 插件ID{Fore.RESET} 卸载插件")
+            self.printf(f"请使用 {Fore.CYAN}unload 模块ID{Fore.RESET} 卸载模块")
 
     def disable(self, argv=""):
-        """禁用插件"""
+        """禁用模块"""
         if argv.strip():
             self.robot.disable_plugin(argv.strip())
         else:
-            self.printf(f"请使用 {Fore.CYAN}disable 插件ID{Fore.RESET} 禁用插件")
+            self.printf(f"请使用 {Fore.CYAN}disable 模块ID{Fore.RESET} 禁用模块")
 
     def enable(self, argv=""):
-        """启用插件"""
+        """启用模块"""
         if argv.strip():
             self.robot.enable_plugin(argv.strip())
         else:
-            self.printf(f"请使用 {Fore.CYAN}enable 插件ID{Fore.RESET} 启用插件")
+            self.printf(f"请使用 {Fore.CYAN}enable 模块ID{Fore.RESET} 启用模块")
 
     def reply(self, argv=""):
         """回复上一条消息"""
