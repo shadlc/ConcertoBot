@@ -713,17 +713,11 @@ class Module:
         if self.robot.config.is_always_reply:
             reply = True
         result = Utils.reply_event(self.robot, self.event, msg, reply=reply, force=force)
-        if not Utils.status_ok(result):
-            self.errorf(result.get("message"))
         return result
 
     def reply_forward(self, nodes: list, source=None, summary=None):
         """快捷回复转发消息"""
-        result = Utils.send_forward_msg(
-            self.robot, nodes, self.event.group_id, self.event.user_id, source, summary
-        )
-        if not Utils.status_ok(result):
-            self.errorf(result.get("message"))
+        result = Utils.send_forward_msg(self.robot, nodes, self.event.group_id, self.event.user_id, source, summary)
         return result
 
     def get_reply(

@@ -650,7 +650,6 @@ class MaimToConcertoCodec:
         if not rendered:
             return
 
-        info = None
         msg = _safe_str(rendered.get("message"))
         if not msg:
             self.owner.warnf(f"忽略空的消息: {rendered}")
@@ -660,15 +659,13 @@ class MaimToConcertoCodec:
             return
         target_id = target.target_id
         if len(msg) > 200 and "CQ:" not in msg:
-            source = msg.split("\n")[0]
+            source = msg.split("\n", 1)[0]
             if target.msg_type == "group":
-                info = Utils.send_forward_msg(self.owner.robot, self.owner.node(msg), group_id=target_id, source=source)
+                Utils.send_forward_msg(self.owner.robot, self.owner.node(msg), group_id=target_id, source=source)
             else:
-                info = Utils.send_forward_msg(self.owner.robot, self.owner.node(msg), user_id=target_id, source=source)
+                Utils.send_forward_msg(self.owner.robot, self.owner.node(msg), user_id=target_id, source=source)
         else:
-            info = Utils.reply_id(self.owner.robot, target.msg_type, target_id, msg)
-        if not Utils.status_ok(info):
-            self.owner.warnf(f"发送麦麦回复失败: {info}")
+            Utils.reply_id(self.owner.robot, target.msg_type, target_id, msg)
 
     async def _handle_command_segment(self, segment: Seg, message: APIMessageBase) -> None:
         """执行麦麦侧下发的群管理和消息操作命令"""

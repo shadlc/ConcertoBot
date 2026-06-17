@@ -672,9 +672,7 @@ class Bilibili(Module):
                 for owner_id in notice_list:
                     pattern = self.config[owner_id]["sub"][uid].get("keyword")
                     if pattern == "" or re.search(pattern, msg):
-                        anti_pattern = self.config[owner_id]["sub"][uid].get(
-                            "anti_keyword"
-                        )
+                        anti_pattern = self.config[owner_id]["sub"][uid].get("anti_keyword")
                         if anti_pattern and re.search(anti_pattern, msg):
                             continue
                         self.reply_forward_back(owner_id, nodes, title, dyn["author"])
@@ -1073,11 +1071,7 @@ class Bilibili(Module):
         """回复消息"""
         if owner_id.startswith("g"):
             group_id = int(owner_id[1:])
-            return Utils.send_forward_msg(
-                self.robot, nodes, group_id=group_id, source=source, summary=summary
-            )
+            return Utils.send_forward_msg(self.robot, nodes, group_id=group_id, source=source, summary=summary)
         else:
             user_id = int(owner_id[1:])
-            return Utils.send_forward_msg(
-                self.robot, nodes, user_id=user_id, source=source, summary=summary
-            )
+            return Utils.send_forward_msg(self.robot, nodes, user_id=user_id, source=source, summary=summary)
