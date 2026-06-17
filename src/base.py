@@ -13,7 +13,6 @@ import re
 import socket
 import threading
 import time
-import traceback
 from typing import TYPE_CHECKING, Callable, Coroutine, Dict, Optional, Set, Union
 
 from colorama import Fore

@@ -848,20 +848,18 @@ class ExecuteCmd(object):
             self.robot.config.save("max_image_width", self.robot.config.max_image_width)
             self.printf(f"图片字符画最大宽度已设置为{self.robot.config.max_image_width}")
         elif re.search(r"image\s+size", argv):
+            min_image_width = self.robot.config.min_image_width
+            max_image_width = self.robot.config.max_image_width
             if re.search(r"(\d+)[^\d](\d+)", argv):
                 size = re.search(r"(\d+)[^\d](\d+)", argv).groups()
-                self.robot.config.min_image_width = sorted(
-                    [10, int(size[0]), int(size[1]), 1000]
-                )[1]
-                self.robot.config.max_image_width = sorted(
-                    [10, int(size[0]), int(size[1]), 1000]
-                )[2]
+                min_image_width = sorted([10, int(size[0]), int(size[1]), 1000])[1]
+                max_image_width = sorted([10, int(size[0]), int(size[1]), 1000])[2]
             elif re.search(r"\s+(\d+)", argv):
                 size = int(re.search(r"\s(\d+)", argv).group(1))
-                self.robot.config.min_image_width = sorted([10, size, 1000])[1]
-                self.robot.config.max_image_width = self.robot.config.min_image_width
-            self.robot.config.save("min_image_width", self.robot.config.min_image_width)
-            self.robot.config.save("max_image_width", self.robot.config.max_image_width)
+                min_image_width = sorted([10, size, 1000])[1]
+                max_image_width = min_image_width
+            self.robot.config.save("min_image_width", min_image_width)
+            self.robot.config.save("max_image_width", max_image_width)
             self.printf(f"图片字符画大小已设置为({self.robot.config.min_image_width}:{self.robot.config.max_image_width})")
         elif re.search(r"image", argv):
             if re.search(r"(true|True)", argv):

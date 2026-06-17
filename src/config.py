@@ -166,14 +166,6 @@ class Config:
             key: self._normalize_value(key, config.get(key, deepcopy(rule.default)), rule)
             for key, rule in self.SCHEMA.items()
         }
-        if normalized["min_image_width"] > normalized["max_image_width"]:
-            logger.warning(
-                "%s 中的图片宽度范围无效: min_image_width=%s, max_image_width=%s，将自动对齐",
-                self.config_file,
-                normalized["min_image_width"],
-                normalized["max_image_width"],
-            )
-            normalized["min_image_width"] = normalized["max_image_width"]
         return normalized
 
     def _normalize_value(self, key: str, value: Any, rule: ConfigRule) -> Any:

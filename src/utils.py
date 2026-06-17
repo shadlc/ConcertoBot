@@ -144,7 +144,7 @@ def format_to_log(text: str) -> str:
     :param text: 输入文本
     """
     text = re.sub(r"\x1B\[[0-?]*[ -/]*[@-~]", "", text)
-    text = re.sub(r"((\s*█)+|(\s*▀)+)", "[图片]", text)
+    text = re.sub(r"((\s*█)+|(\s*▀)+|(\s*[\.,:;+\*\?\#\%\@]{10,})+|(\s*[\u2800-\u28FF])+)", " [字符画图片]", text)
     return text.strip()
 
 def target_image_size(img: Image.Image, mode: str, min_width: int, max_width: int):
