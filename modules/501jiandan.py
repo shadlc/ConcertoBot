@@ -39,7 +39,7 @@ class Jiandan(Module):
         "cron": "",
         "probability": 1,
         "batch_limit": 2,
-        "llm_batch_limit": 5,
+        "llm_batch_limit": 3,
         "llm_model": None,
         "llm_prompt": None,
     }
