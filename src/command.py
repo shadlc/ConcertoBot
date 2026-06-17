@@ -9,6 +9,7 @@ import traceback
 
 from typing import TYPE_CHECKING
 from colorama import Fore
+import httpx
 
 from src.utils import Utils
 from src.api import get, post
@@ -176,11 +177,14 @@ class ExecuteCmd(object):
 
     def exit(self, argv=""): # pylint: disable=unused-argument
         """退出机器人"""
-        result = Utils.bot_exit(self.robot)
-        if Utils.status_ok(result):
+        try:
+            result = Utils.bot_exit(self.robot)
+            if Utils.status_ok(result):
+                self.printf("账号已退出")
+            else:
+                self.warnf("账号退出失败")
+        except httpx.RemoteProtocolError:
             self.printf("账号已退出")
-        else:
-            self.warnf("账号退出失败")
 
     def get(self, argv=""): # pylint: disable=unused-argument
         """获取用户或群的信息"""
@@ -659,8 +663,6 @@ class ExecuteCmd(object):
                         + target_str
                     )
                 self.printf(f"回复 -> {target_str}: {Fore.MAGENTA}{reply_msg}{Fore.RESET}")
-            else:
-                self.warnf(f"回复消息出错！{result.get('message')}")
         else:
             self.printf(f"请使用 {Fore.CYAN}reply 消息内容{Fore.RESET} 回复上一段信息")
 
