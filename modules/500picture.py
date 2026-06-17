@@ -6,7 +6,7 @@ import json
 import re
 import time
 import traceback
-from typing import Callable, Tuple
+from typing import Any, Callable, Tuple
 from urllib.parse import quote
 
 import httpx
@@ -24,11 +24,11 @@ class Picture(Module):
     HELP = {
         2: [
             "图片 + 打分 / 回复图片发送打分 | 对图片色气度进行打分",
-            "saucenao + 图片 / 回复图片发送saucenao | 使用SauceNAO搜索图片",
             "来张色图 | 调用Lolicon API获取图片",
             "图片 + 清晰术 / 回复图片发送清晰术 | 调用Real-CUGAN增强图片清晰度",
             "图片 + 搜图 / 回复图片发送搜图 | 调用谷歌搜图搜索图片",
-            "图片 + 搜番 / 回复图片发送搜番 | 调用TraceMoe搜索番剧",
+            "图片 + 搜番 / 回复图片发送搜番 | 调用TraceMoe识别作品来源",
+            "图片 + 搜人 / 回复图片发送搜人 | 调用AnimeTrace识别角色",
         ],
     }
     GLOBAL_CONFIG = {
@@ -141,12 +141,48 @@ class Picture(Module):
         lambda self: self.au(2)
         and self.at_or_private()
         and self.conv_config.get("animate_search")
-        and self.match(
-            r"^(\[.*\])?\s*?(搜索|搜|查询|查|找)(番|剧|番剧|动画|动漫)\s*?(\[.*\])?$"
-        )
+        and self.match(r"^(\[.*\])?\s*?(搜索|搜|查询|查|找|识)(角色|人物|人)\s*?(\[.*\])?$")
+    )
+    def search_animate_person(self):
+        """搜番"""
+        url = ""
+        if match := self.match(r"\[CQ:image,.*url=([^,\]]+?),.*\]"):
+            url = match.group(1)
+        elif msg := self.get_reply():
+            if match := re.search(r"\[CQ:image,.*url=([^,\]]+?),.*\]", msg):
+                url = match.group(1)
+        if url == "":
+            return self.reply("请附带搜索图片或回复带图片的消息!")
+        try:
+            if not self.is_private():
+                Utils.set_emoji(self.robot, self.event.msg_id, 124)
+            self.printf(f"正在使用AnimeTrace搜索图片[{url}]...")
+            result = self.retry(lambda: self.search_animate_animetrace(url))
+            if isinstance(result, str):            
+                return self.reply(result, reply=True)
+            nodes = []
+            for character_url, candidates in result:
+                text_lines = [f"作品《{candidates[0][0]}》\n人物: {candidates[0][1]}"]
+                if character_url:
+                    text_lines.append(f"[CQ:image,file={character_url}]")
+                if len(candidates) > 1:
+                    text_lines.append("其他相似结果:")
+                    for item in candidates[1:]:
+                        text_lines.append(f"作品《{item[0]}》人物{item[1]}")
+                nodes.append(self.node("\n".join(text_lines)))
+            return self.reply_forward(nodes, source="AnimeTrace识别结果")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            self.errorf(traceback.format_exc())
+            self.reply(f"AnimeTrace调用失败! {e}", reply=True)
+
+    @Utils.handler(
+        lambda self: self.au(2)
+        and self.at_or_private()
+        and self.conv_config.get("animate_search")
+        and self.match(r"^(\[.*\])?\s*?(搜索|搜|查询|查|找|识)(番|剧|番剧|动画|动漫)\s*?(\[.*\])?$")
     )
     def search_animate(self):
-        """搜番"""
+        """显式使用 TraceMoe 搜番"""
         url = ""
         if match := self.match(r"\[CQ:image,.*url=([^,\]]+?),.*\]"):
             url = match.group(1)
@@ -547,6 +583,96 @@ class Picture(Module):
             return msg
         else:
             return "TraceMoe返回无结果~"
+
+    def crop_animetrace_box(
+        self, image_bytes: bytes, box: list[float] | tuple[float, ...]
+    ) -> str | None:
+        """按 AnimeTrace 的 box 裁剪人物图并返回 CQ base64 图片"""
+        if not isinstance(box, (list, tuple)) or len(box) < 4:
+            return None
+        try:
+            x1, y1, x2, y2 = (float(box[i]) for i in range(4))
+        except (TypeError, ValueError):
+            return None
+        try:
+            with Image.open(io.BytesIO(image_bytes)) as source:
+                source = source.convert("RGB")
+                width, height = source.size
+                left = max(0, min(width - 1, int(width * x1)))
+                top = max(0, min(height - 1, int(height * y1)))
+                right = max(left + 1, min(width, int(width * x2)))
+                bottom = max(top + 1, min(height, int(height * y2)))
+                if right <= left or bottom <= top:
+                    return None
+                crop = source.crop((left, top, right, bottom))
+                buf = io.BytesIO()
+                crop.save(buf, format="PNG")
+                return f"base64://{base64.b64encode(buf.getvalue()).decode('utf-8')}"
+        except Exception:  # pylint: disable=broad-exception-caught
+            return None
+
+    def search_animate_animetrace(
+        self, image_url: str, proxies: str = None
+    ) -> str | tuple[str, list[dict[str, Any]]]:
+        """
+        AnimeTrace 搜番
+        :param image_url: 图片URL
+        :param proxies: 代理配置
+        :return: 搜索结果
+        """
+        img_resp = httpx.get(image_url, timeout=15, proxy=proxies)
+        img_resp.raise_for_status()
+        content_type = img_resp.headers.get("content-type", "image/jpeg").split(";")[0]
+        ext = content_type.split("/")[-1] if "/" in content_type else "jpg"
+        files = {
+            "file": (
+                f"animetrace.{ext or 'jpg'}",
+                img_resp.content,
+                content_type or "image/jpeg",
+            )
+        }
+        data = {
+            "model": "animetrace_high_beta",
+            "is_multi": "true",
+            "ai_detect": "false",
+        }
+        resp = httpx.post(
+            "https://api.animetrace.com/v1/search",
+            data=data,
+            files=files,
+            timeout=30,
+            proxy=proxies,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        self.printf(
+            f"AnimeTrace识别结果:\n{json.dumps(payload, ensure_ascii=False)}",
+            level="DEBUG",
+        )
+        if payload.get("code") != 0:
+            return (
+                payload.get("zh_message")
+                or payload.get("message")
+                or payload.get("msg")
+                or "AnimeTrace返回异常~"
+            )
+        results = payload.get("data") or []
+        if not results:
+            return "AnimeTrace返回无结果~"
+        characters = []
+        for _, item in enumerate(results, start=1):
+            candidates = []
+            for char in item.get("character", [])[:4]:
+                work = str(char.get("work") or "").strip()
+                name = str(char.get("character") or "").strip()
+                candidate = [work, name]
+                if candidate and candidate not in candidates:
+                    candidates.append(candidate)
+            crop_url = self.crop_animetrace_box(img_resp.content, item.get("box"))
+            characters.append([crop_url, candidates])
+        if not characters:
+            return "AnimeTrace未识别到明确角色来源~"
+        return characters
 
     def retry(
         self, func: Callable[..., object], name="", max_retries=3, delay=1, failed_ok=False
