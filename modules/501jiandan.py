@@ -1,4 +1,4 @@
-"""煎蛋无聊图模块"""
+"""煎蛋网模块"""
 
 import asyncio
 import json
@@ -14,13 +14,13 @@ from src.utils import Utils
 
 
 class Jiandan(Module):
-    """煎蛋无聊图模块"""
+    """煎蛋网模块"""
 
     ID = "Jiandan"
-    NAME = "煎蛋无聊图模块"
+    NAME = "煎蛋网模块"
     HELP = {
         2: [
-            "来张梗图 | 调用煎蛋无聊图获取图片",
+            "来张梗图 | 调用煎蛋网获取图片",
         ],
     }
     GLOBAL_CONFIG = {
@@ -68,7 +68,7 @@ class Jiandan(Module):
                 crontab,
                 lambda o=owner, c=config: self.jiandan_msg_task(o, c),
                 loop=self.robot.loop,
-                name=f"{owner} 自动煎蛋无聊图(概率{prob:.2%})",
+                name=f"{owner} 自动煎蛋网(概率{prob:.2%})",
             )
             self.add_cron(cron)
 
@@ -136,10 +136,10 @@ class Jiandan(Module):
             return ""
         if owner_id:
             Utils.reply_back(self.robot, owner_id, msg)
+            if notify_maisaka := self.robot.func.get("notify_maisaka"):
+                notify_maisaka(msg, owner_id[1:])
         else:
             self.reply(msg)
-        if notify_maisaka := self.robot.func.get("notify_maisaka"):
-            notify_maisaka(msg, owner_id[1:])
         return msg
 
     def parse_jiandan_llm_result(self, text: str) -> tuple[bool, str]:
@@ -180,7 +180,7 @@ class Jiandan(Module):
             message_content.append({"type": "image_url", "image_url": {"url": image_url}})
         return [{"role": "user", "content": message_content}]
 
-    async def jiandan_llm_accept(self, item: dict, config: dict[str, Any]) -> bool:
+    async def jiandan_llm_accept(self, item: dict, config: dict[str, Any]) -> bool | None:
         """使用 LLM 对初筛结果进行二次筛选"""
         prompt = self.get_jiandan_config_value(config, "llm_prompt", "")
         if not prompt:
@@ -188,17 +188,18 @@ class Jiandan(Module):
         model_name = self.get_jiandan_config_value(config, "llm_model")
         messages = self.build_jiandan_llm_messages(item, prompt)
         result = ""
-        if async_llm_chat := self.robot.func.get("async_llm_chat"):
-            result = await async_llm_chat(
-                messages, model_name=model_name, system_prompt=""
-            )
-        elif llm_chat := self.robot.func.get("llm_chat"):
-            result = await asyncio.to_thread(
-                llm_chat, messages, model_name, False, ""
-            )
+        try:
+            if async_llm_chat := self.robot.func.get("async_llm_chat"):
+                result = await async_llm_chat(messages, model_name=model_name)
+        except Exception as err:  # pylint: disable=broad-exception-caught
+            self.warnf(f"[AI筛选] 模型 {model_name or '默认模型'} 调用报错: {err}")
+            return None
+        if not (result or "").strip():
+            self.warnf(f"[AI筛选] 模型 {model_name or '默认模型'} 无有效返回")
+            return None
         passed, reason = self.parse_jiandan_llm_result(result)
         self.printf(
-            f"[LLM审计] 帖子 {item.get('id')} => {'通过' if passed else '拒绝'}"
+            f"[AI筛选] 帖子 {item.get('id')} => {'通过' if passed else '拒绝'}"
             + (f" ({reason})" if reason else "")
         )
         return passed
@@ -209,16 +210,63 @@ class Jiandan(Module):
         """通过 LLM 从候选列表中筛选可发送帖子"""
         if not items or limit <= 0:
             return []
-        if not (
-            self.robot.func.get("async_llm_chat") or self.robot.func.get("llm_chat")
-        ):
+        if not self.robot.func.get("async_llm_chat"):
             return []
         selected = []
         for item in items:
-            if await self.jiandan_llm_accept(item, config):
+            accepted = await self.jiandan_llm_accept(item, config)
+            if accepted is None:
+                return []
+            if accepted:
                 selected.append(item)
                 if len(selected) >= limit:
                     break
+        return selected
+
+    def filter_jiandan_items_locally(self, items: list[dict], batch_limit: int) -> list[dict]:
+        """按本地规则筛选并排序煎蛋帖子"""
+        blocked_keywords = ("公众号", "推广", "广告", "扫码", "下载", "引流", "淘宝", "拼多多", "京东", "app")
+        reviewed: list[tuple[int, dict[str, Any]]] = []
+        for item in items:
+            if len(reviewed) >= batch_limit:
+                break
+            content = item.get("content", "")
+            text = re.sub(r"""<img\b[^>]*\bsrc="([^"]+)"[^>]*>""", " ", content)
+            text = re.sub(r"<br\s*/?>", "\n", text)
+            text = re.sub(r"</p\s*>", "\n", text)
+            text = re.sub(r"<[^>]+>", "", text)
+            text = re.sub(r"\s+", " ", text).strip()
+            image_urls = self.extract_jiandan_image_urls(content)
+            vote_positive = int(item.get("vote_positive", 0) or 0)
+            vote_negative = int(item.get("vote_negative", 0) or 0)
+            vote_delta = vote_positive - vote_negative
+            if not text and not image_urls:
+                self.printf(f"[本地筛选] 帖子 {item.get('id')} => 拒绝 (空内容)")
+                continue
+            if any(keyword in text.lower() for keyword in blocked_keywords):
+                self.printf(f"[本地筛选] 帖子 {item.get('id')} => 拒绝 (疑似广告)")
+                continue
+            if vote_positive <= vote_negative:
+                self.printf(f"[本地筛选] 帖子 {item.get('id')} => 拒绝 (评分偏低)")
+                continue
+            if vote_negative >= 20:
+                self.printf(f"[本地筛选] 帖子 {item.get('id')} => 拒绝 (负反馈过高)")
+                continue
+            if not image_urls and len(text) < 8:
+                self.printf(f"[本地筛选] 帖子 {item.get('id')} => 拒绝 (信息量不足)")
+                continue
+            score = vote_delta
+            if image_urls:
+                score += min(len(image_urls), 4) * 3
+            if 8 <= len(text) <= 80:
+                score += 5
+            if re.search(r"[。！？!?~～]", text):
+                score += 2
+            self.printf(f"[本地筛选] 帖子 {item.get('id')} => 通过 ({score}分)")
+            reviewed.append((score, item))
+        self.printf(f"[本地筛选] 精选 {len(reviewed)} 条帖子")
+        reviewed.sort(key=lambda pair: pair[0], reverse=True)
+        selected = [item for _, item in reviewed]
         return selected
 
     async def pick_jiandan_items(self, config: dict[str, Any]) -> list[dict]:
@@ -232,57 +280,21 @@ class Jiandan(Module):
             return []
         batch_limit = self.get_jiandan_limit(config, "batch_limit", 2)
         llm_batch_limit = max(batch_limit, self.get_jiandan_limit(config, "llm_batch_limit", 5))
+        max_batch_limit = max(batch_limit, llm_batch_limit)
+        candidates = self.filter_jiandan_items_locally(candidates, max_batch_limit*2)
+        if not candidates:
+            return []
         llm_candidates = candidates[: max(llm_batch_limit * 2, batch_limit)]
         llm_selected = await self.filter_jiandan_items_with_llm(llm_candidates, config, llm_batch_limit)
         if llm_selected:
-            self.printf(f"[LLM审计] 通过 {len(llm_selected)} 张，使用扩展上限 {llm_batch_limit}")
+            self.printf(f"[AI筛选] 通过 {len(llm_selected)} 张，使用扩展上限 {llm_batch_limit}")
             return llm_selected[:llm_batch_limit]
-        local_audit_limit = max(batch_limit, llm_batch_limit)
-        local_candidates = candidates[: max(local_audit_limit * 2, batch_limit)]
-        blocked_keywords = ("公众号", "推广", "广告", "扫码", "下载", "引流", "淘宝", "拼多多", "京东", "app")
-        reviewed: list[tuple[int, dict[str, Any]]] = []
-        for item in local_candidates:
-            content = item.get("content", "")
-            text = re.sub(r"""<img\b[^>]*\bsrc="([^"]+)"[^>]*>""", " ", content)
-            text = re.sub(r"<br\s*/?>", "\n", text)
-            text = re.sub(r"</p\s*>", "\n", text)
-            text = re.sub(r"<[^>]+>", "", text)
-            text = re.sub(r"\s+", " ", text).strip()
-            image_urls = self.extract_jiandan_image_urls(content)
-            vote_positive = int(item.get("vote_positive", 0) or 0)
-            vote_negative = int(item.get("vote_negative", 0) or 0)
-            vote_delta = vote_positive - vote_negative
-            if not text and not image_urls:
-                self.printf(f"[本地审计] 帖子 {item.get('id')} => 拒绝 (空内容)")
-                continue
-            if any(keyword in text.lower() for keyword in blocked_keywords):
-                self.printf(f"[本地审计] 帖子 {item.get('id')} => 拒绝 (疑似广告)")
-                continue
-            if vote_positive <= vote_negative:
-                self.printf(f"[本地审计] 帖子 {item.get('id')} => 拒绝 (评分偏低)")
-                continue
-            if vote_negative >= 20:
-                self.printf(f"[本地审计] 帖子 {item.get('id')} => 拒绝 (负反馈过高)")
-                continue
-            if not image_urls and len(text) < 8:
-                self.printf(f"[本地审计] 帖子 {item.get('id')} => 拒绝 (信息量不足)")
-                continue
-            score = vote_delta
-            if image_urls:
-                score += min(len(image_urls), 4) * 3
-            if 8 <= len(text) <= 80:
-                score += 5
-            if re.search(r"[。！？!?~～]", text):
-                score += 2
-            self.printf(f"[本地审计] 帖子 {item.get('id')} => 通过")
-            reviewed.append((score, item))
-        reviewed.sort(key=lambda pair: pair[0], reverse=True)
-        selected = [item for _, item in reviewed[:batch_limit]]
-        self.printf(f"[本地审计] 结果 {len(selected)} 张")
+        selected = candidates[:batch_limit]
+        self.printf(f"[本地筛选] 使用本地结果 {len(selected)} 张")
         return selected
 
     async def jiandan_msg_task(self, owner: str, config: dict[str, Any]) -> None:
-        """自动煎蛋无聊图"""
+        """自动煎蛋网"""
         ran_int = random.random()
         prob = config.get("probability", 0)
         if ran_int > prob:
@@ -303,7 +315,7 @@ class Jiandan(Module):
         and self.match(r"^(来|发)(张|个)(无聊|屌|弔|吊|梗)图$")
     )
     def jiandan_msg(self):
-        """获取煎蛋无聊图"""
+        """获取煎蛋网"""
         if not self.is_private():
             Utils.set_emoji(self.robot, self.event.msg_id, 124)
         data_list = self.robot.sync(self.pick_jiandan_items(self.conv_config))
@@ -316,11 +328,11 @@ class Jiandan(Module):
     async def get_jiandan(
         self, page=0, page_num=3, raise_error=False
     ) -> list[dict] | None:
-        """获取煎蛋无聊图候选列表"""
+        """获取煎蛋网候选列表"""
         page_str = f"第{page}页" if page else "最新一页"
         try:
-            url = f"https://jandan.net/api/comment/post/26402?order=desc?page={page}"
-            self.printf(f"获取煎蛋无聊图[{page_str}]数据")
+            url = f"https://jandan.net/api/comment/post/26402?order=desc&page={page}"
+            self.printf(f"获取煎蛋网[{page_str}]数据")
             async with httpx.AsyncClient() as client:
                 resp = await client.get(
                     url,
@@ -346,9 +358,9 @@ class Jiandan(Module):
             self.printf(f"共请求到{len(result)}条有效的帖子")
             return result
         except httpx.ConnectTimeout as e:
-            self.errorf(f"获取煎蛋无聊图[{page_str}]时网络请求超时 {e}")
+            self.errorf(f"获取煎蛋网[{page_str}]时网络请求超时 {e}")
         except Exception as e:  # pylint: disable=broad-exception-caught
-            self.errorf(f"获取煎蛋无聊图[{page_str}]失败\n{traceback.format_exc()}")
+            self.errorf(f"获取煎蛋网[{page_str}]失败\n{traceback.format_exc()}")
             if raise_error:
                 raise e
             return []

@@ -102,7 +102,7 @@ class Ytdlp(Module):
 
     @Utils.listener(lambda self: self.at_or_private() and self.au(2)
             and self.conv_config["enable"]
-            and (self.is_reply() or self.match(rf"(【.*】\s)?{self.video_pattern}")))
+            and (self.is_reply() or self.match(self.video_pattern)))
     def video_download(self):
         """下载视频"""
         url = ""
