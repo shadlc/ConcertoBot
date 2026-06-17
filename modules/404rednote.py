@@ -1,9 +1,7 @@
 """小红书视频模块"""
 
 import re
-import time
 import traceback
-from typing import Any, Callable
 
 import httpx
 
@@ -46,7 +44,7 @@ class Rednote(Module):
         try:
             if not self.is_private():
                 Utils.set_emoji(self.robot, self.event.msg_id, 124)
-            play_url = self.retry(lambda url=url: self.get_play_url(url), failed_ok=False)
+            play_url = self.retry(self.get_play_url, url, failed_ok=False)
             if not self.is_private():
                 Utils.set_emoji(self.robot, self.event.msg_id, 66)
             msg = f"[CQ:video,file={play_url}]"
@@ -64,21 +62,4 @@ class Rednote(Module):
             return url
         else:
             raise ReferenceError(f"未在{url}找到有效的视频链接")
-
-    def retry(self, func: Callable[..., Any], name="", max_retries=3, delay=1, failed_ok=True) -> Any:
-        """多次尝试执行"""
-        for attempt in range(1, max_retries + 1):
-            try:
-                result = func()
-                return result
-            except Exception as e: # pylint: disable=broad-exception-caught
-                func_name = name if name else func.__name__
-                self.printf(f"第 {attempt} 次执行 {func_name} 失败: {e}")
-                if attempt == max_retries:
-                    if failed_ok:
-                        return None
-                    raise
-                else:
-                    self.printf(f"{delay} 秒后重试...")
-                    time.sleep(delay)
 

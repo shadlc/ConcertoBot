@@ -2,9 +2,7 @@
 
 import base64
 import random
-import time
 import traceback
-from typing import Callable, Any
 
 from src import api
 from src.base import Module
@@ -88,7 +86,7 @@ class YUJN(Module):
                 b64 = base64.b64encode(resp.content).decode("utf-8")
                 return f"base64://{b64}"
 
-            b64 = self.retry(api_req)
+            b64 = self.retry(api_req, max_retries=5)
             self.reply(f"[CQ:video,file={b64}]")
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
@@ -132,7 +130,7 @@ class YUJN(Module):
                 b64 = base64.b64encode(resp.content).decode("utf-8")
                 return f"base64://{b64}"
 
-            b64 = self.retry(api_req)
+            b64 = self.retry(api_req, max_retries=5)
             result = self.reply(f"[CQ:video,file={b64}]")
             if not Utils.status_ok(result):
                 self.reply("视频失效了~请再试一次吧~")
@@ -160,7 +158,7 @@ class YUJN(Module):
                 b64 = base64.b64encode(resp.content).decode("utf-8")
                 return f"base64://{b64}"
 
-            b64 = self.retry(api_req)
+            b64 = self.retry(api_req, max_retries=5)
             self.reply(f"[CQ:record,file={b64}]")
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
@@ -185,22 +183,3 @@ class YUJN(Module):
         self.conv_config["enable"] = flag
         self.save_config()
         self.reply(msg, reply=True)
-
-    def retry(
-        self, func: Callable[..., Any], name="", max_retries=5, delay=1, failed_ok=True
-    ) -> Any:
-        """多次尝试执行"""
-        for attempt in range(1, max_retries + 1):
-            try:
-                result = func()
-                return result
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                func_name = name if name else func.__name__
-                self.printf(f"第 {attempt} 次执行 {func_name} 失败: {e}")
-                if attempt == max_retries:
-                    if failed_ok:
-                        return None
-                    raise
-                else:
-                    self.printf(f"{delay} 秒后重试...")
-                    time.sleep(delay)

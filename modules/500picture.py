@@ -4,9 +4,8 @@ import base64
 import io
 import json
 import re
-import time
 import traceback
-from typing import Any, Callable, Tuple
+from typing import Any, Tuple
 from urllib.parse import quote
 
 import httpx
@@ -110,7 +109,7 @@ class Picture(Module):
             if not self.is_private():
                 Utils.set_emoji(self.robot, self.event.msg_id, 124)
             self.printf(f"正在使用Lolicon API获取图片...{tags}")
-            data = self.retry(lambda: self.get_lolicon_image(r18_mode, tags))
+            data = self.retry(self.get_lolicon_image, r18_mode, tags, failed_ok=False)
             self.printf(f"Lolicon API返回结果:\n{data}", level="DEBUG")
             if data:
                 author = f"{data['author']}(uid: {data['uid']})"
@@ -157,7 +156,9 @@ class Picture(Module):
             if not self.is_private():
                 Utils.set_emoji(self.robot, self.event.msg_id, 124)
             self.printf(f"正在使用AnimeTrace搜索图片[{url}]...")
-            result = self.retry(lambda: self.search_animate_animetrace(url))
+            result = self.retry(
+                self.search_animate_animetrace, url, failed_ok=False
+            )
             if isinstance(result, str):            
                 return self.reply(result, reply=True)
             nodes = []
@@ -195,7 +196,7 @@ class Picture(Module):
             if not self.is_private():
                 Utils.set_emoji(self.robot, self.event.msg_id, 124)
             self.printf(f"正在使用TraceMoe搜索图片[{url}]...")
-            msg = self.retry(lambda: self.search_animate_tracemoe(url))
+            msg = self.retry(self.search_animate_tracemoe, url, failed_ok=False)
             return self.reply(msg, reply=True)
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
@@ -221,7 +222,7 @@ class Picture(Module):
             if not self.is_private():
                 Utils.set_emoji(self.robot, self.event.msg_id, 124)
             self.printf(f"正在使用谷歌搜图搜索图片[{url}]...")
-            success, data = self.retry(lambda: self.search_image_google(url))
+            success, data = self.retry(self.search_image_google, url, failed_ok=False)
             if not success:
                 return self.reply(data, reply=True)
             nodes = []
@@ -256,7 +257,9 @@ class Picture(Module):
             if not self.is_private():
                 Utils.set_emoji(self.robot, self.event.msg_id, 124)
             self.printf(f"正在使用SauceNAO搜索图片[{url}]...")
-            success, data = self.retry(lambda: self.search_image_saucenao(url))
+            success, data = self.retry(
+                self.search_image_saucenao, url, failed_ok=False
+            )
             if not success:
                 return self.reply(data, reply=True)
             nodes = []
@@ -674,21 +677,3 @@ class Picture(Module):
             return "AnimeTrace未识别到明确角色来源~"
         return characters
 
-    def retry(
-        self, func: Callable[..., object], name="", max_retries=3, delay=1, failed_ok=False
-    ) -> object:
-        """多次尝试执行"""
-        for attempt in range(1, max_retries + 1):
-            try:
-                result = func()
-                return result
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                func_name = name if name else func.__name__
-                self.printf(f"第 {attempt} 次执行 {func_name} 失败: {e}")
-                if attempt == max_retries:
-                    if failed_ok:
-                        return None
-                    raise
-                else:
-                    self.printf(f"{delay} 秒后重试...")
-                    time.sleep(delay)

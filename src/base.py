@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import socket
 import threading
+import time
 import traceback
 from typing import TYPE_CHECKING, Callable, Coroutine, Dict, Optional, Set, Union
 
@@ -470,6 +471,30 @@ class Module:
             attr = getattr(self, attr_name)
             if callable(attr) and hasattr(attr, "_is_handler"):
                 attr()
+
+    def retry(
+        self,
+        func: Callable[..., object],
+        *func_args,
+        name: str = "",
+        max_retries: int = 3,
+        delay: int | float = 1,
+        failed_ok: bool = True,
+        **func_kwargs,
+    ) -> object:
+        """多次尝试执行函数，失败时打印日志并按需重试"""
+        for attempt in range(1, max_retries + 1):
+            try:
+                return func(*func_args, **func_kwargs)
+            except Exception:  # pylint: disable=broad-exception-caught
+                func_name = name if name else func.__name__
+                self.printf(f"第 {attempt} 次执行 {func_name} 失败: {Utils.get_error()}")
+                if attempt == max_retries:
+                    if failed_ok:
+                        return None
+                    raise
+                self.printf(f"{delay} 秒后重试...")
+                time.sleep(delay)
 
     def get_persist(self):
         """读取当前模块 ID 对应的长生命周期实例"""
