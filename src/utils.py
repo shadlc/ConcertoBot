@@ -144,7 +144,7 @@ def format_to_log(text: str) -> str:
     :param text: 输入文本
     """
     text = re.sub(r"\x1B\[[0-?]*[ -/]*[@-~]", "", text)
-    text = re.sub(r"((\s*█)+|(\s*▀)+|(\s*[\.,:;+\*\?\#\%\@]{10,})+|(\s*[\u2800-\u28FF])+)", " [字符画图片]", text)
+    text = re.sub(r"((\s*█)+|(\s*▀)+|(\s*[\.,:;+\*\?#%@]){10,}|(\s*[\u2800-\u28FF])+)", " [字符画图片]", text)
     return text.strip()
 
 def target_image_size(img: Image.Image, mode: str, min_width: int, max_width: int):
@@ -506,7 +506,7 @@ def reply_event(robot: Concerto, event: Event, msg: str, reply=False, force=Fals
     if reply:
         msg = f"[CQ:reply,id={event.msg_id}]{msg}"
     simple_msg = re.sub(r"\[CQ:(.*?),(file|url)=base64.*\]", r"[CQ:\1,\2=Base64]", msg)
-    target_id = target_name = group_str = None
+    target_id = target_name = group_str = ""
     if event.msg_type == "group":
         target_id = event.group_id
         target_name = get_group_name(robot, target_id)
@@ -537,7 +537,7 @@ def reply_id(robot: Concerto, msg_type: str, uid: str, msg: str, force=False):
         return None
     msg = handle_placeholder(str(msg), robot.placeholder_dict)
     simple_msg = re.sub(r"\[CQ:(.*?),(file|url)=base64.*\]", r"[CQ:\1,\2=Base64]", msg)
-    target_name = group_str = None
+    target_name = group_str = ""
     if msg_type == "group":
         target_name = get_group_name(robot, uid)
     else:
@@ -657,7 +657,7 @@ def send_forward_msg(
     req_dict = {"messages": nodes, "source": source, "summary": summary}
     msg = json.dumps(nodes, ensure_ascii=False)
     simple_msg = re.sub(r"\[CQ:(.*?),(file|url)=base64.*\]", r"[CQ:\1,\2=Base64]", msg)
-    target_id = target_name = group_str = None
+    target_id = target_name = group_str = ""
     if group_id:
         target_id = group_id
         target_name = get_group_name(robot, group_id)
