@@ -237,7 +237,7 @@ class LLM(Module):
         try:
             messages = self.normalize_messages(msg, system_prompt)
             params = self.get_request_params(model_name)
-            self.printf(f"调用chat模型 {params['model']}")
+            self.printf(f"调用chat模型 {params['model']}", level="DEBUG")
             return self.sync_chat(messages, params, stream)
         except Exception:  # pylint: disable=broad-exception-caught
             self.errorf(f"LLM请求失败:\n{traceback.format_exc()}")
@@ -255,7 +255,7 @@ class LLM(Module):
         try:
             messages = self.normalize_messages(msg, system_prompt)
             params = self.get_request_params(model_name)
-            self.printf(f"调用chat模型 {params['model']}")
+            self.printf(f"调用chat模型 {params['model']}", level="DEBUG")
             return await self.async_chat(messages, params, stream)
         except Exception:  # pylint: disable=broad-exception-caught
             self.errorf(f"LLM请求失败:\n{traceback.format_exc()}")
@@ -269,7 +269,7 @@ class LLM(Module):
             url = f"{params['base_url']}/audio/transcriptions"
             headers = {"Authorization": f"Bearer {params['api_key']}"}
             payload = {"model": params["model"]}
-            self.printf(f"调用stt模型 {params['model']}")
+            self.printf(f"调用stt模型 {params['model']}", level="DEBUG")
             response = httpx.post(
                 url,
                 data=payload,
@@ -296,7 +296,7 @@ class LLM(Module):
                 "response_format": "mp3",
                 "voice": params["voice"],
             }
-            self.printf(f"调用tts模型 {payload}")
+            self.printf(f"调用tts模型 {payload}", level="DEBUG")
             response = httpx.post(
                 url, json=payload, headers=headers, timeout=params["timeout"]
             )
