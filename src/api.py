@@ -257,6 +257,11 @@ def get_group_member_info(robot: Concerto, resp: dict):
     url = "/get_group_member_info"
     return post(robot, url, resp)
 
+def get_rkey_server(robot: Concerto):
+    """获取rkey"""
+    url = "/get_rkey_server"
+    return get(robot, url)
+
 def bot_exit(robot: Concerto):
     """退出机器人"""
     url = "/bot_exit"

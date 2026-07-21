@@ -770,8 +770,6 @@ class MaimToConcertoCodec:
                 child_rendered = await self._render_segment(child, group_id)
                 if child_rendered is None:
                     continue
-                if child_rendered["type"] == "poke":
-                    return child_rendered
                 if child_rendered.get("prepend"):
                     reply_prefix += child_rendered["message"]
                     continue
@@ -797,16 +795,8 @@ class MaimToConcertoCodec:
             return {"type": "message", "message": _safe_str(text)}
 
         if segment.type == "at":
-            data = segment.data if isinstance(segment.data, Mapping) else {}
-            target_user_id = _safe_str(data.get("target_user_id"))
-            display_name = _safe_str(
-                data.get("target_user_cardname")
-                or data.get("target_user_nickname")
-                or target_user_id
-            )
-            if target_user_id and target_user_id != "all":
-                return {"type": "message", "message": f"[CQ:at,qq={target_user_id}]"}
-            return {"type": "message", "message": f"@{display_name or '全体成员'}"}
+            user_id = segment.data
+            return {"type": "message", "message": f"[CQ:at,qq={user_id}]"}
 
         if segment.type == "reply":
             data = segment.data if isinstance(segment.data, Mapping) else {}

@@ -1051,6 +1051,18 @@ def get_img_url(robot: Concerto, url: str) -> str:
         robot.errorf(f"获取腾讯图床链接失败\n{traceback.format_exc()}")
         return url
 
+
+def get_rkey(robot: Concerto):
+    """
+    获取rkey
+    :param robot: 机器人类
+    """
+    resp = api.get_rkey_server(robot)
+    return {
+        "private_rkey": resp.get("data").get("private_rkey"),
+        "group_rkey": resp.get("data").get("group_rkey")
+    }
+
 def get_handler_amount(robot: Concerto):
     """
     获取事件的处理方法数量
@@ -1266,6 +1278,7 @@ class Utils:
     get_stranger_info = staticmethod(get_stranger_info)
     ocr_image = staticmethod(ocr_image)
     get_img_url = staticmethod(get_img_url)
+    get_rkey = staticmethod(get_rkey)
     get_handler_amount = staticmethod(get_handler_amount)
     simplify_traceback = staticmethod(simplify_traceback)
     get_error = staticmethod(get_error)
