@@ -7,8 +7,11 @@ if errorlevel 1 (
     exit /b 1
 )
 
-call uv sync
-if errorlevel 1 exit /b %errorlevel%
+if not exist ".venv" (
+    echo Virtual environment not found. Running uv sync...
+    call uv sync
+    if errorlevel 1 exit /b %errorlevel%
+)
 
 :startbot
 call uv run python main.py

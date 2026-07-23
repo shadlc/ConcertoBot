@@ -8,7 +8,10 @@ if ! command -v uv >/dev/null 2>&1; then
  exit 1
 fi
 
-uv sync
+if [ ! -d ".venv" ]; then
+    uv sync
+fi
+
 sync_status=$?
 if (($sync_status)); then
  exit $sync_status
