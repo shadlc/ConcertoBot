@@ -426,10 +426,8 @@ class Chat(Module):
         urls = list(dict.fromkeys(urls))
         # 更新rkey
         rkeys = Utils.get_rkey(self.robot)
-        urls = [re.sub(r"(appid=1406.*?rkey=)[0-9A-Za-z_-]+", rf"\1{rkeys['private_rkey']}", url) for url in urls]
-        urls = [re.sub(r"(appid=1407.*?rkey=)[0-9A-Za-z_-]+", rf"\1{rkeys['group_rkey']}", url) for url in urls]
-        urls = [re.sub(r"(appid=1413.*?rkey=)[0-9A-Za-z_-]+", rf"\1{rkeys['private_rkey']}", url) for url in urls]
-        urls = [re.sub(r"(appid=1415.*?rkey=)[0-9A-Za-z_-]+", rf"\1{rkeys['group_rkey']}", url) for url in urls]
+        urls = [re.sub(r"(appid=1406.*rkey=)[0-9A-Za-z_-]+", rf"\1{rkeys['private_rkey']}", url) for url in urls]
+        urls = [re.sub(r"(appid=1407.*rkey=)[0-9A-Za-z_-]+", rf"\1{rkeys['group_rkey']}", url) for url in urls]
         if len(urls) == 1:
             url = urls[0]
             if len(url) > 100 and not self.is_private():
