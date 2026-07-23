@@ -115,10 +115,16 @@ class Waifu(Module):
 
         waifu_name = waifu.split(".")[0]
         waifu_img = self.get_waifu_file(waifu)
-        result = self.reply(f"你今天的二次元老婆是{waifu_name}哒~\n[CQ:image,file=base64://{waifu_img}]", reply=True)
+        msg = f"你今天的二次元老婆是{waifu_name}哒~"
+        result = self.reply(msg+f"\n[CQ:image,file=base64://{waifu_img}]", reply=True)
         if not Utils.status_ok(result):
             qq_url = Utils.get_img_url(self.robot, f"base64://{waifu_img}")
-            self.reply(f"你今天的二次元老婆是{waifu_name}哒~\n{qq_url}", reply=True)
+            msg = f"{msg}\n{qq_url}"
+            result = self.reply(msg, reply=True)
+
+        if self.event.group_id and Utils.status_ok(result):
+            if notify_maisaka := self.robot.func.get("notify_maisaka"):
+                notify_maisaka(msg, self.event.group_id)
 
     @Utils.handler(lambda self: self.au(2) and self.conv_config.get("enable") and self.match(r"^查寻?老婆"))
     def check_waifu(self):

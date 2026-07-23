@@ -315,6 +315,9 @@ class ConcertoToMaimCodec:
                     return await self._build_forward_segment(msg_list)
                 return Seg(type="text", data="[未知转发消息]")
             case "video":
+                video_url = _safe_str(data.get("url"))
+                if video_url:
+                    return Seg(type="text", data=f"[视频]({video_url})")
                 return Seg(type="text", data="[视频]")
             case "file":
                 file = data.get("file")

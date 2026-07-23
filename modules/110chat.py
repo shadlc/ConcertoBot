@@ -37,7 +37,7 @@ class Chat(Module):
             "成员列表 | 查看曾有称号记录在案的成员列表和称号",
             "[QQ账号或昵称]曾言道: | 假装有人说过",
             "刚刚撤回了什么 | 查看上一个撤回消息内容",
-            "回复表情图片并发送直链 | 将表情包转化为链接",
+            "回复图片或视频 | 获取媒体直链",
             "回复消息并发送💩 | 对回复的消息贴表情💩",
             "回复消息并发送❤️ | 对回复的消息“一键发电”贴表情",
         ],
@@ -412,22 +412,24 @@ class Chat(Module):
     @Utils.listener(lambda self: self.au(2) and self.at_or_private()
           and (self.match(r"(直链|刷新)\s?\[CQ:image\S*\]")
                or self.match(r"\[CQ:reply,id=([^\]]+?)\]\s?(直链|刷新)?$")))
-    def sticker_url(self):
-        """获取表情链接"""
+    def media_url(self):
+        """获取媒体直链"""
         urls = []
-        urls.extend(re.findall(r"http.*?rkey=[0-9a-zA-Z]+", self.event.text))
+        urls.extend(re.findall(r"http.*?rkey=[0-9A-Za-z_-]+", self.event.text))
         if self.match(r"\[CQ:reply,id=([^\]]+?)\]"):
             msg = self.get_reply()
             if msg:
-                urls.extend(re.findall(r"http.*?rkey=[0-9a-zA-Z]+", msg))
+                urls.extend(re.findall(r"http.*?rkey=[0-9A-Za-z_-]+", msg))
         if not urls:
             return
         # 去重
         urls = list(dict.fromkeys(urls))
         # 更新rkey
         rkeys = Utils.get_rkey(self.robot)
-        urls = [re.sub(r"(appid=1406.*?rkey=)[0-9a-zA-Z]+", rf"\1{rkeys['private_rkey']}", url) for url in urls]
-        urls = [re.sub(r"(appid=1407.*?rkey=)[0-9a-zA-Z]+", rf"\1{rkeys['group_rkey']}", url) for url in urls]
+        urls = [re.sub(r"(appid=1406.*?rkey=)[0-9A-Za-z_-]+", rf"\1{rkeys['private_rkey']}", url) for url in urls]
+        urls = [re.sub(r"(appid=1407.*?rkey=)[0-9A-Za-z_-]+", rf"\1{rkeys['group_rkey']}", url) for url in urls]
+        urls = [re.sub(r"(appid=1413.*?rkey=)[0-9A-Za-z_-]+", rf"\1{rkeys['private_rkey']}", url) for url in urls]
+        urls = [re.sub(r"(appid=1415.*?rkey=)[0-9A-Za-z_-]+", rf"\1{rkeys['group_rkey']}", url) for url in urls]
         if len(urls) == 1:
             url = urls[0]
             if len(url) > 100 and not self.is_private():
