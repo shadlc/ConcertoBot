@@ -76,9 +76,14 @@ class Notice(Module):
     @Utils.listener(lambda self: self.event.notice_type == "friend_recall")
     def friend_recall(self):
         """处理好友撤回通知并发送占位回复"""
-        self.printf(f"{Fore.MAGENTA}{self.event.operator_name}({self.event.operator_id})撤回了一条消息")
-        msg = "%OTHER_RECALL%"
-        Utils.reply_event(self.robot, self.event, msg)
+        self.printf(f"{Fore.MAGENTA}{self.event.user_name}({self.event.user_id})撤回了一条消息")
+        if notify_maisaka := self.robot.func.get("notify_maisaka"):
+            notify_maisaka(
+                f"[撤回了一条消息(msg_id={self.event.msg_id})]",
+                self.event.group_id,
+            )
+        else:
+            Utils.reply_id(self.robot, "private", self.event.user_id, "%OTHER_RECALL%")
 
     @Utils.listener(lambda self: self.event.notice_type == "notify"
          and self.event.sub_type == "profile_like")
