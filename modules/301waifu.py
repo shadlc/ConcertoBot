@@ -124,6 +124,7 @@ class Waifu(Module):
 
         if self.event.group_id and Utils.status_ok(result):
             if notify_maisaka := self.robot.func.get("notify_maisaka"):
+                msg = f"{self.event.user_name}进行了今日的二次元抽老婆，你今天的二次元老婆是{waifu_name}哒~"
                 notify_maisaka(msg, self.event.group_id)
 
     @Utils.handler(lambda self: self.au(2) and self.conv_config.get("enable") and self.match(r"^查寻?老婆"))

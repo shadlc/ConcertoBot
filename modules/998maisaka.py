@@ -639,7 +639,14 @@ class MaimToConcertoCodec:
     async def dispatch(self, message: APIMessageBase, metadata: Mapping[str, Any]) -> None:
         """分发来自麦麦 API-Server 的消息或命令"""
         segment = message.message_segment
-        self.owner.printf(f"{Fore.CYAN}[FROM] {Fore.RESET}{_segment_preview(segment)}")
+        additional_config = message.message_info.additional_config
+        group_id = additional_config.get("platform_io_target_group_id")
+        user_id = additional_config.get("platform_io_target_user_id")
+        target_id = f"g{group_id}" if group_id else f"u{user_id}"
+        self.owner.printf(
+            f"{Fore.CYAN}[FROM] {Fore.RESET}"
+            f"[{target_id}] {_segment_preview(segment)}"
+        )
         if command_segment := self._extract_command_segment(segment):
             await self._handle_command_segment(command_segment, message)
             return
