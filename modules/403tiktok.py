@@ -1,4 +1,4 @@
-"""抖音视频模块"""
+"""抖音模块"""
 
 import base64
 import html
@@ -16,7 +16,7 @@ from src.utils import Utils
 
 
 class Tiktok(Module):
-    """抖音视频和图文模块"""
+    """抖音模块"""
 
     ALLOWED_HOSTS = frozenset({
         "douyin.com",
