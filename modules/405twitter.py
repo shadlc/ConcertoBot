@@ -45,7 +45,7 @@ class Twitter(Module):
         "gif_conversion_timeout": 120,
         "max_gif_source_bytes": 100 * 1024 * 1024,
         "max_gif_bytes": 30 * 1024 * 1024,
-        "max_gif_frames": 20,
+        "max_gif_fps": 20,
         "max_nested_tweets": 1,
     }
     NESTED_TWEET_KEYS = (
@@ -60,7 +60,7 @@ class Twitter(Module):
         """初始化推特/X链接匹配规则"""
         self.tweet_pattern = (
             r"https?://(?:www\.)?(?:twitter\.com|x\.com)/"
-            r"[A-Za-z0-9_]+/status/\d+(?:\?[^\s&;,\"\u4e00-\u9fff\[\]<>]*)?"
+            r"[A-Za-z0-9_]+/status/\d+"
         )
         super().__init__(event, auth)
 
@@ -104,7 +104,7 @@ class Twitter(Module):
         for message in messages:
             match = re.search(self.tweet_pattern, str(message), re.IGNORECASE)
             if match:
-                return match.group(0).rstrip(".,，。!！?？)）]>")
+                return match.group(0)
         return ""
 
     def get_media(self, url: str) -> tuple[str, list[str], str, str]:
@@ -156,8 +156,13 @@ class Twitter(Module):
     ) -> tuple[list[str], list[str], list[tuple[dict, dict]]]:
         """收集当前推文及嵌套转发内容，避免重复解析媒体逻辑。"""
         captions = []
+        caption_parts = []
+        if author := self._get_tweet_author(tweet):
+            caption_parts.append(author)
         if text := self._get_tweet_text(tweet):
-            captions.append(text)
+            caption_parts.append(text)
+        if caption_parts:
+            captions.append("\n".join(caption_parts))
 
         media = tweet.get("media") or {}
         if not isinstance(media, dict):
@@ -185,6 +190,22 @@ class Twitter(Module):
         """读取推文正文。"""
         text = tweet.get("text", "")
         return text.strip() if isinstance(text, str) else ""
+
+    @staticmethod
+    def _get_tweet_author(tweet: dict) -> str:
+        """读取推文作者名称和用户名。"""
+        author = tweet.get("author")
+        if not isinstance(author, dict):
+            return ""
+        name = author.get("name")
+        username = author.get("screen_name") or author.get("username")
+        if isinstance(name, str) and name.strip() and isinstance(username, str) and username.strip():
+            return f"{name.strip()}(@{username.strip().lstrip('@')})"
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+        if isinstance(username, str) and username.strip():
+            return f"@{username.strip().lstrip('@')}"
+        return ""
 
     @staticmethod
     def _get_image_urls(media: dict) -> list[str]:
@@ -316,7 +337,10 @@ class Twitter(Module):
                         video_file.write(chunk)
 
     def _run_ffmpeg(self, source_path: Path, output_path: Path) -> None:
-        """使用调色板转换 GIF，避免缩放或重采样改变源视频参数。"""
+        """使用调色板转换 GIF，并限制输出帧率。"""
+        max_gif_fps = int(self.config["max_gif_fps"])
+        if max_gif_fps <= 0:
+            raise ValueError("GIF 最大帧率必须大于 0")
         command = [
             self.config["ffmpeg_path"],
             "-hide_banner",
@@ -326,15 +350,13 @@ class Twitter(Module):
             "-i",
             str(source_path),
             "-filter_complex",
-            "[0:v]split[frames][palette];"
+            f"[0:v]fps={max_gif_fps},split[frames][palette];"
             "[palette]palettegen=stats_mode=diff[paletteout];"
             "[frames][paletteout]paletteuse=dither=sierra2_4a",
             "-fps_mode",
             "passthrough",
             "-loop",
             "0",
-            "-frames:v",
-            str(self.config["max_gif_frames"]),
             "-an",
             str(output_path),
         ]
