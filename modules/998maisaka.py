@@ -321,7 +321,10 @@ class ConcertoToMaimCodec:
                 return Seg(type="text", data="[视频]")
             case "file":
                 file = data.get("file")
-                return Seg(type="text", data=f"上传文件[{file}]")
+                file_url = _safe_str(data.get("url"))
+                if file_url:
+                    return Seg(type="text", data=f"[{file}]({file_url})")
+                return Seg(type="text", data=f"文件[{file}]")
             case "rps":
                 return Seg(type="text", data="[猜拳]")
             case "dice":
@@ -753,7 +756,14 @@ class MaimToConcertoCodec:
             return None
 
         command = _safe_str(data.get("type") or data.get("name"))
-        if not command:
+        if command not in {
+            "GROUP_BAN", "set_group_ban",
+            "SET_GROUP_WHOLE_BAN", "set_group_whole_ban",
+            "SET_GROUP_KICK", "set_group_kick",
+            "SEND_POKE", "send_poke",
+            "DELETE_MSG", "delete_msg",
+            "SEND_GROUP_AI_RECORD", "send_group_ai_record",
+        }:
             return None
 
         args = data.get("data")
@@ -766,6 +776,16 @@ class MaimToConcertoCodec:
 
     async def _render_segment(self, segment: Seg, group_id: str) -> dict[str, Any] | None:
         """将麦麦消息段渲染为 OneBot/CQ 可发送内容"""
+        if segment.type == "dict":
+            data = segment.data if isinstance(segment.data, Mapping) else {}
+            segment_type = _safe_str(data.get("type"))
+            if not segment_type:
+                return None
+            return await self._render_segment(
+                Seg(type=segment_type, data=data.get("data")),
+                group_id,
+            )
+
         if segment.type == "seglist":
             reply_prefix = ""
             payload_parts: list[str] = []
@@ -830,6 +850,9 @@ class MaimToConcertoCodec:
 
         if segment.type == "voice":
             return {"type": "message", "message": f"[CQ:record,file=base64://{_safe_str(segment.data)}]"}
+
+        if segment.type == "video":
+            return {"type": "message", "message": f"[CQ:video,file=base64://{_safe_str(segment.data)}]"}
 
         if segment.type == "poke":
             data = segment.data if isinstance(segment.data, Mapping) else {}

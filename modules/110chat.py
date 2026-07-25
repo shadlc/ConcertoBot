@@ -428,15 +428,11 @@ class Chat(Module):
         rkeys = Utils.get_rkey(self.robot)
         urls = [re.sub(r"(appid=1406.*rkey=)[0-9A-Za-z_-]+", rf"\1{rkeys['private_rkey']}", url) for url in urls]
         urls = [re.sub(r"(appid=1407.*rkey=)[0-9A-Za-z_-]+", rf"\1{rkeys['group_rkey']}", url) for url in urls]
-        if len(urls) == 1:
-            url = urls[0]
-            if len(url) > 100 and not self.is_private():
-                self.reply_forward(self.node(url), source="图片直链")
-            else:
-                self.reply(f"{url} (失效请引用并回复“刷新”)", reply=True)
+        if len(urls) == 1 and (len(urls[0]) < 100 or self.is_private()):
+            self.reply(f"{urls[0]} (失效请引用并回复“刷新”)", reply=True)
         else:
             nodes = [self.node(f"{url} (失效请引用并回复“刷新”)") for url in urls]
-            self.reply_forward(nodes, source="图片直链")
+            self.reply_forward(nodes, source="直链")
         self.handled = True
 
     @Utils.handler(lambda self: self.au(2) and self.at_or_private() and self.match(r"(\S+?)(又|也|同时|人)能?被?(称|叫)(为|做)?(\S+)$"))
