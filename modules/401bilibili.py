@@ -191,16 +191,16 @@ class Bilibili(Module):
             else:
                 title = "你的关注列表"
             for uid, info in follow_list.items():
-                user_info = self.robot.sync(self.robot.get_user_simple_info(uid, fans=True))
+                user_info = self.robot.sync(self.get_user_simple_info(uid, fans=True))
                 if user_info:
                     info["name"] = user_info["name"]
                     info["fans"] = user_info["fans"]
                     info["avatar"] = user_info["avatar"]
                 nodes.append(self.node(self.parse_user_info(uid, info)))
+            self.reply_forward(nodes, title, "哔哩哔哩")
         else:
             msg = "这里还未拥有关注列表，请管理员添加吧~"
             self.reply(msg)
-        self.reply_forward(nodes, title, "哔哩哔哩")
 
     @Utils.handler(
         lambda self: self.at_or_private()
@@ -882,6 +882,7 @@ class Bilibili(Module):
             self.warnf(f"获取{name}({uid})的用户信息超时")
         except ResponseCodeException as e:
             self.warnf(f"获取{name}({uid})的用户信息返回码异常 {e.code} {e.msg}")
+            
         except Exception:  # pylint: disable=broad-exception-caught
             self.warnf(f"查询{name}({uid})的用户信息请求失败\n{traceback.format_exc()}")
 
