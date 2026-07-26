@@ -83,7 +83,7 @@ class Ytdlp(Module):
             Utils.set_emoji(self.robot, self.event.msg_id, 124)
             info = self.get_info(url, opts)
             msg = self.parse_info(info)
-            msg = f"视频解析成功!\n{msg}"
+            msg = f"视频解析成功!\n{msg}\n@我并回复本条消息开始下载视频"
             self.reply(msg, reply=True)
         except LoadError:
             # http://fileformats.archiveteam.org/wiki/Netscape_cookies.txt
@@ -339,7 +339,6 @@ class Ytdlp(Module):
         """格式化视频信息为文本"""
         video_type = info.get("type")
         url = info.get("url")
-        site = info.get("site")
         series = info.get("series")
         title = info.get("title")
         description = info.get("description")
@@ -353,19 +352,17 @@ class Ytdlp(Module):
         if view_count:
             view_count = f"{round(view_count/10000,2)}万" if view_count >= 10000 else view_count
         if video_type == "playlist":
-            msg = f"链接: {url}"
-            msg += f"\n平台: {site}"
+            msg = f"{url}"
             msg += f"\n标题: {title}"
             if description:
                 msg += f"\n简介: {description}"
             return msg
         else:
-            msg = f"链接: {url}"
-            msg += f"\n平台: {site}"
+            msg = f"{url}"
             if series:
-                msg += f"\n标题: {series} {title}"
+                msg += f"\n{series} {title}"
             else:
-                msg += f"\n标题: {title}"
+                msg += f"\n {title}"
             msg += f"\n作者: {uploader or "[未知]"}"
             msg += f"\n时长: {Utils.calc_time(int(duration)) or "[未知]"}"
             msg += f"\n播放量: {view_count}"
@@ -374,7 +371,6 @@ class Ytdlp(Module):
             if size:
                 msg += "\n获取到的最佳格式为: "
                 msg += f"{resolution} {ext} {Utils.calc_size(int(size))}"
-            msg += "\n@我并回复本条消息开始下载视频"
             return msg
 
     def download_video(self, url: str, opts: dict, max_retries=5, delay=1) -> str:
