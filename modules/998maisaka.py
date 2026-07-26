@@ -220,8 +220,6 @@ class ConcertoToMaimCodec:
     def _build_special_notice_segments(self, event: Event) -> list[Seg]:
         """将戳一戳和禁言等通知转为文本消息段"""
         if event.sub_type == "poke":
-            if not event.group_id:
-                return []
             raw_info = event.raw.get("raw_info")
             txt = ""
             if isinstance(raw_info, list) and len(raw_info) > 2 and isinstance(raw_info[2], Mapping):
@@ -856,30 +854,22 @@ class MaimToConcertoCodec:
             }
 
         if segment.type == "voice":
-            return {"type": "message", "message": f"[CQ:record,file=base64://{_safe_str(segment.data)}]"}
+            return {"type": "message", "message": f"[CQ:record,file=base64://{segment.data}]"}
 
         if segment.type == "video":
             return {"type": "message", "message": f"[CQ:video,file=base64://{_safe_str(segment.data)}]"}
 
         if segment.type == "poke":
-            data = segment.data if isinstance(segment.data, Mapping) else {}
-            qq_id = _safe_str(
-                data.get("qq_id")
-                or data.get("target_id")
-                or data.get("user_id")
-            )
-            if not qq_id:
-                return None
+            data = segment.data
             return {
                 "type": "poke",
-                "qq_id": qq_id,
-                "group_id": _safe_str(data.get("group_id") or group_id) or None,
+                "qq_id": data.get("qq_id"),
+                "group_id": data.get("group_id"),
             }
 
         fallback_map = {
             "forward": "[forward]",
             "file": "[file]",
-            "video": "[video]",
         }
         return {"type": "message", "message": fallback_map.get(segment.type, f"[{segment.type}]")}
 
@@ -1007,7 +997,7 @@ class MaiSaka(Module):
         event = event or self.event
         return await self.codec_out.build_message(event, content_override=content_override)
 
-    async def send_to_maim(self, message: APIMessageBase) -> bool:
+    async def send_to_maisaka(self, message: APIMessageBase) -> bool:
         """发送消息到麦麦并维护连续失败计数"""
         try:
             self.printf(f"{Fore.GREEN}[TO] {Fore.RESET}{_segment_preview(message.message_segment)}")
@@ -1042,7 +1032,7 @@ class MaiSaka(Module):
 
     @Utils.handler(lambda self: self.at_or_private() and self.au(1)
          and self.match(r"^(开启|启用|打开|记录|启动|关闭|禁用|取消)麦麦$"))
-    def enable_maibot(self):
+    def enable_maisaka(self):
         """启用麦麦"""
         if self.match(r"(开启|启用|打开|记录|启动)"):
             self.conv_config["enable"] = True
@@ -1055,7 +1045,7 @@ class MaiSaka(Module):
             self.reply("麦麦机器人已关闭")
 
     @Utils.handler(lambda self: self.at_or_private() and self.au(1) and self.match(r"^重新连接麦麦$"))
-    def restart_maibot(self):
+    def restart_maisaka(self):
         """重新连接麦麦"""
         try:
             ok = asyncio.run_coroutine_threadsafe(self.runtime.reconnect(), self.robot.loop).result()
@@ -1068,14 +1058,14 @@ class MaiSaka(Module):
          and self.conv_config.get("enable")
          and self.event.user_id not in self.conv_config.get("blacklist")
          and (self.event.msg or self.event.sub_type == "poke"))
-    def send_maibot(self):
+    def send_maisaka(self):
         """发送至麦麦"""
         async def send_task() -> None:
             """异步构造并发送当前事件到麦麦"""
             try:
                 message = await self.construct_message()
                 if message is not None:
-                    await self.send_to_maim(message)
+                    await self.send_to_maisaka(message)
             except Exception: # pylint: disable=broad-exception-caught
                 self.errorf(traceback.format_exc())
 
@@ -1111,7 +1101,7 @@ class MaiSaka(Module):
 
                 message = await self.construct_message(fake_event, content_override=content)
                 if message is not None:
-                    await self.send_to_maim(message)
+                    await self.send_to_maisaka(message)
             except Exception: # pylint: disable=broad-exception-caught
                 self.errorf(traceback.format_exc())
 
