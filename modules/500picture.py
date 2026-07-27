@@ -4,7 +4,9 @@ import base64
 import io
 import json
 import re
+import time
 import traceback
+from decimal import Decimal
 from typing import Any, Tuple
 from urllib.parse import quote
 
@@ -28,6 +30,7 @@ class Picture(Module):
             "图片 + 搜图 / 回复图片发送搜图 | 调用谷歌搜图搜索图片",
             "图片 + 搜番 / 回复图片发送搜番 | 调用TraceMoe识别作品来源",
             "图片 + 搜人 / 回复图片发送搜人 | 调用AnimeTrace识别角色",
+            "图片 + 搜本子 / 回复图片发送搜本子 | 调用搜图Bot酱搜索本子",
         ],
     }
     GLOBAL_CONFIG = {
@@ -38,6 +41,7 @@ class Picture(Module):
     CONV_CONFIG = {
         "animate_search": True,
         "image_search": True,
+        "book_search": True,
         "saucenao": True,
         "enhance": True,
     }
@@ -236,6 +240,45 @@ class Picture(Module):
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             self.reply(f"谷歌搜图调用失败! {e}", reply=True)
+
+    @Utils.handler(
+        lambda self: self.au(2)
+        and self.at_or_private()
+        and self.conv_config.get("book_search")
+        and self.match(r"^(\[.*\])?\s*?(搜索|搜|查询|查|找)(本子|本)\s*?(\[.*\])?$")
+    )
+    def search_book(self):
+        """搜本子"""
+        url = ""
+        if match := self.match(r"\[CQ:image,.*url=([^,\]]+?),.*\]"):
+            url = match.group(1)
+        elif msg := self.get_reply():
+            if match := re.search(r"\[CQ:image,.*url=([^,\]]+?),.*\]", msg):
+                url = match.group(1)
+        if url == "":
+            return self.reply("请附带搜索图片或回复带图片的消息!")
+        try:
+            if not self.is_private():
+                Utils.set_emoji(self.robot, self.event.msg_id, 124)
+            self.printf(f"正在使用搜图Bot酱搜索本子[{url}]...")
+            success, data = self.retry(
+                self.search_book_soutubot, url, failed_ok=False
+            )
+            if not success:
+                return self.reply(data, reply=True)
+            nodes = [self.node(msg) for msg in data]
+            if not self.is_private():
+                Utils.set_emoji(self.robot, self.event.msg_id, 66)
+            return self.reply_forward(nodes, source="搜图Bot酱搜索结果")
+        except httpx.TimeoutException:
+            self.errorf(traceback.format_exc())
+            self.reply("搜图Bot酱连接超时，请稍后重试", reply=True)
+        except httpx.NetworkError:
+            self.errorf(traceback.format_exc())
+            self.reply("搜图Bot酱网络连接失败，请稍后重试", reply=True)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            self.errorf(traceback.format_exc())
+            self.reply(f"搜图Bot酱调用失败! {e}", reply=True)
 
     @Utils.listener(
         lambda self: self.au(2)
@@ -501,6 +544,118 @@ class Picture(Module):
         else:
             result = "谷歌搜图返回无结果~"
         return success, result
+
+    def get_soutubot_api_key(self, user_agent: dict) -> str:
+        """按照搜图Bot酱网页端算法生成请求令牌"""
+        timestamp = int(time.time())
+        value = float(
+            timestamp**2
+            + len(user_agent) ** 2
+            + 1647857448721
+        )
+        # JavaScript Number.toString() 会先舍入到双精度，再输出最短十进制表示。
+        value_text = format(Decimal(repr(value)), "f").split(".", 1)[0]
+        encoded = base64.b64encode(value_text.encode("ascii")).decode("ascii")
+        return encoded[::-1].replace("=", "")
+
+    def prepare_soutubot_image(
+        self, image_bytes: bytes, content_type: str
+    ) -> tuple[bytes, str, str]:
+        """按搜图Bot酱网页端规则准备上传图片"""
+        content_type = content_type.split(";", 1)[0].lower()
+        supported_types = {"image/jpeg", "image/png", "image/webp"}
+        if content_type in supported_types and len(image_bytes) <= 5 * 1024:
+            extension = content_type.rsplit("/", 1)[-1].replace("jpeg", "jpg")
+            return image_bytes, content_type, f"image.{extension}"
+
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            image = image.convert("RGB")
+            image.thumbnail((2000, 2000))
+            output = io.BytesIO()
+            image.save(output, format="JPEG", quality=90)
+        return output.getvalue(), "image/jpeg", "image.jpg"
+
+    def search_book_soutubot(
+        self, image_url: str, proxies: str = None
+    ) -> Tuple[bool, str | list]:
+        """
+        搜图Bot酱搜本子
+        :param image_url: 图片URL
+        :param proxies: 代理配置
+        :return: [搜索是否成功, 搜索结果]
+        """
+        hosts = {
+            "nhentai": "nhentai.net",
+            "ehentai": "e-hentai.org",
+            "panda": "panda.chaika.moe",
+        }
+        img_resp = httpx.get(image_url, timeout=15, proxy=proxies)
+        img_resp.raise_for_status()
+        content_type = img_resp.headers.get("content-type", "image/jpeg")
+        image_bytes, content_type, filename = self.prepare_soutubot_image(
+            img_resp.content, content_type
+        )
+        user_agent = (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/150.0.0.0 Safari/537.36"
+        )
+        headers = {
+            "Referer": "https://soutubot.moe/",
+            "User-Agent": user_agent,
+            "X-API-KEY": self.get_soutubot_api_key(user_agent),
+            "X-Requested-With": "XMLHttpRequest",
+        }
+        timeout = httpx.Timeout(30.0, connect=15.0)
+        with httpx.Client(
+            timeout=timeout,
+            proxy=proxies,
+            follow_redirects=True,
+            headers=headers,
+        ) as client:
+            resp = client.post(
+                "https://soutubot.moe/api/search",
+                data={"factor": "1.2"},
+                files={"file": (filename, image_bytes, content_type)},
+            )
+        if resp.status_code == 401:
+            return False, "搜图Bot酱鉴权失败，请稍后重试"
+        resp.raise_for_status()
+        payload = resp.json()
+        self.printf(
+            f"搜图Bot酱搜索结果:\n{json.dumps(payload, ensure_ascii=False)}",
+            level="DEBUG",
+        )
+        results = payload.get("data")
+        if not isinstance(results, list) or not results:
+            message = payload.get("message") or payload.get("error")
+            return False, message or "搜图Bot酱返回无结果~"
+
+        msg_list = []
+        for result in results[:3]:
+            if not isinstance(result, dict):
+                continue
+            title = result.get("title") or "无标题 (No Title)"
+            try:
+                similarity = f"{float(result.get('similarity', 0)):.2f}%"
+            except (TypeError, ValueError):
+                similarity = "未知"
+            source = result.get("source") or "未知"
+            language = result.get("language") or "未知"
+            msg = f"{title}\n匹配度: {similarity}\n语言: {language}\n来源: {source}"
+            host = hosts.get(result.get("source"))
+            subject_path = result.get("subjectPath")
+            page_path = result.get("pagePath")
+            if host and subject_path:
+                msg += f"\n详情: https://{host}{subject_path}"
+            if host and page_path:
+                msg += f"\n图片页: https://{host}{page_path}"
+            if preview_url := result.get("previewImageUrl"):
+                msg += f"\n预览图: {preview_url}"
+            msg_list.append(msg)
+        if not msg_list:
+            return False, "搜图Bot酱返回无有效结果~"
+        return True, msg_list
 
     def get_google_ai_overview(
         self, page_token: str, proxies: str = None
