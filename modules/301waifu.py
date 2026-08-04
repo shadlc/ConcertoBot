@@ -37,6 +37,7 @@ class Waifu(Module):
     CONV_CONFIG = {
         "enable": True,
         "add_auth": 1,
+        "user_waifu_rate": 0,
         "waifu": {}
     }
 
@@ -104,19 +105,38 @@ class Waifu(Module):
 
         if waifu is None:
             # 从可用老婆中随机选择
-            available_waifus = self.get_available_waifus()
-            if not available_waifus:
-                return self.reply("今天的老婆已经被抽光啦，明天再来吧!", reply=True)
+            user_rate = config.get("user_waifu_rate", 0)
+            user_list = list(config.get("waifu", {}).keys())
+            if self.event.user_id in user_list:
+                user_list.remove(self.event.user_id)
 
-            waifu = random.choice(available_waifus)
+            # 是否抽取群老婆
+            is_user_waifu = user_rate > 0 and user_list and random.random() <= user_rate
+            if is_user_waifu:
+                # 抽群友
+                waifu = random.choice(user_list)
+            else:
+                # 抽普通老婆
+                available_waifus = self.get_available_waifus()
+                if not available_waifus:
+                    return self.reply("今天的老婆已经被抽光啦，明天再来吧!", reply=True)
+                waifu = random.choice(available_waifus)
+
             # 记录用户今天的老婆
             config["waifu"][user_id] = [waifu, today]
             self.save_config()
 
+
         waifu_name = waifu.split(".")[0]
         waifu_img = self.get_waifu_file(waifu)
-        msg = f"你今天的二次元老婆是{waifu_name}哒~"
-        result = self.reply(msg+f"\n[CQ:image,file=base64://{waifu_img}]", reply=True)
+        msg = f"你今天的二次元老婆是 {waifu_name} 哒~"
+        if re.search(r"^[0-9]+$", waifu):
+            waifu_name = Utils.get_user_name(self.robot, waifu)
+            waifu_img = self.get_user_waifu_file(waifu)
+            msg = f"你今天的群老婆是 {waifu_name} 哒~"
+
+        waifu_cq = f"[CQ:image,file=base64://{waifu_img}]" if waifu_img else f"[CQ:image,file=http://q1.qlogo.cn/g?b=qq&nk={waifu}&s=640]"
+        result = self.reply(f"{msg}\n{waifu_cq}", reply=True)
         if not Utils.status_ok(result):
             qq_url = Utils.get_img_url(self.robot, f"base64://{waifu_img}")
             msg = f"{msg}\n{qq_url}"
@@ -124,7 +144,7 @@ class Waifu(Module):
 
         if self.event.group_id and Utils.status_ok(result):
             if notify_maisaka := self.robot.func.get("notify_maisaka"):
-                msg = f"{self.event.user_name}进行了今日的二次元抽老婆，你今天的二次元老婆是{waifu_name}哒~"
+                msg = f"{self.event.user_name}进行了今日的二次元抽老婆，今天的二次元老婆是{waifu_name}哒~"
                 notify_maisaka(msg, self.event.group_id)
 
     @Utils.handler(lambda self: self.au(2) and self.conv_config.get("enable") and self.match(r"^查寻?老婆"))
@@ -152,10 +172,17 @@ class Waifu(Module):
 
             waifu_name = waifu.split(".")[0]
             waifu_img = self.get_waifu_file(waifu)
-            result = self.reply(f"{user_name}今天的二次元老婆是{waifu_name}哒~[CQ:image,file=base64://{waifu_img}]", reply=True)
+            msg = f"{user_name}今天的二次元老婆是{waifu_name}哒~"
+            if re.search(r"^[0-9]+$", waifu):
+                waifu_name = Utils.get_user_name(self.robot, waifu)
+                waifu_img = self.get_user_waifu_file(waifu)
+                msg = f"{user_name}今天的群老婆是{waifu_name}哒~"
+
+            waifu_cq = f"[CQ:image,file=base64://{waifu_img}]" if waifu_img else f"[CQ:image,file=http://q1.qlogo.cn/g?b=qq&nk={waifu}&s=640]"
+            result = self.reply(f"{msg}\n{waifu_cq}", reply=True)
             if not Utils.status_ok(result):
                 qq_url = Utils.get_img_url(self.robot, f"base64://{waifu_img}")
-                self.reply(f"{user_name}今天的二次元老婆是{waifu_name}哒~\n{qq_url}", reply=True)
+                self.reply(f"{msg}\n{qq_url}", reply=True)
 
         # 检查是否是查询老婆是否存在
         else:
@@ -305,3 +332,14 @@ class Waifu(Module):
         file_path = os.path.join(pic_path, f"{name}.{fmt}")
         with open(file_path, "wb") as f:
             f.write(data.content)
+
+    def get_user_waifu_file(self, uid: str):
+        """获取群友老婆图片"""
+        pic_path = self.get_path()
+
+        for ext in (".jpg", ".png", ".jpeg"):
+            filepath = os.path.join(pic_path, f"{uid}{ext}")
+            if os.path.exists(filepath):
+                with open(filepath, "rb") as f:
+                    return base64.b64encode(f.read()).decode("utf-8")
+        return None

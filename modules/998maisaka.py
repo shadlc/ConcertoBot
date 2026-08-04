@@ -810,21 +810,23 @@ class MaimToConcertoCodec:
 
         if segment.type == "text":
             text = segment.data
-            if match := re.search(r"[\(（][@#](.*?)[\)）]", text):
+            # 此处为不支持戳一戳与at方法时，使用固定格式实现简单的戳一戳与at功能
+            if match := re.search(r"[\(（]?[@#](.*?)[\)）]?", text):
                 user_name = match.group(1)
                 user_id = Utils.get_user_id(self.owner.robot, user_name, group_id)
-                if re.search(r"[\(（]#(.*?)[\)）]", text):
+                if re.search(r"[\(（]?#(.*?)[\)）]?", text) and user_id:
                     Utils.poke(self.owner.robot, user_id, group_id)
-                    text = re.sub(r"[\(（]#(.*?)[\)）]", "", text)
-                at_msg = f"[CQ:at,qq={user_id}]" if user_id else f"@{user_name}"
-                text = re.sub(r"[\(（]@(.*?)[\)）]", at_msg, text)
+                    text = re.sub(r"[\(（]?#(.*?)[\)）]?", "", text)
+                if re.search(r"[\(（]?@(.*?)[\)）]?", text) and user_id:
+                    at_msg = f"[CQ:at,qq={user_id}] " if user_id else f"@{user_name}"
+                    text = re.sub(r"[\(（]?@(.*?)[\)）]?", at_msg, text)
             if not text:
                 return None
             return {"type": "message", "message": _safe_str(text)}
 
         if segment.type == "at":
             user_id = segment.data
-            return {"type": "message", "message": f"[CQ:at,qq={user_id}]"}
+            return {"type": "message", "message": f"[CQ:at,qq={user_id}] "}
 
         if segment.type == "reply":
             data = segment.data if isinstance(segment.data, Mapping) else {}

@@ -88,7 +88,14 @@ class Twitter(Module):
             msg = self._build_message(caption, image_data, video_url, gif_data)
             if not msg:
                 raise ReferenceError("推文中未找到可发送的正文或媒体")
-            self.reply(msg)
+            result = self.reply(msg, reply=True)
+            if not Utils.status_ok(result):
+                img_list = []
+                for data in image_data:
+                    img_url = Utils.get_img_url(self.robot, f"base64://{data}")
+                    img_list.append(img_url)
+                msg = f"{caption}\n" + "\n".join(img_list)
+                self.reply(msg, reply=True)
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             source = self._message_source()
