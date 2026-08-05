@@ -626,7 +626,29 @@ class Concerto:
         if info["id"] in self.modules:
             self.warnf(f"模块 {Fore.MAGENTA}{info['id']}{Fore.YELLOW} 已加载过")
             return False
-        return bool(self.load_module_file(info["path"]))
+        loaded = bool(self.load_module_file(info["path"]))
+        if loaded:
+            module_order = sorted(
+                self.modules,
+                key=lambda module_id: os.path.basename(self.module_files[module_id]),
+            )
+            self.reorder_modules(module_order)
+        return loaded
+
+    def reorder_modules(self, module_order: list[str]) -> None:
+        """按指定顺序整理已加载模块，并保留未列出的模块"""
+        current_modules = self.modules.copy()
+        self.modules.clear()
+        self.modules.update({
+            module_id: current_modules[module_id]
+            for module_id in module_order
+            if module_id in current_modules
+        })
+        self.modules.update({
+            module_id: module
+            for module_id, module in current_modules.items()
+            if module_id not in module_order
+        })
 
     def unload_plugin(self, target: str) -> bool:
         """通过ID卸载模块"""
