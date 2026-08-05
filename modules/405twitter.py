@@ -114,8 +114,8 @@ class Twitter(Module):
                 return match.group(0)
         return ""
 
-    def get_media(self, url: str) -> tuple[str, list[str], str, str]:
-        """读取推文正文、图片和视频地址。"""
+    def get_media(self, url: str) -> tuple[str, list[str], str, list[str]]:
+        """读取推文正文、图片、视频地址"""
         username, tweet_id = self._parse_tweet_url(url)
         api_url = self.config["api"].format(username=username, tweet_id=tweet_id)
         headers = {
@@ -146,14 +146,17 @@ class Twitter(Module):
         )
 
         video_url = ""
-        gif_data = ""
-        if video_items:
-            video, media = video_items[0]
+        gif_data = []
+        for video, media in video_items:
             candidate = video.get("url", "")
-            if isinstance(candidate, str):
+            if not isinstance(candidate, str) or not candidate:
+                continue
+            if not video_url:
                 video_url = candidate
-                if self.config["convert_gif"] and self._is_gif_media(media, video):
-                    gif_data = self._convert_video_to_gif(video_url, url)
+            if self.config["convert_gif"] and self._is_gif_media(media, video):
+                converted_gif = self._convert_video_to_gif(candidate, url)
+                if converted_gif:
+                    gif_data.append(converted_gif)
         return "\n\n".join(captions), image_data, video_url, gif_data
 
     def _collect_tweet_content(
@@ -385,16 +388,16 @@ class Twitter(Module):
         caption: str,
         image_data: list[str],
         video_url: str,
-        gif_data: str = "",
+        gif_data: list[str] | None = None,
     ) -> str:
         """将正文和媒体组装为 OneBot CQ 消息。"""
+        gif_data = gif_data or []
         parts = []
         if caption:
             parts.append(caption)
         parts.extend(f"[CQ:image,sub_type=0,file=base64://{data}]" for data in image_data)
-        if gif_data:
-            parts.append(f"[CQ:image,sub_type=0,file=base64://{gif_data}]")
-        elif video_url:
+        parts.extend(f"[CQ:image,sub_type=0,file=base64://{data}]" for data in gif_data)
+        if not gif_data and video_url:
             parts.append(f"[CQ:video,file={video_url}]")
         return "\n".join(parts)
 
