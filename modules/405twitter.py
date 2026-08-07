@@ -157,7 +157,7 @@ class Twitter(Module):
                 converted_gif = self._convert_video_to_gif(candidate, url)
                 if converted_gif:
                     gif_data.append(converted_gif)
-        return "\n\n".join(captions), image_data, video_url, gif_data
+        return "".join(captions), image_data, video_url, gif_data
 
     def _collect_tweet_content(
         self,
@@ -392,14 +392,15 @@ class Twitter(Module):
     ) -> str:
         """将正文和媒体组装为 OneBot CQ 消息。"""
         gif_data = gif_data or []
+        if video_url:
+            # 解析到视频时仅发送视频，避免附带推文正文。
+            return f"[CQ:video,file={video_url}]"
         parts = []
         if caption:
             parts.append(caption)
         parts.extend(f"[CQ:image,sub_type=0,file=base64://{data}]" for data in image_data)
         parts.extend(f"[CQ:image,sub_type=0,file=base64://{data}]" for data in gif_data)
-        if not gif_data and video_url:
-            parts.append(f"[CQ:video,file={video_url}]")
-        return "\n".join(parts)
+        return "".join(parts)
 
     def _message_source(self) -> str:
         """获取错误通知中的群聊或私聊来源。"""
