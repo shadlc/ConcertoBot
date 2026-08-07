@@ -64,15 +64,25 @@ class Waifu(Module):
     def get_today_waifus(self):
         """获取今天已分配的老婆列表"""
         today = datetime.date.today().strftime("%Y%m%d")
+        return self._get_waifus_by_dates({today})
+
+    def _get_waifus_by_dates(self, dates):
+        """获取指定日期已分配的老婆列表"""
         waifu_data = self.conv_config["waifu"]
-
-        # 从waifu数据中筛选出今天分配的老婆
-        today_waifus = []
+        assigned_waifus = []
         for waifu_name, date in waifu_data.values():
-            if date == today:
-                today_waifus.append(waifu_name)
+            if date in dates:
+                assigned_waifus.append(waifu_name)
+        return assigned_waifus
 
-        return today_waifus
+    def get_recent_waifus(self):
+        """获取今天和昨天已分配的老婆列表"""
+        today = datetime.date.today()
+        dates = {
+            today.strftime("%Y%m%d"),
+            (today - datetime.timedelta(days=1)).strftime("%Y%m%d"),
+        }
+        return self._get_waifus_by_dates(dates)
 
     def get_available_waifus(self):
         """获取今天可用的老婆列表"""
@@ -83,9 +93,9 @@ class Waifu(Module):
         if not files:
             return []
 
-        # 排除今天已经分配过的老婆
-        today_waifus = self.get_today_waifus()
-        available_waifus = [f for f in files if f not in today_waifus]
+        # 排除今天和昨天已经分配过的老婆
+        recent_waifus = self.get_recent_waifus()
+        available_waifus = [f for f in files if f not in recent_waifus]
 
         return available_waifus
 
@@ -106,9 +116,12 @@ class Waifu(Module):
         if waifu is None:
             # 从可用老婆中随机选择
             user_rate = config.get("user_waifu_rate", 0)
-            user_list = list(config.get("waifu", {}).keys())
-            if self.event.user_id in user_list:
-                user_list.remove(self.event.user_id)
+            used_waifus = set(self.get_recent_waifus())
+            user_list = [
+                user_id
+                for user_id in config.get("waifu", {})
+                if user_id != self.event.user_id and user_id not in used_waifus
+            ]
 
             # 是否抽取群老婆
             is_user_waifu = user_rate > 0 and user_list and random.random() <= user_rate
