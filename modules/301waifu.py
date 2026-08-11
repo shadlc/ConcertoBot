@@ -117,10 +117,13 @@ class Waifu(Module):
             # 从可用老婆中随机选择
             user_rate = config.get("user_waifu_rate", 0)
             used_waifus = set(self.get_recent_waifus())
+            # 如果抽的是群老婆，只允许近30天内抽过老婆的群友
+            recent_date = (datetime.date.today() - datetime.timedelta(days=30)).strftime("%Y%m%d")
             user_list = [
-                user_id
-                for user_id in config.get("waifu", {})
-                if user_id != self.event.user_id and user_id not in used_waifus
+                user_id for user_id, (_, data_date) in config.get("waifu", {}).items()
+                if user_id != self.event.user_id
+                and data_date >= recent_date
+                and user_id not in used_waifus
             ]
 
             # 是否抽取群老婆
