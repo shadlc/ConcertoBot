@@ -88,7 +88,7 @@ class Twitter(Module):
             msg = self._build_message(caption, image_data, video_url, gif_data)
             if not msg:
                 raise ReferenceError("推文中未找到可发送的正文或媒体")
-            if video_url:
+            if not gif_data and video_url:
                 # 视频无法使用引用回复
                 return self.reply(msg)
             result = self.reply(msg, reply=True)
@@ -395,8 +395,8 @@ class Twitter(Module):
     ) -> str:
         """将正文和媒体组装为 OneBot CQ 消息。"""
         gif_data = gif_data or []
-        if video_url:
-            # 解析到视频时仅发送视频，避免附带推文正文。
+        if not gif_data and video_url:
+            # GIF 转换失败时回退发送视频，避免附带推文正文。
             return f"[CQ:video,file={video_url}]"
         parts = []
         if caption:
