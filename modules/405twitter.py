@@ -101,10 +101,9 @@ class Twitter(Module):
                 self.reply(msg, reply=True)
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
-            source = self._message_source()
-            nodes = self.node(f"来源：{source}\nURL：{url}\n错误：{e}")
-            self.robot.admin_notify("推特内容处理失败", nodes)
-            return self.reply_forward(nodes, source="推特内容处理失败")
+            nodes = self.node(f"URL：{url}\n错误：{e}")
+            self.robot.admin_notify("推特内容处理失败", nodes, self.event)
+            return self.reply(str(e))
 
     def _get_tweet_url(self) -> str:
         """从当前消息或被回复消息中提取推特/X链接。"""
@@ -404,13 +403,3 @@ class Twitter(Module):
         parts.extend(f"[CQ:image,sub_type=0,file=base64://{data}]" for data in image_data)
         parts.extend(f"[CQ:image,sub_type=0,file=base64://{data}]" for data in gif_data)
         return "".join(parts)
-
-    def _message_source(self) -> str:
-        """获取错误通知中的群聊或私聊来源。"""
-        group_id = str(getattr(self.event, "group_id", "") or "")
-        user_id = str(getattr(self.event, "user_id", "") or "")
-        user_name = str(getattr(self.event, "user_name", "") or user_id or "未知用户")
-        if group_id:
-            group_name = str(getattr(self.event, "group_name", "") or group_id)
-            return f"群聊：{group_name}；发送者：{user_name}"
-        return f"用户：{user_name}"

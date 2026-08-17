@@ -765,7 +765,12 @@ class Concerto:
         result = future.result()
         return result
 
-    def admin_notify(self, msg, nodes: None|dict = None) -> bool:
+    def admin_notify(
+        self,
+        msg,
+        nodes: None|dict = None,
+        event: Event | None = None,
+    ) -> bool:
         """向管理员发送通知消息"""
         if not self.config.is_error_reply:
             return
@@ -773,6 +778,17 @@ class Concerto:
             self.warnf("无可用管理员进行通知")
             return False
         if nodes:
+            if event:
+                group_id = str(getattr(event, "group_id", "") or "")
+                user_id = str(getattr(event, "user_id", "") or "")
+                user_name = str(getattr(event, "user_name", "") or user_id or "未知用户")
+                if group_id:
+                    group_name = str(getattr(event, "group_name", "") or group_id)
+                    source = f"群聊：{group_name}；发送者：{user_name}"
+                else:
+                    source = f"用户：{user_name}"
+                content = nodes.get("data", {}).get("content", "")
+                nodes = Utils.build_node(f"来源：{source}\n{content}")
             Utils.send_forward_msg(self, nodes, None, self.config.admin_list[0], msg)
         else:
             Utils.send_msg(self, "private", self.config.admin_list[0], msg)
