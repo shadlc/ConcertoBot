@@ -1074,8 +1074,8 @@ class MaiSaka(Module):
         asyncio.run_coroutine_threadsafe(send_task(), self.robot.loop)
 
     @Utils.export_func
-    def notify_maisaka(self, content: str, group_id: str):
-        """主动通知麦麦 (供其他模块调用)"""
+    def notify_maisaka(self, content: str, group_id: str, event: Event | None = None):
+        """主动通知麦麦 (供其他模块调用，传入事件时仅替换消息内容)"""
         if not self.get_persist():
             return
         if not self.config.get(f"g{group_id}", {}).get("enable"):
@@ -1083,25 +1083,30 @@ class MaiSaka(Module):
             return
 
         async def send_task() -> None:
-            """构造伪事件并主动推送到麦麦"""
+            """构造事件并主动推送到麦麦"""
             try:
-                fake_event = Event(self.robot)
-                fake_event.msg = content
-                fake_event.time = time.time()
-                fake_event.user_id = str(self.robot.self_id)
-                fake_event.user_name = self.robot.self_name
-                fake_event.user_card = self.robot.self_name
-                fake_event.group_id = str(group_id)
-                fake_event.group_name = Utils.get_group_name(self.robot, str(group_id)) or ""
-                fake_event.target_id = ""
-                fake_event.raw = {
-                    "message": content,
-                    "group_id": group_id,
-                    "user_id": self.robot.self_id,
-                    "time": fake_event.time,
-                }
+                if event is not None:
+                    event_data = dict(event.raw)
+                    event_data["message"] = content
+                    notify_event = Event(self.robot, event_data)
+                else:
+                    notify_event = Event(self.robot)
+                    notify_event.msg = content
+                    notify_event.time = time.time()
+                    notify_event.user_id = str(self.robot.self_id)
+                    notify_event.user_name = self.robot.self_name
+                    notify_event.user_card = self.robot.self_name
+                    notify_event.group_id = str(group_id)
+                    notify_event.group_name = Utils.get_group_name(self.robot, str(group_id)) or ""
+                    notify_event.target_id = ""
+                    notify_event.raw = {
+                        "message": content,
+                        "group_id": group_id,
+                        "user_id": self.robot.self_id,
+                        "time": notify_event.time,
+                    }
 
-                message = await self.construct_message(fake_event, content_override=content)
+                message = await self.construct_message(notify_event, content_override=content)
                 if message is not None:
                     await self.send_to_maisaka(message)
             except Exception: # pylint: disable=broad-exception-caught
