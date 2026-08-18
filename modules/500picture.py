@@ -545,13 +545,13 @@ class Picture(Module):
             result = "谷歌搜图返回无结果~"
         return success, result
 
-    def get_soutubot_api_key(self, user_agent: dict) -> str:
+    def get_soutubot_api_key(self, user_agent: str, salt: int) -> str:
         """按照搜图Bot酱网页端算法生成请求令牌"""
         timestamp = int(time.time())
         value = float(
             timestamp**2
             + len(user_agent) ** 2
-            + 1647857448721
+            + salt
         )
         # JavaScript Number.toString() 会先舍入到双精度，再输出最短十进制表示。
         value_text = format(Decimal(repr(value)), "f").split(".", 1)[0]
@@ -603,7 +603,6 @@ class Picture(Module):
         headers = {
             "Referer": "https://soutubot.moe/",
             "User-Agent": user_agent,
-            "X-API-KEY": self.get_soutubot_api_key(user_agent),
             "X-Requested-With": "XMLHttpRequest",
         }
         timeout = httpx.Timeout(30.0, connect=15.0)
@@ -613,6 +612,19 @@ class Picture(Module):
             follow_redirects=True,
             headers=headers,
         ) as client:
+            site_resp = client.get("https://soutubot.moe/")
+            site_resp.raise_for_status()
+            # 官网将鉴权常量注入首页，避免依赖过期的固定值。
+            match = re.search(
+                r"window\.GLOBAL\s*=\s*\{.*?\bm\s*:\s*(\d+)\s*,",
+                site_resp.text,
+                re.DOTALL,
+            )
+            if not match:
+                raise RuntimeError("搜图Bot酱未返回有效鉴权配置")
+            client.headers["X-API-KEY"] = self.get_soutubot_api_key(
+                user_agent, int(match.group(1))
+            )
             resp = client.post(
                 "https://soutubot.moe/api/search",
                 data={"factor": "1.2"},
