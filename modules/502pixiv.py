@@ -1,5 +1,6 @@
 """Pixiv模块"""
 
+import html
 import re
 import traceback
 
@@ -38,7 +39,11 @@ class Pixiv(Module):
         """初始化Pixiv PID和作品链接匹配规则"""
         self.pixiv_pattern = (
             r"(?:\bpid(?P<pid>\d+)\b|"
-            r"(?:https?://)?(?:www\.)?pixiv\.net/artworks/(?P<artwork_id>\d+))"
+            r"(?:(?:https?:)?//)?(?:[\w-]+\.)?pixiv\.net/"
+            r"(?:[^/\s]+/)?"
+            r"(?:(?:artworks|i)/(?P<artwork_id>\d+)|"
+            r"member_illust\.php\?[^#\s]*?"
+            r"illust_id=(?P<legacy_artwork_id>\d+)))"
         )
         super().__init__(event, auth)
 
@@ -56,7 +61,7 @@ class Pixiv(Module):
         try:
             if not self.is_private():
                 Utils.set_emoji(self.robot, self.event.msg_id, 124)
-            title, author, image_urls = self.retry(
+            title, caption, image_urls = self.retry(
                 self.get_media,
                 pid,
                 failed_ok=False,
@@ -66,7 +71,6 @@ class Pixiv(Module):
             if not image_urls:
                 raise ReferenceError("Pixiv作品中未找到图片")
 
-            caption = self._build_caption(author, title)
             result = self._send_content(caption, image_urls, title)
             if not Utils.status_ok(result):
                 self.reply(self._build_url_message(caption, image_urls), reply=True)
@@ -84,11 +88,15 @@ class Pixiv(Module):
         for message in messages:
             match = re.search(self.pixiv_pattern, str(message), re.IGNORECASE)
             if match:
-                return match.group("pid") or match.group("artwork_id")
+                return (
+                    match.group("pid")
+                    or match.group("artwork_id")
+                    or match.group("legacy_artwork_id")
+                )
         return ""
 
     def get_media(self, pid: str) -> tuple[str, str, list[str]]:
-        """读取Pixiv作品标题、作者和使用pixiv.re的图片地址"""
+        """读取Pixiv作品元数据和使用pixiv.re的图片地址"""
         api_url = self.config["api"].format(pid=pid)
         headers = {
             "User-Agent": self.config["user_agent"],
@@ -129,42 +137,84 @@ class Pixiv(Module):
         ]
         if not author:
             raise ReferenceError("Pixiv接口返回的作品作者为空")
-        return title, author, image_urls
+        return title, self._build_caption(pid, author, title, illust), image_urls
 
     def _send_content(self, caption: str, image_urls: list[str], source: str):
-        """根据图片数量发送普通消息或转发消息"""
-        if len(image_urls) > 3:
-            nodes = [self.node(caption)]
-            nodes.extend(
-                self.node(f"[CQ:image,file={image_url}]")
-                for image_url in image_urls
-            )
-            return self.reply_forward(nodes, source=source, summary="Pixiv")
-        msg = self._build_message(caption, image_urls)
-        return self.reply(msg, reply=True)
-
-    @staticmethod
-    def _build_message(caption: str, image_urls: list[str]) -> str:
-        """将作品信息和图片地址组装为OneBot CQ消息"""
-        images = "\n".join(
-            f"[CQ:image,file={image_url}]" for image_url in image_urls
+        """以合并转发发送作品元数据和全部图片"""
+        nodes = [self.node(caption)]
+        nodes.extend(
+            self.node(f"[CQ:image,file={image_url}]")
+            for image_url in image_urls
         )
-        return f"{caption}\n{images}"
+        return self.reply_forward(nodes, source=source, summary="Pixiv")
 
     @staticmethod
     def _build_url_message(caption: str, image_urls: list[str]) -> str:
         """将作品信息和pixiv.re图片地址组装为普通文本消息"""
-        return f"{caption}\n" + "\n".join(image_urls)
+        return f"{caption}\n" + "".join(image_urls)
 
     @staticmethod
-    def _build_caption(author: str, title: str) -> str:
-        """生成作品作者和标题"""
-        return f"作者：{author}\n作品：{title}"
+    def _build_caption(pid: str, author: str, title: str, illust: dict) -> str:
+        """生成作品元数据"""
+        description = Pixiv._clean_description(
+            illust.get("illustComment") or illust.get("description")
+        )
+        tags = Pixiv._get_tags(illust.get("tags"))
+        upload_date = Pixiv._get_text(illust.get("uploadDate") or illust.get("createDate"))
+        width = illust.get("width")
+        height = illust.get("height")
+        size = f"{width}×{height}" if width and height else "未知"
+        return "\n".join(
+            [
+                f"PID：{pid}",
+                f"作品：{title}",
+                f"作者：{author}",
+                f"简介：{description or '无'}",
+                f"标签：{tags or '无'}",
+                f"上传日期：{upload_date or '未知'}",
+                f"收藏：{Pixiv._format_count(illust.get('bookmarkCount'))}",
+                f"点赞：{Pixiv._format_count(illust.get('likeCount'))}",
+                f"浏览：{Pixiv._format_count(illust.get('viewCount'))}",
+                f"评论：{Pixiv._format_count(illust.get('commentCount'))}",
+                f"页数：{Pixiv._format_count(illust.get('pageCount') or 1)}",
+                f"尺寸：{size}",
+            ]
+        )
 
     @staticmethod
     def _get_text(value) -> str:
         """读取接口返回的文本字段"""
         return value.strip() if isinstance(value, str) else ""
+
+    @staticmethod
+    def _clean_description(value) -> str:
+        """清理作品简介中的HTML标签"""
+        description = html.unescape(Pixiv._get_text(value))
+        description = re.sub(r"<br\s*/?>", "\n", description, flags=re.IGNORECASE)
+        return re.sub(r"<[^>]+>", "", description).strip()
+
+    @staticmethod
+    def _get_tags(value) -> str:
+        """读取接口返回的作品标签"""
+        tags = value.get("tags") if isinstance(value, dict) else value
+        if not isinstance(tags, list):
+            return ""
+        tag_names = []
+        for tag in tags:
+            if isinstance(tag, dict):
+                name = Pixiv._get_text(tag.get("tag"))
+            else:
+                name = Pixiv._get_text(tag)
+            if name:
+                tag_names.append(name)
+        return ", ".join(tag_names)
+
+    @staticmethod
+    def _format_count(value) -> str:
+        """格式化接口返回的统计数量"""
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return str(value)
+        return Pixiv._get_text(value) or "0"
 
     @staticmethod
     def _get_image_extension(original_url: str) -> str:
