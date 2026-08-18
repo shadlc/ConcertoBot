@@ -67,7 +67,7 @@ class Pixiv(Module):
                 raise ReferenceError("Pixiv作品中未找到图片")
 
             caption = self._build_caption(author, title)
-            result = self._send_content(caption, image_urls)
+            result = self._send_content(caption, image_urls, title)
             if not Utils.status_ok(result):
                 self.reply(self._build_url_message(caption, image_urls), reply=True)
         except Exception as e:  # pylint: disable=broad-exception-caught
@@ -111,7 +111,7 @@ class Pixiv(Module):
         if not isinstance(illust, dict):
             raise ReferenceError("Pixiv接口未返回作品数据")
 
-        title = self._get_text(illust.get("illustTitle") or illust.get("title"))
+        title = self._get_text(illust.get("illustTitle") or illust.get("title")) or f"PID{pid}"
         author = self._get_text(illust.get("userName"))
         page_count = illust.get("pageCount", 1)
         try:
@@ -125,13 +125,13 @@ class Pixiv(Module):
         extension = self._get_image_extension(original_url)
         image_urls = [
             self._build_image_url(pid, page, extension)
-            for page in range(page_count)
+            for page in range(1, page_count + 1)
         ]
-        if not title or not author:
-            raise ReferenceError("Pixiv接口返回的作品标题或作者为空")
+        if not author:
+            raise ReferenceError("Pixiv接口返回的作品作者为空")
         return title, author, image_urls
 
-    def _send_content(self, caption: str, image_urls: list[str]):
+    def _send_content(self, caption: str, image_urls: list[str], source: str):
         """根据图片数量发送普通消息或转发消息"""
         if len(image_urls) > 3:
             nodes = [self.node(caption)]
@@ -139,7 +139,7 @@ class Pixiv(Module):
                 self.node(f"[CQ:image,file={image_url}]")
                 for image_url in image_urls
             )
-            return self.reply_forward(nodes, source="Pixiv", summary=caption)
+            return self.reply_forward(nodes, source=source, summary="Pixiv")
         msg = self._build_message(caption, image_urls)
         return self.reply(msg, reply=True)
 
@@ -175,5 +175,5 @@ class Pixiv(Module):
     @staticmethod
     def _build_image_url(pid: str, page: int, extension: str) -> str:
         """生成pixiv.re原图地址"""
-        page_suffix = "" if page == 0 else f"-{page}"
+        page_suffix = "" if page == 1 else f"-{page}"
         return f"https://pixiv.re/{pid}{page_suffix}.{extension}"
