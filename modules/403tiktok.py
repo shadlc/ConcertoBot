@@ -126,7 +126,7 @@ class Tiktok(Module):
             self.errorf(traceback.format_exc())
             nodes = self.node(f"URL：{url}\n错误：{e}")
             self.robot.admin_notify("抖音媒体处理失败", nodes, self.event)
-            return self.reply(str(e))
+            return self.reply(str(e), reply=True)
 
     def _get_video_url(self) -> str:
         """从当前消息或被回复消息中提取抖音/TikTok链接。"""

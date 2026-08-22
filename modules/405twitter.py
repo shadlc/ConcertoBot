@@ -103,7 +103,7 @@ class Twitter(Module):
             self.errorf(traceback.format_exc())
             nodes = self.node(f"URL：{url}\n错误：{e}")
             self.robot.admin_notify("推特内容处理失败", nodes, self.event)
-            return self.reply(str(e))
+            return self.reply(str(e), reply=True)
 
     def _get_tweet_url(self) -> str:
         """从当前消息或被回复消息中提取推特/X链接。"""
