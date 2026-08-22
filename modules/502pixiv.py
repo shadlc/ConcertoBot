@@ -1,11 +1,15 @@
 """Pixiv模块"""
 
+import base64
 import html
+import io
 import json
 import re
 import traceback
+import zipfile
 
 import httpx
+from PIL import Image
 
 from src.base import Module
 from src.utils import Utils
@@ -145,14 +149,98 @@ class Pixiv(Module):
         urls = illust.get("urls")
         if isinstance(urls, dict):
             original_url = self._get_text(urls.get("original"))
-        extension = self._get_image_extension(original_url)
-        image_urls = [
-            self._build_image_url(pid, page, extension)
-            for page in range(1, page_count + 1)
-        ]
         if not author:
             raise ReferenceError("Pixiv接口返回的作品作者为空")
+        if illust.get("isUgoira") or str(illust.get("illustType")) == "2":
+            image_urls = [f"base64://{self._get_ugoira_gif(pid, headers)}"]
+        else:
+            extension = self._get_image_extension(original_url)
+            image_urls = [
+                self._build_image_url(pid, page, extension)
+                for page in range(1, page_count + 1)
+            ]
         return title, self._build_caption(pid, author, title, illust), image_urls
+
+    def _get_ugoira_gif(self, pid: str, headers: dict[str, str]) -> str:
+        """下载Pixiv动图帧并转换为Base64 GIF"""
+        meta_url = f"{self.config['api'].format(pid=pid)}/ugoira_meta"
+        with httpx.Client(
+            headers=headers,
+            follow_redirects=True,
+            timeout=self.config["api_timeout"],
+        ) as client:
+            response = client.get(meta_url)
+            response.raise_for_status()
+            data = response.json()
+            if not isinstance(data, dict) or data.get("error"):
+                message = data.get("message", "未知错误") if isinstance(data, dict) else "响应格式错误"
+                raise ReferenceError(f"Pixiv动图接口返回失败: {message}")
+            ugoira = data.get("body")
+            if not isinstance(ugoira, dict):
+                raise ReferenceError("Pixiv动图接口未返回动图数据")
+            sources = (ugoira.get("originalSrc"), ugoira.get("src"))
+            zip_url = ""
+            source_data = None
+            for source in sources:
+                if isinstance(source, dict):
+                    zip_url = self._get_text(
+                        source.get("zip") or source.get("zipUrl")
+                    )
+                    source_data = source
+                else:
+                    zip_url = self._get_text(source)
+                if zip_url:
+                    break
+            frames = ugoira.get("frames")
+            if not isinstance(frames, list) and isinstance(source_data, dict):
+                frames = source_data.get("frames")
+            if not zip_url or not isinstance(frames, list):
+                raise ReferenceError("Pixiv动图接口未返回完整帧数据")
+            zip_response = client.get(zip_url)
+            zip_response.raise_for_status()
+
+        gif_data = self._build_ugoira_gif(zip_response.content, frames)
+        return base64.b64encode(gif_data).decode("ascii")
+
+    @staticmethod
+    def _build_ugoira_gif(zip_data: bytes, frames: list) -> bytes:
+        """按Pixiv动图帧数据生成GIF"""
+        images = []
+        durations = []
+        try:
+            with zipfile.ZipFile(io.BytesIO(zip_data)) as archive:
+                for frame in frames:
+                    if not isinstance(frame, dict):
+                        continue
+                    file_name = Pixiv._get_text(frame.get("file"))
+                    if not file_name:
+                        continue
+                    try:
+                        delay = max(1, int(frame.get("delay", 0)))
+                        frame_data = archive.read(file_name)
+                    except (KeyError, TypeError, ValueError) as error:
+                        raise ReferenceError(f"Pixiv动图帧数据无效: {file_name}") from error
+                    with Image.open(io.BytesIO(frame_data)) as image:
+                        images.append(image.convert("RGBA"))
+                    durations.append(delay)
+            if not images:
+                raise ReferenceError("Pixiv动图中未找到有效帧")
+
+            output = io.BytesIO()
+            images[0].save(
+                output,
+                format="GIF",
+                save_all=True,
+                append_images=images[1:],
+                duration=durations,
+                loop=0,
+                disposal=2,
+                optimize=True,
+            )
+            return output.getvalue()
+        finally:
+            for image in images:
+                image.close()
 
     def get_collection_media(
         self, collection_id: str
