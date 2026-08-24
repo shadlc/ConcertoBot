@@ -2,10 +2,13 @@
 
 import base64
 import html
+from http.cookiejar import MozillaCookieJar
 import io
 import json
+from pathlib import Path
 import re
 import traceback
+from urllib.request import Request
 import zipfile
 
 import httpx
@@ -117,18 +120,17 @@ class Pixiv(Module):
     def get_media(self, pid: str) -> tuple[str, str, list[str]]:
         """读取Pixiv作品元数据和使用pixiv.re的图片地址"""
         api_url = self.config["api"].format(pid=pid)
-        headers = {
-            "User-Agent": self.config["user_agent"],
-            "Accept": "application/json, text/plain, */*",
-            "Referer": f"https://www.pixiv.net/artworks/{pid}",
-        }
+        headers = self._get_request_headers(
+            api_url,
+            "application/json, text/plain, */*",
+            referer=f"https://www.pixiv.net/artworks/{pid}",
+        )
         with httpx.Client(
-            headers=headers,
             follow_redirects=True,
             timeout=self.config["api_timeout"],
         ) as client:
-            response = client.get(api_url)
-            response.raise_for_status()
+            response = client.get(api_url, headers=headers)
+            self._raise_for_status(response)
             data = response.json()
 
         if not isinstance(data, dict) or data.get("error"):
@@ -152,7 +154,10 @@ class Pixiv(Module):
         if not author:
             raise ReferenceError("Pixiv接口返回的作品作者为空")
         if illust.get("isUgoira") or str(illust.get("illustType")) == "2":
-            image_urls = [f"base64://{self._get_ugoira_gif(pid, headers)}"]
+            if gif_data := self._get_ugoira_gif(pid):
+                image_urls = [f"base64://{gif_data}"]
+            else:
+                image_urls = [self._build_image_url(pid, 1, "jpg")]
         else:
             extension = self._get_image_extension(original_url)
             image_urls = [
@@ -161,16 +166,29 @@ class Pixiv(Module):
             ]
         return title, self._build_caption(pid, author, title, illust), image_urls
 
-    def _get_ugoira_gif(self, pid: str, headers: dict[str, str]) -> str:
+    def _get_ugoira_gif(self, pid: str) -> str:
         """下载Pixiv动图帧并转换为Base64 GIF"""
         meta_url = f"{self.config['api'].format(pid=pid)}/ugoira_meta"
+        referer = f"https://www.pixiv.net/artworks/{pid}"
         with httpx.Client(
-            headers=headers,
             follow_redirects=True,
             timeout=self.config["api_timeout"],
         ) as client:
-            response = client.get(meta_url)
-            response.raise_for_status()
+            response = client.get(
+                meta_url,
+                headers=self._get_request_headers(
+                    meta_url,
+                    "application/json, text/plain, */*",
+                    referer=referer,
+                ),
+            )
+            try:
+                self._raise_for_status(response)
+            except httpx.HTTPStatusError as error:
+                if error.response.status_code != 404:
+                    raise
+                self.printf(f"Pixiv动图元数据不可用，回退发送静态封面: PID{pid}", level="DEBUG")
+                return ""
             data = response.json()
             if not isinstance(data, dict) or data.get("error"):
                 message = data.get("message", "未知错误") if isinstance(data, dict) else "响应格式错误"
@@ -178,29 +196,64 @@ class Pixiv(Module):
             ugoira = data.get("body")
             if not isinstance(ugoira, dict):
                 raise ReferenceError("Pixiv动图接口未返回动图数据")
-            sources = (ugoira.get("originalSrc"), ugoira.get("src"))
-            zip_url = ""
-            source_data = None
-            for source in sources:
-                if isinstance(source, dict):
-                    zip_url = self._get_text(
-                        source.get("zip") or source.get("zipUrl")
-                    )
-                    source_data = source
-                else:
-                    zip_url = self._get_text(source)
-                if zip_url:
-                    break
+            zip_url = self._get_text(ugoira.get("originalSrc") or ugoira.get("src"))
             frames = ugoira.get("frames")
-            if not isinstance(frames, list) and isinstance(source_data, dict):
-                frames = source_data.get("frames")
             if not zip_url or not isinstance(frames, list):
                 raise ReferenceError("Pixiv动图接口未返回完整帧数据")
-            zip_response = client.get(zip_url)
-            zip_response.raise_for_status()
+            zip_response = client.get(
+                zip_url,
+                headers=self._get_request_headers(
+                    zip_url,
+                    "application/zip, application/octet-stream, */*",
+                    referer=referer,
+                ),
+            )
+            self._raise_for_status(zip_response)
 
         gif_data = self._build_ugoira_gif(zip_response.content, frames)
         return base64.b64encode(gif_data).decode("ascii")
+
+    def _get_request_headers(
+        self, url: str, accept: str, *, referer: str
+    ) -> dict[str, str]:
+        """生成Pixiv请求头并按目标域名附加Cookie"""
+        headers = {
+            "User-Agent": self.config["user_agent"],
+            "Accept": accept,
+            "Referer": referer,
+        }
+        if cookie := self._get_cookie_header(url):
+            headers["Cookie"] = cookie
+        return headers
+
+    def _get_cookie_header(self, url: str) -> str:
+        """读取Netscape Cookie文件并生成匹配当前地址的请求头"""
+        cookie_path = Path(self.get_data_path("cookies", "pixiv.txt"))
+        if not cookie_path.is_file():
+            self.printf("未找到Pixiv Cookie文件，使用匿名请求", level="DEBUG")
+            return ""
+
+        cookie_jar = MozillaCookieJar(str(cookie_path))
+        try:
+            cookie_jar.load(ignore_discard=True, ignore_expires=True)
+        except (OSError, ValueError) as error:
+            self.printf(f"读取Pixiv Cookie失败: {error}", level="DEBUG")
+            return ""
+        for cookie in cookie_jar:
+            cookie.expires = None
+        request = Request(url)
+        cookie_jar.add_cookie_header(request)
+        return request.get_header("Cookie", "")
+
+    @staticmethod
+    def _raise_for_status(response) -> None:
+        """处理Pixiv登录态相关的HTTP错误"""
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code in (401, 403):
+                raise ReferenceError("Pixiv登录态无效或没有访问权限") from error
+            raise
 
     @staticmethod
     def _build_ugoira_gif(zip_data: bytes, frames: list) -> bytes:
@@ -247,17 +300,17 @@ class Pixiv(Module):
     ) -> tuple[str, list[tuple[str, list[str]]]]:
         """读取Pixiv收藏集元数据和图片地址"""
         collection_url = f"https://www.pixiv.net/collections/{collection_id}"
-        headers = {
-            "User-Agent": self.config["user_agent"],
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        }
+        headers = self._get_request_headers(
+            collection_url,
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            referer=collection_url,
+        )
         with httpx.Client(
-            headers=headers,
             follow_redirects=True,
             timeout=self.config["api_timeout"],
         ) as client:
-            response = client.get(collection_url)
-            response.raise_for_status()
+            response = client.get(collection_url, headers=headers)
+            self._raise_for_status(response)
 
         match = re.search(
             r'<script[^>]*\bid="__NEXT_DATA__"[^>]*>(.*?)</script>',
@@ -351,10 +404,10 @@ class Pixiv(Module):
         for caption, image_urls in contents:
             if caption:
                 nodes.append(self.node(caption))
-            nodes.extend(
-                self.node(image_url)
-                for image_url in image_urls
-            )
+            for image_url in image_urls:
+                if image_url.startswith("base64://"):
+                    image_url = Utils.get_img_url(self.robot, image_url)
+                nodes.append(self.node(image_url))
         return self.reply_forward(nodes, source=source, summary="Pixiv")
 
     @staticmethod
