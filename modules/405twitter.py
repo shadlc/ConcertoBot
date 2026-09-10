@@ -38,7 +38,6 @@ class Twitter(Module):
         "api_timeout": 15,
         "image_timeout": 20,
         "video_timeout": 30,
-        "max_image_count": 9,
         "max_image_bytes": 10 * 1024 * 1024,
         "convert_gif": True,
         "ffmpeg_path": "ffmpeg",
@@ -85,9 +84,12 @@ class Twitter(Module):
             )
             if not self.is_private():
                 Utils.set_emoji(self.robot, self.event.msg_id, 66)
+            if len(image_data) > 3:
+                msg = self._build_message(caption, image_data, "", gif_data)
+                return self.reply_forward([self.node(msg)], caption, "Twitter")
             msg = self._build_message(caption, image_data, video_url, gif_data)
             if not msg:
-                raise ReferenceError("推文中未找到可发送的正文或媒体")
+                raise ReferenceError("推文中未找到可发送的图文")
             if not gif_data and video_url:
                 # 视频无法使用引用回复
                 return self.reply(msg)
@@ -142,10 +144,7 @@ class Twitter(Module):
             raise ReferenceError("FxTwitter接口未返回推文数据")
 
         captions, image_urls, video_items = self._collect_tweet_content(tweet)
-        image_data = self._download_images_as_base64(
-            image_urls[:self.config["max_image_count"]],
-            url,
-        )
+        image_data = self._download_images_as_base64(image_urls, url)
 
         video_url = ""
         gif_data = []

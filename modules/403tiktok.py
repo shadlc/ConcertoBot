@@ -42,16 +42,6 @@ class Tiktok(Module):
         "image_url",
         "origin_url",
     })
-    IMAGE_URL_KEYS = frozenset({
-        "url_list",
-        "urllist",
-        "url",
-        "uri",
-        "origin_url",
-        "originurl",
-        "download_url",
-        "downloadurl",
-    })
     PLAY_URL_KEYS = frozenset({
         "playaddr",
         "play_addr",
@@ -83,7 +73,6 @@ class Tiktok(Module):
         "page_timeout": 15,
         "image_timeout": 20,
         "max_redirects": 5,
-        "max_image_count": 9,
         "max_image_bytes": 10 * 1024 * 1024,
         "ytdlp_socket_timeout": 30,
     }
@@ -119,13 +108,15 @@ class Tiktok(Module):
                     f"[CQ:image,file=base64://{image_data}]" for image_data in image_urls
                 )
                 msg = f"{caption}\n{image_message}" if caption else image_message
+                if len(image_urls) > 3:
+                    return self.reply_forward([self.node(msg)], caption, "TikTok")
             else:
                 msg = f"[CQ:video,file={media}]"
             self.reply(msg)
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             nodes = self.node(f"URL：{url}\n错误：{e}")
-            self.robot.admin_notify("抖音媒体处理失败", nodes, self.event)
+            self.robot.admin_notify("抖音处理失败", nodes, self.event)
             return self.reply(str(e), reply=True)
 
     def _get_video_url(self) -> str:
@@ -164,7 +155,7 @@ class Tiktok(Module):
         try:
             return "video", self._get_play_url_with_ytdlp(page_url), ""
         except (ImportError, OSError, RuntimeError, ValueError) as error:
-            raise ReferenceError("未找到有效的媒体地址，可能是页面风控或链接已失效") from error
+            raise ReferenceError("未找到有效的抖音地址，可能是页面风控或链接已失效") from error
 
     def _get_image_media(self, page_url: str, page: str) -> tuple[str, list[str], str]:
         """解析图文页面并下载图片。"""
@@ -175,14 +166,11 @@ class Tiktok(Module):
             if not caption:
                 caption = self._extract_image_caption_from_data(detail)
         if not image_urls:
-            raise ReferenceError("未找到图文图片地址")
+            raise ReferenceError("未找到图文地址")
 
-        image_data = self._download_images_as_base64(
-            image_urls[:self.config["max_image_count"]],
-            page_url,
-        )
+        image_data = self._download_images_as_base64(image_urls, page_url)
         if not image_data:
-            raise ReferenceError("图文图片下载失败")
+            raise ReferenceError("图文下载失败")
         return "image", image_data, caption
 
     @staticmethod
@@ -378,31 +366,61 @@ class Tiktok(Module):
     @classmethod
     def _extract_image_urls(cls, page: str) -> list[str]:
         """从图文页面状态数据中提取并去重图片地址。"""
-        candidates: list[str] = []
         for data in cls._iter_json_documents(page):
-            cls._collect_image_urls(data, candidates)
+            image_items = cls._find_aweme_images(data)
+            if image_items is None:
+                continue
+            image_urls = cls._extract_image_urls_from_items(image_items)
+            if image_urls:
+                return image_urls
+        return []
 
-        if not candidates:
-            fallback_urls = re.findall(
-                r"https?://[^\"'\\\s<>]+?\.(?:jpg|jpeg|png|webp|heic)(?:\?[^\"'\\\s<>]*)?",
-                page,
-                re.IGNORECASE,
-            )
-            # 页面没有图集数据时，HTML 中通常只剩站点 Logo、头像等公共资源。
-            candidates.extend(
-                image_url for image_url in fallback_urls
-                if not any(marker in image_url.lower() for marker in (
-                    "logo", "icon", "avatar", "face", "emoji", "favicon",
-                ))
-            )
-
-        return cls._normalise_image_urls(candidates)
+    @classmethod
+    def _find_aweme_images(cls, value) -> list | None:
+        """定位当前作品的 aweme.detail.images 图集。"""
+        if isinstance(value, dict):
+            aweme = value.get("aweme")
+            if isinstance(aweme, dict):
+                detail = aweme.get("detail")
+                if isinstance(detail, dict) and isinstance(detail.get("images"), list):
+                    return detail["images"]
+            aweme_detail = value.get("aweme_detail")
+            if isinstance(aweme_detail, dict) and isinstance(aweme_detail.get("images"), list):
+                return aweme_detail["images"]
+            for nested in value.values():
+                image_items = cls._find_aweme_images(nested)
+                if image_items is not None:
+                    return image_items
+        elif isinstance(value, list):
+            for nested in value:
+                image_items = cls._find_aweme_images(nested)
+                if image_items is not None:
+                    return image_items
+        return None
 
     @classmethod
     def _extract_image_urls_from_data(cls, data: dict) -> list[str]:
         """从详情接口数据中提取并去重图片地址。"""
-        candidates: list[str] = []
-        cls._collect_image_urls(data, candidates)
+        image_items = cls._find_aweme_images(data)
+        if image_items is None:
+            image_items = data.get("images")
+        return cls._extract_image_urls_from_items(image_items)
+
+    @classmethod
+    def _extract_image_urls_from_items(cls, images) -> list[str]:
+        """从当前作品的图集条目中提取图片地址。"""
+        if not isinstance(images, list):
+            return []
+        candidates = []
+        for image in images:
+            if not isinstance(image, dict):
+                continue
+            url_list = image.get("urlList") or image.get("url_list")
+            if isinstance(url_list, list):
+                for url in url_list:
+                    if isinstance(url, str):
+                        candidates.append(url)
+                        break
         return cls._normalise_image_urls(candidates)
 
     @classmethod
@@ -454,41 +472,6 @@ class Tiktok(Module):
         return ""
 
     @classmethod
-    def _collect_image_urls(cls, value, candidates: list[str]) -> None:
-        """递归读取 images、imageURL 等图文字段。"""
-        if isinstance(value, dict):
-            for key, nested in value.items():
-                normalized_key = key.replace("-", "_").lower()
-                if normalized_key in cls.IMAGE_KEYS:
-                    cls._append_image_values(nested, candidates)
-                cls._collect_image_urls(nested, candidates)
-        elif isinstance(value, list):
-            for nested in value:
-                cls._collect_image_urls(nested, candidates)
-
-    @classmethod
-    def _append_image_values(cls, value, candidates: list[str]) -> None:
-        """提取图片字段中的 URL 列表、原图地址和嵌套对象。"""
-        if isinstance(value, str):
-            if value.startswith(("http://", "https://")):
-                candidates.append(value)
-        elif isinstance(value, list):
-            for item in value:
-                cls._append_image_values(item, candidates)
-        elif isinstance(value, dict):
-            for key, nested in value.items():
-                normalized_key = key.replace("-", "_").lower()
-                if normalized_key in cls.IMAGE_URL_KEYS:
-                    if normalized_key in {"url_list", "urllist"} and isinstance(nested, list):
-                        for item in nested:
-                            before_count = len(candidates)
-                            cls._append_image_values(item, candidates)
-                            if len(candidates) > before_count:
-                                break
-                    else:
-                        cls._append_image_values(nested, candidates)
-
-    @classmethod
     def _iter_json_documents(cls, page: str):
         """读取页面中常见的内嵌 JSON 状态对象。"""
         patterns = [
@@ -511,6 +494,24 @@ class Tiktok(Module):
                 except (json.JSONDecodeError, TypeError):
                     continue
                 yield data
+
+        # 新版抖音页面将作品状态放在 React Flight 数据中。
+        flight_pattern = (
+            r"self\.__pace_f\.push\(\[\d+,(?P<data>\"(?:\\.|[^\"\\])*\")\]\)"
+        )
+        for match in re.finditer(flight_pattern, page):
+            try:
+                row = json.loads(match.group("data"))
+                _, separator, raw = row.partition(":")
+                if not separator:
+                    continue
+                data, _ = json.JSONDecoder().raw_decode(raw.strip())
+            except (json.JSONDecodeError, TypeError, AttributeError):
+                continue
+            if raw in seen:
+                continue
+            seen.add(raw)
+            yield data
 
     @classmethod
     def _collect_play_urls(cls, value, candidates: list[tuple[int, str]]) -> None:
