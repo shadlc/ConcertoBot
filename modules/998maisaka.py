@@ -221,11 +221,13 @@ class ConcertoToMaimCodec:
         """将戳一戳和禁言等通知转为文本消息段"""
         if event.sub_type == "poke":
             raw_info = event.raw.get("raw_info")
-            txt = ""
-            if isinstance(raw_info, list) and len(raw_info) > 2 and isinstance(raw_info[2], Mapping):
-                txt = _safe_str(raw_info[2].get("txt"))
-            target_name = _safe_str(Utils.get_user_name(self.owner.robot, event.target_id) or event.target_id)
-            return [Seg(type="text", data=f"[{txt}{target_name}]")]
+            action = "戳了戳"
+            text = ""
+            if isinstance(raw_info, list) and len(raw_info) > 4:
+                action = raw_info[2].get("txt")
+                text = raw_info[4].get("txt")
+            target_name = Utils.get_user_name(self.owner.robot, event.target_id) or event.target_id
+            return [Seg(type="text", data=f"[{action}{target_name}{text}]")]
 
         if event.notice_type == "group_ban":
             target_name = _safe_str(event.user_name or event.target_name or event.target_id) or "未知用户"
@@ -1059,7 +1061,11 @@ class MaiSaka(Module):
     @Utils.handler(lambda self: self.get_persist()
          and self.conv_config.get("enable")
          and self.event.user_id not in self.conv_config.get("blacklist")
-         and (self.event.msg or self.event.sub_type == "poke"))
+         and (self.event.msg
+              or ( # 仅处理他人对自己的戳一戳
+                 self.event.sub_type == "poke"
+                 and self.event.target_id != self.event.user_id)
+             ))
     def send_maisaka(self):
         """发送至麦麦"""
         async def send_task() -> None:

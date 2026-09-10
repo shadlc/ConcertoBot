@@ -425,8 +425,39 @@ class Concerto:
             auth (int, optional): 权限等级
         """
         notice_type = event.sub_type or event.notice_type
-        self.printf(f"{Fore.GREEN}[NOTICE] {Fore.RESET}收到了{Fore.MAGENTA}{event.user_id}{Fore.RESET}"
-                    f"的{Fore.MAGENTA}{notice_type}{Fore.RESET}类型通知", level="DEBUG")
+        if notice_type == "poke":
+            raw_info = event.raw.get("raw_info")
+            action = text = ""
+            if isinstance(raw_info, list) and len(raw_info) > 4:
+                action = raw_info[2].get("txt")
+                text = raw_info[4].get("txt")
+            user_id = user_name = ""
+            if event.target_id == event.user_id:
+                user_id = event.self_id
+                user_name = Utils.get_user_name(self, event.self_id)
+            else:
+                user_id = event.user_id
+                user_name = Utils.get_user_name(self, event.user_id)
+            target_name = Utils.get_user_name(self, event.target_id) or event.target_id
+            if not event.group_id:
+                self.printf(
+                    f"{Fore.GREEN}[NOTICE] {Fore.RESET}"
+                    f"{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}"
+                    f"{Fore.YELLOW}{action}{Fore.RESET}"
+                    f"{Fore.MAGENTA}{target_name}({event.target_id}){Fore.RESET}{text}"
+                )
+            elif event.group_id:
+                group_name = Utils.get_group_name(self, event.group_id)
+                self.printf(
+                    f"{Fore.GREEN}[NOTICE] {Fore.RESET}群"
+                    f"{Fore.MAGENTA}{group_name}({event.group_id}){Fore.RESET}内"
+                    f"{Fore.MAGENTA}{user_name}({user_id}){Fore.RESET}"
+                    f"{Fore.YELLOW}{action}{Fore.RESET}"
+                    f"{Fore.MAGENTA}{target_name}({event.target_id}){Fore.RESET}{text}"
+                )
+        else:
+            self.printf(f"{Fore.GREEN}[NOTICE] {Fore.RESET}收到了来自{Fore.MAGENTA}{event.user_id}{Fore.RESET}"
+                        f"的{Fore.MAGENTA}{notice_type}{Fore.RESET}类型通知", level="DEBUG")
         self.module_handle(event, "notice", auth)
 
     def request(self, event: Event, auth=3):
