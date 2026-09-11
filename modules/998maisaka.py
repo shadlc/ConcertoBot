@@ -295,10 +295,9 @@ class ConcertoToMaimCodec:
                 return await self._build_voice_segment(data)
             case "face":
                 face_id = _safe_str(data.get("id"))
-                face_content: str = self.qq_face.get(face_id)
                 if not face_id:
                     return None
-                return Seg(type="text", data=face_content)
+                return Seg(type="text", data=self.qq_face.get(face_id))
             case "json":
                 json_data = json.loads(html.unescape(data.get("data")))
                 detail = next(iter(json_data.get("meta", {}).values()))
@@ -659,6 +658,11 @@ class MaimToConcertoCodec:
             self.owner.warnf("无法解析麦麦回复目标，消息已忽略")
             return
 
+        forward_data = self._extract_forward_data(segment)
+        if forward_data is not None:
+            await self._send_forward(forward_data, target)
+            return
+
         rendered = await self._render_segment(segment, target.group_id)
         if not rendered:
             return
@@ -781,7 +785,7 @@ class MaimToConcertoCodec:
 
         return Seg(type="command", data={"name": command, "args": dict(args)})
 
-    async def _render_segment(self, segment: Seg, group_id: str) -> dict[str, Any] | None:
+    async def _render_segment(self, segment: Seg, group_id: str, *, apply_mentions: bool = True) -> dict[str, Any] | None:
         """将麦麦消息段渲染为 OneBot/CQ 可发送内容"""
         if segment.type == "dict":
             data = segment.data if isinstance(segment.data, Mapping) else {}
@@ -791,13 +795,14 @@ class MaimToConcertoCodec:
             return await self._render_segment(
                 Seg(type=segment_type, data=data.get("data")),
                 group_id,
+                apply_mentions=apply_mentions,
             )
 
         if segment.type == "seglist":
             reply_prefix = ""
             payload_parts: list[str] = []
             for child in self._coerce_seg_list(segment.data):
-                child_rendered = await self._render_segment(child, group_id)
+                child_rendered = await self._render_segment(child, group_id, apply_mentions=apply_mentions)
                 if child_rendered is None:
                     continue
                 if child_rendered.get("prepend"):
@@ -813,7 +818,8 @@ class MaimToConcertoCodec:
         if segment.type == "text":
             text = segment.data
             # 此处为不支持戳一戳与at方法时，使用固定格式实现简单的戳一戳与at功能
-            if match := re.search(r"[\(（]?[@#](.*?)[\)）]?", text):
+            # 转发消息内的文本不做该处理，避免历史消息里的@或#误触发戳一戳等动作
+            if apply_mentions and (match := re.search(r"[\(（]?[@#](.*?)[\)）]?", text)):
                 user_name = match.group(1)
                 user_id = Utils.get_user_id(self.owner.robot, user_name, group_id)
                 if re.search(r"[\(（]?#(.*?)[\)）]?", text) and user_id:
@@ -877,6 +883,69 @@ class MaimToConcertoCodec:
         }
         return {"type": "message", "message": fallback_map.get(segment.type, f"[{segment.type}]")}
 
+    def _extract_forward_data(self, segment: Seg) -> Any | None:
+        """从消息段中取出麦麦转发消息的节点数据"""
+        if segment.type == "forward":
+            return segment.data if segment.data is not None else []
+        if segment.type == "dict":
+            coerced = self._coerce_segment(segment.data)
+            if coerced is None or coerced.type == "dict":
+                return None
+            return self._extract_forward_data(coerced)
+        if segment.type == "seglist":
+            for child in self._coerce_seg_list(segment.data):
+                forward_data = self._extract_forward_data(child)
+                if forward_data is not None:
+                    return forward_data
+        return None
+
+    async def _send_forward(self, data: Any, target: IncomingTarget) -> bool:
+        """将麦麦转发消息按节点直接以合并转发形式发送"""
+        nodes: list[Any] = []
+        source = ""
+        for nickname, user_id, segment in self._coerce_forward_nodes(data):
+            rendered = await self._render_segment(segment, target.group_id, apply_mentions=False)
+            content = _safe_str(rendered.get("message")).strip() if rendered else ""
+            if not content:
+                continue
+            if not source:
+                source = content.split("\n", 1)[0]
+            nodes.append(self.owner.node(content, user_id=user_id or None, nickname=nickname or None))
+
+        if not nodes:
+            self.owner.warnf("转发消息中没有可发送的节点，消息已忽略")
+            return False
+
+        if target.msg_type == "group":
+            Utils.send_forward_msg(self.owner.robot, nodes, group_id=target.target_id, source=source)
+        else:
+            Utils.send_forward_msg(self.owner.robot, nodes, user_id=target.target_id, source=source)
+        return True
+
+    @classmethod
+    def _coerce_forward_nodes(cls, data: Any) -> list[tuple[str, str, Seg]]:
+        """解析转发消息数据中的节点昵称、号码与消息段"""
+        if isinstance(data, Mapping):
+            data = data.get("messages") or data.get("content")
+        if not isinstance(data, list):
+            return []
+        nodes: list[tuple[str, str, Seg]] = []
+        for item in data:
+            if not isinstance(item, Mapping):
+                continue
+            nickname = ""
+            user_id = ""
+            message_info = item.get("message_info")
+            if isinstance(message_info, Mapping):
+                user_info = message_info.get("user_info")
+                if isinstance(user_info, Mapping):
+                    nickname = _safe_str(user_info.get("user_cardname") or user_info.get("user_nickname"))
+                    user_id = _safe_str(user_info.get("user_id"))
+            segment = cls._coerce_segment(item.get("message_segment"))
+            if segment is not None:
+                nodes.append((nickname, user_id, segment))
+        return nodes
+
     def _resolve_target(self, message: APIMessageBase) -> IncomingTarget | None:
         """根据消息元数据解析回复目标会话"""
         info = message.message_info
@@ -909,19 +978,30 @@ class MaimToConcertoCodec:
         return None
 
     @staticmethod
-    def _coerce_seg_list(data: Any) -> list[Seg]:
+    def _coerce_segment(value: Any) -> Seg | None:
+        """将单个字典或 Seg 安全转换为 Seg 对象"""
+        if isinstance(value, Seg):
+            return value
+        if not isinstance(value, Mapping):
+            return None
+        segment_type = _safe_str(value.get("type"))
+        if not segment_type:
+            return None
+        try:
+            return Seg.from_dict(dict(value))
+        except Exception: # pylint: disable=broad-exception-caught
+            return Seg(type=segment_type, data=value.get("data"))
+
+    @classmethod
+    def _coerce_seg_list(cls, data: Any) -> list[Seg]:
         """将原始列表中的字典元素安全转换为 Seg 对象"""
         if not isinstance(data, list):
             return []
         coerced: list[Seg] = []
         for item in data:
-            if isinstance(item, Seg):
-                coerced.append(item)
-            elif isinstance(item, Mapping):
-                try:
-                    coerced.append(Seg.from_dict(dict(item)))
-                except Exception: # pylint: disable=broad-exception-caught
-                    continue
+            segment = cls._coerce_segment(item)
+            if segment is not None:
+                coerced.append(segment)
         return coerced
 
 class MaiSaka(Module):
@@ -1058,6 +1138,38 @@ class MaiSaka(Module):
             self.errorf(traceback.format_exc())
             self.reply("重连失败，请检查日志")
 
+    async def _construct_and_send(self, event: Event | None = None, *, content_override: str | None = None) -> None:
+        """异步构造并发送事件到麦麦"""
+        try:
+            message = await self.construct_message(event, content_override=content_override)
+            if message is not None:
+                await self.send_to_maisaka(message)
+        except Exception: # pylint: disable=broad-exception-caught
+            self.errorf(traceback.format_exc())
+
+    def _build_notify_event(self, content: str, group_id: str, event: Event | None = None) -> Event:
+        """构造主动通知麦麦用的事件"""
+        if event is not None:
+            event_data = dict(event.raw)
+            event_data["message"] = content
+            return Event(self.robot, event_data)
+        notify_event = Event(self.robot)
+        notify_event.msg = content
+        notify_event.time = time.time()
+        notify_event.user_id = str(self.robot.self_id)
+        notify_event.user_name = self.robot.self_name
+        notify_event.user_card = self.robot.self_name
+        notify_event.group_id = str(group_id)
+        notify_event.group_name = Utils.get_group_name(self.robot, str(group_id)) or ""
+        notify_event.target_id = ""
+        notify_event.raw = {
+            "message": content,
+            "group_id": group_id,
+            "user_id": self.robot.self_id,
+            "time": notify_event.time,
+        }
+        return notify_event
+
     @Utils.handler(lambda self: self.get_persist()
          and self.conv_config.get("enable")
          and self.event.user_id not in self.conv_config.get("blacklist")
@@ -1068,16 +1180,7 @@ class MaiSaka(Module):
              ))
     def send_maisaka(self):
         """发送至麦麦"""
-        async def send_task() -> None:
-            """异步构造并发送当前事件到麦麦"""
-            try:
-                message = await self.construct_message()
-                if message is not None:
-                    await self.send_to_maisaka(message)
-            except Exception: # pylint: disable=broad-exception-caught
-                self.errorf(traceback.format_exc())
-
-        asyncio.run_coroutine_threadsafe(send_task(), self.robot.loop)
+        asyncio.run_coroutine_threadsafe(self._construct_and_send(), self.robot.loop)
 
     @Utils.export_func
     def notify_maisaka(self, content: str, group_id: str, event: Event | None = None):
@@ -1091,31 +1194,10 @@ class MaiSaka(Module):
         async def send_task() -> None:
             """构造事件并主动推送到麦麦"""
             try:
-                if event is not None:
-                    event_data = dict(event.raw)
-                    event_data["message"] = content
-                    notify_event = Event(self.robot, event_data)
-                else:
-                    notify_event = Event(self.robot)
-                    notify_event.msg = content
-                    notify_event.time = time.time()
-                    notify_event.user_id = str(self.robot.self_id)
-                    notify_event.user_name = self.robot.self_name
-                    notify_event.user_card = self.robot.self_name
-                    notify_event.group_id = str(group_id)
-                    notify_event.group_name = Utils.get_group_name(self.robot, str(group_id)) or ""
-                    notify_event.target_id = ""
-                    notify_event.raw = {
-                        "message": content,
-                        "group_id": group_id,
-                        "user_id": self.robot.self_id,
-                        "time": notify_event.time,
-                    }
-
-                message = await self.construct_message(notify_event, content_override=content)
-                if message is not None:
-                    await self.send_to_maisaka(message)
+                notify_event = self._build_notify_event(content, group_id, event)
             except Exception: # pylint: disable=broad-exception-caught
                 self.errorf(traceback.format_exc())
+                return
+            await self._construct_and_send(notify_event, content_override=content)
 
         asyncio.run_coroutine_threadsafe(send_task(), self.robot.loop)
