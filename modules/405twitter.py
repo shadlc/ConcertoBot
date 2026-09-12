@@ -77,30 +77,30 @@ class Twitter(Module):
         try:
             if not self.is_private():
                 Utils.set_emoji(self.robot, self.event.msg_id, 124)
-            caption, image_data, video_url, gif_data = self.retry(
+            caption, image_data, video_url = self.retry(
                 self.get_media,
                 url,
                 failed_ok=False,
             )
             if not self.is_private():
                 Utils.set_emoji(self.robot, self.event.msg_id, 66)
-            if len(image_data) > 3:
-                msg = self._build_message(caption, image_data, "", gif_data)
-                return self.reply_forward([self.node(msg)], caption, "Twitter")
-            msg = self._build_message(caption, image_data, video_url, gif_data)
+            if video_url:
+                msg = f"[CQ:video,file={video_url}]"
+                return self.reply_media(msg, "video", video_url)
+            image_message = "\n".join(
+                f"[CQ:image,file=base64://{data}]" for data in image_data
+            )
+            msg = f"{caption}\n{image_message}" if caption else image_message
             if not msg:
                 raise ReferenceError("推文中未找到可发送的图文")
-            if not gif_data and video_url:
-                # 视频无法使用引用回复
-                return self.reply(msg)
-            result = self.reply(msg, reply=True)
-            if not Utils.status_ok(result):
-                img_list = []
-                for data in image_data:
-                    img_url = Utils.get_img_url(self.robot, f"base64://{data}")
-                    img_list.append(img_url)
-                msg = f"{caption}\n" + "\n".join(img_list)
-                self.reply(msg, reply=True)
+            return self.reply_media(
+                msg,
+                "image",
+                image_data,
+                caption,
+                source="Twitter",
+                forward=len(image_data) > 3,
+            )
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             nodes = self.node(f"URL：{url}\n错误：{e}")
@@ -118,7 +118,7 @@ class Twitter(Module):
                 return match.group(0)
         return ""
 
-    def get_media(self, url: str) -> tuple[str, list[str], str, list[str]]:
+    def get_media(self, url: str) -> tuple[str, list[str], str]:
         """读取推文正文、图片、视频地址"""
         username, tweet_id = self._parse_tweet_url(url)
         api_url = self.config["api"].format(username=username, tweet_id=tweet_id)
@@ -158,7 +158,8 @@ class Twitter(Module):
                 converted_gif = self._convert_video_to_gif(candidate, url)
                 if converted_gif:
                     gif_data.append(converted_gif)
-        return "".join(captions), image_data, video_url, gif_data
+        image_data.extend(gif_data)
+        return "".join(captions), image_data, "" if gif_data else video_url
 
     def _collect_tweet_content(
         self,
@@ -383,22 +384,3 @@ class Twitter(Module):
         if result.returncode:
             error = result.stderr.strip()[-500:] or "ffmpeg 未返回错误信息"
             raise subprocess.CalledProcessError(result.returncode, command, stderr=error)
-
-    @staticmethod
-    def _build_message(
-        caption: str,
-        image_data: list[str],
-        video_url: str,
-        gif_data: list[str] | None = None,
-    ) -> str:
-        """将正文和媒体组装为 OneBot CQ 消息。"""
-        gif_data = gif_data or []
-        if not gif_data and video_url:
-            # GIF 转换失败时回退发送视频，避免附带推文正文。
-            return f"[CQ:video,file={video_url}]"
-        parts = []
-        if caption:
-            parts.append(caption)
-        parts.extend(f"[CQ:image,sub_type=0,file=base64://{data}]" for data in image_data)
-        parts.extend(f"[CQ:image,sub_type=0,file=base64://{data}]" for data in gif_data)
-        return "".join(parts)

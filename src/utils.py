@@ -1033,9 +1033,9 @@ def ocr_image(robot: Concerto, img_id: str):
 
 
 def get_img_url(robot: Concerto, url: str) -> str:
-    """获取QQ链接"""
+    """获取图片直链"""
     try:
-        robot.printf(f"获取QQ图片链接...url={url}")
+        robot.printf(f"获取图片直链...url={url}")
         result = send_msg(robot, "private", robot.self_id, f"[CQ:image,file={url}]")
         if not status_ok(result):
             return url
@@ -1048,7 +1048,27 @@ def get_img_url(robot: Concerto, url: str) -> str:
             url = match.group(1)
         return url
     except Exception:  # pylint: disable=broad-exception-caught
-        robot.errorf(f"获取腾讯图床链接失败\n{traceback.format_exc()}")
+        robot.errorf(f"获取图片直链失败\n{traceback.format_exc()}")
+        return url
+
+
+def get_video_url(robot: Concerto, url: str) -> str:
+    """获取视频直链"""
+    try:
+        robot.printf(f"获取视频直链...url={url}")
+        result = send_msg(robot, "private", robot.self_id, f"[CQ:video,file={url}]")
+        if not status_ok(result):
+            return url
+        msg_id = result.get("data").get("message_id")
+        result = get_msg(robot, msg_id)
+        if not status_ok(result):
+            return url
+        msg = html.unescape(result.get("data").get("message"))
+        if match := re.search(r"\[CQ:video,.*url=([^,\]]+?),.*\]", msg):
+            url = match.group(1)
+        return url
+    except Exception:  # pylint: disable=broad-exception-caught
+        robot.errorf(f"获取视频直链失败\n{traceback.format_exc()}")
         return url
 
 
@@ -1278,6 +1298,7 @@ class Utils:
     get_stranger_info = staticmethod(get_stranger_info)
     ocr_image = staticmethod(ocr_image)
     get_img_url = staticmethod(get_img_url)
+    get_video_url = staticmethod(get_video_url)
     get_rkey = staticmethod(get_rkey)
     get_handler_amount = staticmethod(get_handler_amount)
     simplify_traceback = staticmethod(simplify_traceback)

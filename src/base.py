@@ -719,6 +719,38 @@ class Module:
         result = Utils.send_forward_msg(self.robot, nodes, self.event.group_id, self.event.user_id, source, summary)
         return result
 
+    def reply_media(
+        self,
+        msg: str,
+        media_type: str,
+        media: str | list[str],
+        caption: str = "",
+        *,
+        source: str | None = None,
+        forward: bool = False,
+    ):
+        """发送媒体且失败时可以发送媒体链接"""
+        reply = media_type == "image"
+        if forward:
+            result = self.reply_forward([self.node(msg)], caption, source)
+        else:
+            result = self.reply(msg, reply=reply)
+        if Utils.status_ok(result):
+            return result
+        if media_type == "image":
+            image_sources = media if isinstance(media, list) else [media]
+            media_urls = [
+                Utils.get_img_url(
+                    self.robot,
+                    data if data.startswith(("base64://", "http://", "https://")) else f"base64://{data}",
+                )
+                for data in image_sources
+            ]
+            fallback = f"{caption}\n" + "\n".join(media_urls) if caption else "\n".join(media_urls)
+        else:
+            fallback = Utils.get_video_url(self.robot, media)
+        return self.reply(fallback, reply=reply)
+
     def get_reply(
         self,
     ) -> str | None:

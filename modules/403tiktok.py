@@ -42,7 +42,7 @@ class Tiktok(Module):
         "image_url",
         "origin_url",
     })
-    PLAY_URL_KEYS = frozenset({
+    VIDEO_URL_KEYS = frozenset({
         "playaddr",
         "play_addr",
         "downloadaddr",
@@ -92,34 +92,38 @@ class Tiktok(Module):
     )
     def tiktok_download(self):
         """下载视频或发送图文图片"""
-        url = self._get_video_url()
+        url = self._extract_source_url()
         if not url:
             return
         self.handled = True
         try:
             if not self.is_private():
                 Utils.set_emoji(self.robot, self.event.msg_id, 124)
-            media_type, media, caption = self.retry(self.get_media, url, failed_ok=False)
+            caption, image_data, video_url = self.retry(self.get_media, url, failed_ok=False)
             if not self.is_private():
                 Utils.set_emoji(self.robot, self.event.msg_id, 66)
-            if media_type == "image":
-                image_urls = media if isinstance(media, list) else [media]
+            if image_data:
                 image_message = "\n".join(
-                    f"[CQ:image,file=base64://{image_data}]" for image_data in image_urls
+                    f"[CQ:image,file=base64://{data}]" for data in image_data
                 )
                 msg = f"{caption}\n{image_message}" if caption else image_message
-                if len(image_urls) > 3:
-                    return self.reply_forward([self.node(msg)], caption, "TikTok")
-            else:
-                msg = f"[CQ:video,file={media}]"
-            self.reply(msg)
+                return self.reply_media(
+                    msg,
+                    "image",
+                    image_data,
+                    caption,
+                    source="TikTok",
+                    forward=len(image_data) > 3,
+                )
+            msg = f"[CQ:video,file={video_url}]"
+            return self.reply_media(msg, "video", video_url)
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             nodes = self.node(f"URL：{url}\n错误：{e}")
             self.robot.admin_notify("抖音处理失败", nodes, self.event)
             return self.reply(str(e), reply=True)
 
-    def _get_video_url(self) -> str:
+    def _extract_source_url(self) -> str:
         """从当前消息或被回复消息中提取抖音/TikTok链接。"""
         messages = [self.event.text]
         if self.is_reply() and (reply := self.get_reply()):
@@ -130,38 +134,31 @@ class Tiktok(Module):
                 return match.group(0).rstrip(".,，。!！?？)）]>")
         return ""
 
-    def get_play_url(self, url: str) -> str:
-        """获取视频播放地址，页面解析失败时回退到 yt-dlp。"""
-        media_type, media, _ = self.get_media(url)
-        if media_type == "image":
-            raise ReferenceError("这是抖音图文链接，不是视频链接")
-        return media
-
-    def get_media(self, url: str) -> tuple[str, str | list[str], str]:
-        """解析媒体类型并返回视频地址或图文内容。"""
+    def get_media(self, url: str) -> tuple[str, list[str], str]:
+        """解析并返回正文、图片数据和视频地址。"""
         page_url = url
         try:
-            page_url, page = self._request_page(url)
+            page_url, page = self._fetch_page(url)
             if self._is_music_page(page_url):
                 raise ReferenceError("这是汽水音乐歌曲分享链接，当前仅支持视频和图文链接")
             if self._is_image_page(page_url):
-                return self._get_image_media(page_url, page)
-            play_url = self._extract_play_url(page)
-            if play_url:
-                return "video", play_url, ""
+                return self._parse_image_media(page_url, page)
+            video_url = self._extract_video_url(page)
+            if video_url:
+                return "", [], video_url
         except httpx.HTTPError as error:
             self.printf(f"请求视频页面失败，尝试备用解析器: {error}", level="DEBUG")
 
         try:
-            return "video", self._get_play_url_with_ytdlp(page_url), ""
+            return "", [], self._extract_video_url_with_ytdlp(page_url)
         except (ImportError, OSError, RuntimeError, ValueError) as error:
             raise ReferenceError("未找到有效的抖音地址，可能是页面风控或链接已失效") from error
 
-    def _get_image_media(self, page_url: str, page: str) -> tuple[str, list[str], str]:
+    def _parse_image_media(self, page_url: str, page: str) -> tuple[str, list[str], str]:
         """解析图文页面并下载图片。"""
         image_urls = self._extract_image_urls(page)
         caption = self._extract_image_caption(page)
-        if not image_urls and (detail := self._request_image_detail(page_url)):
+        if not image_urls and (detail := self._fetch_image_detail(page_url)):
             image_urls = self._extract_image_urls_from_data(detail)
             if not caption:
                 caption = self._extract_image_caption_from_data(detail)
@@ -171,7 +168,7 @@ class Tiktok(Module):
         image_data = self._download_images_as_base64(image_urls, page_url)
         if not image_data:
             raise ReferenceError("图文下载失败")
-        return "image", image_data, caption
+        return caption, image_data, ""
 
     @staticmethod
     def _is_image_page(url: str) -> bool:
@@ -186,7 +183,7 @@ class Tiktok(Module):
         hostname = (parsed.hostname or "").lower().rstrip(".")
         return hostname == "music.douyin.com" or parsed.path.lower().startswith("/qishui/")
 
-    def _request_page(self, url: str) -> tuple[str, str]:
+    def _fetch_page(self, url: str) -> tuple[str, str]:
         """在抖音/TikTok域名内手动跟踪重定向并获取页面。"""
         current_url = url
         with httpx.Client(follow_redirects=False, timeout=self.config["page_timeout"]) as client:
@@ -195,7 +192,7 @@ class Tiktok(Module):
                     raise ValueError(f"链接跳转到了非预期域名: {urlparse(current_url).hostname}")
                 response = client.get(
                     current_url,
-                    headers=self._get_request_headers(
+                    headers=self._build_request_headers(
                         current_url,
                         "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
                     ),
@@ -210,7 +207,7 @@ class Tiktok(Module):
                 return str(response.url), response.text
         raise RuntimeError("页面重定向次数超过限制")
 
-    def _request_image_detail(self, page_url: str) -> dict | None:
+    def _fetch_image_detail(self, page_url: str) -> dict | None:
         """从抖音详情接口补充动态页面中缺失的图文数据。"""
         if not self._is_douyin_url(page_url):
             return None
@@ -225,7 +222,7 @@ class Tiktok(Module):
             "channel": "channel_pc_web",
         })
         api_url = f"https://www.douyin.com/aweme/v1/web/aweme/detail/?{query}"
-        headers = self._get_request_headers(
+        headers = self._build_request_headers(
             api_url,
             "application/json, text/plain, */*",
             referer=page_url,
@@ -242,7 +239,7 @@ class Tiktok(Module):
             return None
         return data if isinstance(data, dict) and isinstance(data.get("aweme_detail"), dict) else None
 
-    def _get_request_headers(
+    def _build_request_headers(
         self,
         url: str,
         accept: str,
@@ -313,7 +310,7 @@ class Tiktok(Module):
                 try:
                     response = client.get(
                         image_url,
-                        headers=self._get_request_headers(
+                        headers=self._build_request_headers(
                             image_url,
                             "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
                             referer=referer,
@@ -338,11 +335,11 @@ class Tiktok(Module):
         return any(hostname == host or hostname.endswith(f".{host}") for host in cls.ALLOWED_HOSTS)
 
     @classmethod
-    def _extract_play_url(cls, page: str) -> str:
+    def _extract_video_url(cls, page: str) -> str:
         """从抖音/TikTok页面的多种状态数据中提取播放地址。"""
         candidates: list[tuple[int, str]] = []
         for data in cls._iter_json_documents(page):
-            cls._collect_play_urls(data, candidates)
+            cls._collect_video_urls(data, candidates)
 
         # 页面结构变化时仍保留对常见 url_list 数组的兼容。
         for match in re.finditer(r"\"(?:url_list|playAddr|downloadAddr)\"\s*:\s*(\[[^\]]*\])", page):
@@ -358,9 +355,9 @@ class Tiktok(Module):
                 candidates.append((3, value))
 
         for _, value in sorted(enumerate(candidates), key=lambda item: (item[1][0], item[0])):
-            play_url = cls._normalise_url(value[1])
-            if play_url:
-                return play_url
+            video_url = cls._normalise_url(value[1])
+            if video_url:
+                return video_url
         return ""
 
     @classmethod
@@ -514,12 +511,12 @@ class Tiktok(Module):
             yield data
 
     @classmethod
-    def _collect_play_urls(cls, value, candidates: list[tuple[int, str]]) -> None:
+    def _collect_video_urls(cls, value, candidates: list[tuple[int, str]]) -> None:
         """递归读取视频字段，兼容新旧页面的字段命名。"""
         if isinstance(value, dict):
             for key, nested in value.items():
                 normalized_key = key.replace("-", "_").lower()
-                if normalized_key in cls.PLAY_URL_KEYS:
+                if normalized_key in cls.VIDEO_URL_KEYS:
                     priority = 2 if "download" in normalized_key else 0
                     cls._append_url_values(
                         nested,
@@ -530,13 +527,13 @@ class Tiktok(Module):
                 elif normalized_key == "url" and isinstance(nested, str):
                     if cls._looks_like_media_url(nested):
                         candidates.append((3, nested))
-                cls._collect_play_urls(nested, candidates)
+                cls._collect_video_urls(nested, candidates)
         elif isinstance(value, list):
             for nested in value:
-                cls._collect_play_urls(nested, candidates)
+                cls._collect_video_urls(nested, candidates)
         elif isinstance(value, str) and value.lstrip().startswith(("{", "[")):
             try:
-                cls._collect_play_urls(json.loads(value), candidates)
+                cls._collect_video_urls(json.loads(value), candidates)
             except (json.JSONDecodeError, TypeError):
                 pass
 
@@ -589,7 +586,7 @@ class Tiktok(Module):
             ".mp4",
         ))
 
-    def _get_play_url_with_ytdlp(self, url: str) -> str:
+    def _extract_video_url_with_ytdlp(self, url: str) -> str:
         """使用已安装的 yt-dlp 作为页面结构变化时的备用解析器。"""
         from yt_dlp import YoutubeDL
         from yt_dlp.utils import DownloadError
@@ -614,7 +611,7 @@ class Tiktok(Module):
         entries = info.get("entries")
         if isinstance(entries, list) and entries and isinstance(entries[0], dict):
             info = entries[0]
-        play_url = info.get("url")
-        if not isinstance(play_url, str) or not play_url:
+        video_url = info.get("url")
+        if not isinstance(video_url, str) or not video_url:
             raise RuntimeError("yt-dlp 未返回可下载的视频地址")
-        return self._normalise_url(play_url) or play_url
+        return self._normalise_url(video_url) or video_url

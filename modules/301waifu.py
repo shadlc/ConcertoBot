@@ -151,12 +151,9 @@ class Waifu(Module):
             waifu_img = self.get_user_waifu_file(waifu)
             msg = f"你今天的群老婆是 {waifu_name} 哒~"
 
-        waifu_cq = f"[CQ:image,file=base64://{waifu_img}]" if waifu_img else f"[CQ:image,file=http://q1.qlogo.cn/g?b=qq&nk={waifu}&s=640]"
-        result = self.reply(f"{msg}\n{waifu_cq}", reply=True)
-        if not Utils.status_ok(result):
-            qq_url = Utils.get_img_url(self.robot, f"base64://{waifu_img}")
-            msg = f"{msg}\n{qq_url}"
-            result = self.reply(msg, reply=True)
+        image_source = f"base64://{waifu_img}" if waifu_img else f"http://q1.qlogo.cn/g?b=qq&nk={waifu}&s=640"
+        waifu_cq = f"[CQ:image,file={image_source}]"
+        result = self.reply_media(f"{msg}\n{waifu_cq}", "image", image_source, msg)
 
         if self.event.group_id and Utils.status_ok(result):
             if notify_maisaka := self.robot.func.get("notify_maisaka"):
@@ -194,11 +191,9 @@ class Waifu(Module):
                 waifu_img = self.get_user_waifu_file(waifu)
                 msg = f"{user_name}今天的群老婆是{waifu_name}哒~"
 
-            waifu_cq = f"[CQ:image,file=base64://{waifu_img}]" if waifu_img else f"[CQ:image,file=http://q1.qlogo.cn/g?b=qq&nk={waifu}&s=640]"
-            result = self.reply(f"{msg}\n{waifu_cq}", reply=True)
-            if not Utils.status_ok(result):
-                qq_url = Utils.get_img_url(self.robot, f"base64://{waifu_img}")
-                self.reply(f"{msg}\n{qq_url}", reply=True)
+            image_source = f"base64://{waifu_img}" if waifu_img else f"http://q1.qlogo.cn/g?b=qq&nk={waifu}&s=640"
+            waifu_cq = f"[CQ:image,file={image_source}]"
+            self.reply_media(f"{msg}\n{waifu_cq}", "image", image_source, msg)
 
         # 检查是否是查询老婆是否存在
         else:
