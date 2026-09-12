@@ -171,6 +171,14 @@ class MaimClientRuntime:
             return False
         return await self._client.send_message(message)
 
+    async def send_custom_message(self, message_type: str, payload: Mapping[str, Any]) -> bool:
+        """通过现有 API-Server 连接发送自定义消息"""
+        if not await self.start():
+            return False
+        if self._client is None:
+            return False
+        return await self._client.send_custom_message(message_type, dict(payload))
+
     async def stop(self) -> None:
         """停止客户端并清理连接就绪状态"""
         async with self._start_lock:
@@ -288,6 +296,7 @@ class ConcertoToMaimCodec:
                 target_message_id = _safe_str(data.get("id"))
                 if not target_message_id:
                     return None
+                target_message_id = self.owner.convert_message_id(target_message_id)
                 return Seg(type="reply", data=target_message_id)
             case "image":
                 return await self._build_image_segment(data)
@@ -625,8 +634,18 @@ class ConcertoToMaimCodec:
         "350": "[表情：贴贴]", "351": "[表情：敲敲]", "352": "[表情：咦]", "353": "[表情：拜托]", "354": "[表情：尊嘟假嘟]",
         "355": "[表情：耶]", "356": "[表情：666]", "357": "[表情：裂开]", "360": "[表情：亲亲]", "361": "[表情：狗狗笑哭]",
         "362": "[表情：好兄弟]", "363": "[表情：狗狗可怜]", "364": "[表情：超级赞]", "365": "[表情：狗狗生气]", "366": "[表情：芒狗]",
-        "367": "[表情：狗狗疑问]", "392": "[表情：龙年 快乐]", "393": "[表情：新年中龙]", "394": "[表情：新年大龙]", "395": "[表情：略略略]",
-        "396": "[表情：狼狗]", "397": "[表情：抛媚眼]"}
+        "367": "[表情：狗狗疑问]", "384": "[表情：晚安]", "385": "[表情：太气了]", "386": "[表情：呜呜呜]", "387": "[表情：太好笑]",
+        "388": "[表情：太头疼]", "389": "[表情：太赞了]", "390": "[表情：太头秃]", "391": "[表情：太沧桑]",
+        "392": "[表情：龙年 快乐]", "393": "[表情：新年中龙]", "394": "[表情：新年大龙]", "395": "[表情：略略略]",
+        "396": "[表情：狼狗]", "397": "[表情：抛媚眼]", "402": "[表情：别说话]", "403": "[表情：出去玩]", "424": "[表情：续标识]",
+        "426": "[表情：玩火]", "427": "[表情：偷感]", "450": "[表情：撇嘴]", "451": "[表情：色]", "452": "[表情：微笑]",
+        "458": "[表情：我吗]", "459": "[表情：优雅]", "460": "[表情：硬撑]", "461": "[表情：宕机]", "462": "[表情：无语]",
+        "463": "[表情：新年快乐]", "464": "[表情：马上到]", "466": "[表情：羞羞哒]", "467": "[表情：摇花手]", "468": "[表情：失眠]",
+        "469": "[表情：坚毅]", "472": "[表情：心动]", "474": "[表情：给你一拳]",
+        "475": "[表情：干饭]", "476": "[表情：不是吧]", "477": "[表情：你懂的]", "478": "[表情：对的对的]", "479": "[表情：不对不对]",
+        "480": "[表情：散味儿]", "481": "[表情：学习]", "482": "[表情：热化了]", "483": "[表情：略]", "484": "[表情：比爱心]",
+        "485": "[表情：开学啦]", "489": "[表情：知识增加]",
+        "490": "[表情：能送我吗]", "491": "[表情：自信学霸]", "492": "[表情：让我细品]", "493": "[表情：又是早八]"}
 
 class MaimToConcertoCodec:
     """将 API-Server 消息转换为 ConcertoBot 行为"""
@@ -660,7 +679,8 @@ class MaimToConcertoCodec:
 
         forward_data = self._extract_forward_data(segment)
         if forward_data is not None:
-            await self._send_forward(forward_data, target)
+            msg_id = await self._send_forward(forward_data, target)
+            self.owner.record_message_id(msg_id, message.message_info.message_id)
             return
 
         rendered = await self._render_segment(segment, target.group_id)
@@ -678,11 +698,18 @@ class MaimToConcertoCodec:
         if len(msg) > 200 and "CQ:" not in msg:
             source = msg.split("\n", 1)[0]
             if target.msg_type == "group":
-                Utils.send_forward_msg(self.owner.robot, self.owner.node(msg), group_id=target_id, source=source)
+                send_result = Utils.send_forward_msg(
+                    self.owner.robot, self.owner.node(msg), group_id=target_id, source=source
+                )
             else:
-                Utils.send_forward_msg(self.owner.robot, self.owner.node(msg), user_id=target_id, source=source)
+                send_result = Utils.send_forward_msg(
+                    self.owner.robot, self.owner.node(msg), user_id=target_id, source=source
+                )
         else:
-            Utils.reply_id(self.owner.robot, target.msg_type, target_id, msg)
+            send_result = Utils.reply_id(self.owner.robot, target.msg_type, target_id, msg)
+        if Utils.status_ok(send_result):
+            msg_id = send_result.get("data", {}).get("message_id", "")
+            self.owner.record_message_id(msg_id, message.message_info.message_id)
 
     async def _handle_command_segment(self, segment: Seg, message: APIMessageBase) -> None:
         """执行麦麦侧下发的群管理和消息操作命令"""
@@ -899,7 +926,7 @@ class MaimToConcertoCodec:
                     return forward_data
         return None
 
-    async def _send_forward(self, data: Any, target: IncomingTarget) -> bool:
+    async def _send_forward(self, data: Any, target: IncomingTarget) -> str:
         """将麦麦转发消息按节点直接以合并转发形式发送"""
         nodes: list[Any] = []
         source = ""
@@ -914,13 +941,20 @@ class MaimToConcertoCodec:
 
         if not nodes:
             self.owner.warnf("转发消息中没有可发送的节点，消息已忽略")
-            return False
+            return ""
 
         if target.msg_type == "group":
-            Utils.send_forward_msg(self.owner.robot, nodes, group_id=target.target_id, source=source)
+            send_result = Utils.send_forward_msg(
+                self.owner.robot, nodes, group_id=target.target_id, source=source
+            )
         else:
-            Utils.send_forward_msg(self.owner.robot, nodes, user_id=target.target_id, source=source)
-        return True
+            send_result = Utils.send_forward_msg(
+                self.owner.robot, nodes, user_id=target.target_id, source=source
+            )
+        if Utils.status_ok(send_result):
+            msg_id = send_result.get("data", {}).get("message_id", "")
+            return msg_id
+        return ""
 
     @classmethod
     def _coerce_forward_nodes(cls, data: Any) -> list[tuple[str, str, Seg]]:
@@ -1033,6 +1067,8 @@ class MaiSaka(Module):
     def __init__(self, event, auth=0):
         """初始化麦麦适配器、编解码器和运行时连接"""
         super().__init__(event, auth)
+        if not hasattr(self, "msg_id_map"):
+            self.msg_id_map: list[tuple[str, str]] = []
         if self.is_persisted():
             return
         self.failed_times = 0
@@ -1062,6 +1098,7 @@ class MaiSaka(Module):
             self.runtime = maim.runtime
             self.codec_out = maim.codec_out
             self.codec_in = maim.codec_in
+            self.msg_id_map = maim.msg_id_map
         return bool(self.config.get("url") and self.config.get("api_key"))
 
     def unload(self) -> None:
@@ -1100,6 +1137,28 @@ class MaiSaka(Module):
             if self.failed_times == 3:
                 self.robot.admin_notify(f"多次尝试发送消息至麦麦机器人后失败，请检查连接\n{error_msg}")
             return False
+
+    def record_message_id(self, actual_id: Any, maisaka_id: Any) -> None:
+        """记录 QQ 消息 ID 与麦麦消息 ID 的对应关系"""
+        actual_id = _safe_str(actual_id)
+        maisaka_id = _safe_str(maisaka_id)
+        if not actual_id or not maisaka_id:
+            return
+        persist_mod = self.get_persist() or self
+        persist_mod.msg_id_map[:] = [
+            mapping for mapping in persist_mod.msg_id_map if mapping[0] != actual_id
+        ]
+        persist_mod.msg_id_map.append((actual_id, maisaka_id))
+        del persist_mod.msg_id_map[:-100]
+
+    def convert_message_id(self, actual_id: Any) -> str:
+        """将 QQ 消息 ID 转换为麦麦消息 ID"""
+        actual_id = _safe_str(actual_id)
+        persist_mod = self.get_persist() or self
+        for source_id, maisaka_id in reversed(persist_mod.msg_id_map):
+            if source_id == actual_id:
+                return maisaka_id
+        return actual_id
 
     def convert_image_to_gif(self, image_base64: str) -> str:
         """将 Base64 图片转为 GIF"""
