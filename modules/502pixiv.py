@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import re
 import traceback
+from typing import NamedTuple
 from urllib.request import Request
 import zipfile
 
@@ -16,6 +17,14 @@ from PIL import Image
 
 from src.base import Module
 from src.utils import Utils
+
+
+class PixivMedia(NamedTuple):
+    """Pixiv作品说明和图片地址"""
+
+    caption: str
+    proxy_image_urls: list[str]
+    original_image_urls: list[str]
 
 
 class Pixiv(Module):
@@ -39,7 +48,8 @@ class Pixiv(Module):
             "Chrome/120.0.0.0 Safari/537.36"
         ),
         "api": "https://www.pixiv.net/ajax/illust/{pid}",
-        "api_timeout": 120,
+        "api_timeout": 10,
+        "image_timeout": 30,
     }
 
     def __init__(self, event, auth=0):
@@ -62,7 +72,7 @@ class Pixiv(Module):
     )
     def pixiv_download(self):
         """解析并发送Pixiv作品或收藏集"""
-        target = self._get_target()
+        target = self._get_pixiv_target()
         if not target:
             return
         self.handled = True
@@ -72,33 +82,42 @@ class Pixiv(Module):
             target_type, target_id = target
             if target_type == "collection":
                 source, contents = self.retry(
-                    self.get_collection_media,
+                    self.get_collection_content,
                     target_id,
                     failed_ok=False,
                 )
             else:
-                title, caption, image_urls = self.retry(
-                    self.get_media,
+                source, media = self.retry(
+                    self.get_illustration_media,
                     target_id,
                     failed_ok=False,
                 )
-                source = title
-                contents = [(caption, image_urls)]
+                contents = [media]
             if not self.is_private():
                 Utils.set_emoji(self.robot, self.event.msg_id, 66)
-            if not contents or not any(images for _, images in contents):
+            if not contents or not any(media.original_image_urls for media in contents):
                 raise ReferenceError("Pixiv作品中未找到图片")
 
-            result = self._send_content(contents, source)
-            if not Utils.status_ok(result):
-                self._send_url_content(contents, source)
+            proxy_url = next(
+                (
+                    image_url
+                    for media in contents
+                    for image_url in media.proxy_image_urls
+                    if image_url.startswith(("http://", "https://"))
+                ),
+                "",
+            )
+            if proxy_url and self._is_pixiv_re_available(proxy_url):
+                return self._send_pixiv_re_content(contents, source)
+            self.printf("pixiv.re服务不可访问，改用Pixiv原图Base64")
+            return self._send_origin_content(contents, source)
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             nodes = self.node(f"PID：{target_id}\n错误：{e}")
             self.robot.admin_notify("Pixiv内容处理失败", nodes, self.event)
             return self.reply(str(e), reply=True)
 
-    def _get_target(self) -> tuple[str, str] | None:
+    def _get_pixiv_target(self) -> tuple[str, str] | None:
         """从当前消息或被回复消息中提取Pixiv作品或集合ID。"""
         messages = [self.event.text]
         if self.is_reply() and (reply := self.get_reply()):
@@ -117,8 +136,8 @@ class Pixiv(Module):
                     return "artwork", pid
         return None
 
-    def get_media(self, pid: str) -> tuple[str, str, list[str]]:
-        """读取Pixiv作品元数据和使用pixiv.re的图片地址"""
+    def get_illustration_media(self, pid: str) -> tuple[str, PixivMedia]:
+        """读取Pixiv作品元数据、代理图片地址和原图直链"""
         api_url = self.config["api"].format(pid=pid)
         headers = self._get_request_headers(
             api_url,
@@ -154,20 +173,30 @@ class Pixiv(Module):
         if not author:
             raise ReferenceError("Pixiv接口返回的作品作者为空")
         if illust.get("isUgoira") or str(illust.get("illustType")) == "2":
-            if gif_data := self._get_ugoira_gif(pid):
-                image_urls = [f"base64://{gif_data}"]
+            if gif_data := self._get_ugoira_gif_base64(pid):
+                proxy_image_urls = [f"base64://{gif_data}"]
+                original_image_urls = [f"base64://{gif_data}"]
             else:
-                image_urls = [self._build_image_url(pid, 1, "jpg")]
+                proxy_image_urls = [self._build_pixiv_re_image_url(pid, 1, "jpg")]
+                original_image_urls = [original_url] if original_url else []
         else:
             extension = self._get_image_extension(original_url)
-            image_urls = [
-                self._build_image_url(pid, page, extension)
+            proxy_image_urls = [
+                self._build_pixiv_re_image_url(pid, page, extension)
                 for page in range(1, page_count + 1)
             ]
-        return title, self._build_caption(pid, author, title, illust), image_urls
+            original_image_urls = self._build_direct_image_urls(original_url, page_count)
+        return (
+            title,
+            PixivMedia(
+                self._build_caption(pid, author, title, illust),
+                proxy_image_urls,
+                original_image_urls,
+            ),
+        )
 
-    def _get_ugoira_gif(self, pid: str) -> str:
-        """下载Pixiv动图帧并转换为Base64 GIF"""
+    def _get_ugoira_gif_base64(self, pid: str) -> str:
+        """下载Pixiv动图帧并返回Base64 GIF"""
         meta_url = f"{self.config['api'].format(pid=pid)}/ugoira_meta"
         referer = f"https://www.pixiv.net/artworks/{pid}"
         with httpx.Client(
@@ -212,6 +241,57 @@ class Pixiv(Module):
 
         gif_data = self._build_ugoira_gif(zip_response.content, frames)
         return base64.b64encode(gif_data).decode("ascii")
+
+    def _is_pixiv_re_available(self, image_url: str) -> bool:
+        """检查指定pixiv.re图片地址是否可访问"""
+        headers = {"User-Agent": self.config["user_agent"]}
+        try:
+            with httpx.Client(follow_redirects=True, timeout=10) as client:
+                response = client.head(image_url, headers=headers)
+                if response.status_code in (405, 501):
+                    with client.stream(
+                        "GET",
+                        image_url,
+                        headers={**headers, "Range": "bytes=0-0"},
+                    ) as response:
+                        return response.status_code < 400
+                return response.status_code < 400
+        except httpx.HTTPError as error:
+            self.printf(f"检查pixiv.re服务失败: {error}", level="DEBUG")
+            return False
+
+    def _download_original_images_as_base64(
+        self, image_urls: list[str]
+    ) -> dict[str, str]:
+        """携带Pixiv Referer下载原图并转换为Base64"""
+        if not image_urls:
+            return {}
+        image_data = {}
+        with httpx.Client(
+            follow_redirects=True,
+            timeout=self.config["image_timeout"],
+        ) as client:
+            for image_url in dict.fromkeys(image_urls):
+                try:
+                    response = client.get(
+                        image_url,
+                        headers=self._get_request_headers(
+                            image_url,
+                            "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+                            referer="https://www.pixiv.net/",
+                        ),
+                    )
+                    self._raise_for_status(response)
+                    content_type = response.headers.get("Content-Type", "").split(";", 1)[0].lower()
+                    if content_type and not content_type.startswith("image/"):
+                        raise ValueError(f"响应类型不是图片: {content_type}")
+                    image_data[image_url] = base64.b64encode(response.content).decode("ascii")
+                except (httpx.HTTPError, OSError, ReferenceError, ValueError) as error:
+                    self.printf(
+                        f"Pixiv原图下载失败: {image_url[:120]}: {error}",
+                        level="DEBUG",
+                    )
+        return image_data
 
     def _get_request_headers(
         self, url: str, accept: str, *, referer: str
@@ -295,10 +375,10 @@ class Pixiv(Module):
             for image in images:
                 image.close()
 
-    def get_collection_media(
+    def get_collection_content(
         self, collection_id: str
-    ) -> tuple[str, list[tuple[str, list[str]]]]:
-        """读取Pixiv收藏集元数据和图片地址"""
+    ) -> tuple[str, list[PixivMedia]]:
+        """读取Pixiv收藏集元数据和作品图片地址"""
         collection_url = f"https://www.pixiv.net/collections/{collection_id}"
         headers = self._get_request_headers(
             collection_url,
@@ -330,7 +410,7 @@ class Pixiv(Module):
         if not isinstance(collection, dict):
             raise ReferenceError("Pixiv接口未返回收藏集数据")
         title = self._get_text(collection.get("title")) or f"Collection{collection_id}"
-        contents = [(self._build_collection_caption(collection_id, collection), [])]
+        contents = []
         work_ids = []
         seen_ids = set()
         for tile in collection.get("tiles", []):
@@ -341,13 +421,17 @@ class Pixiv(Module):
                 seen_ids.add(work_id)
                 work_ids.append(work_id)
         for work_id in work_ids:
-            media = self.retry(self.get_media, work_id, failed_ok=True)
-            if not media:
+            result = self.retry(self.get_illustration_media, work_id, failed_ok=True)
+            if not result:
                 continue
-            _, _, image_urls = media
-            contents.append(("", image_urls))
-        if len(contents) == 1:
+            _, media = result
+            contents.append(media)
+        if not contents:
             raise ReferenceError("Pixiv收藏集中未找到可用作品")
+        contents.insert(
+            0,
+            PixivMedia(self._build_collection_caption(collection_id, collection), [], []),
+        )
         return title, contents
 
     @staticmethod
@@ -386,28 +470,74 @@ class Pixiv(Module):
             fields.append(f"作品数：{work_count}")
         return "\n".join(fields)
 
-    def _send_content(self, contents: list[tuple[str, list[str]]], source: str):
-        """以合并转发发送作品元数据和全部图片"""
+    def _send_pixiv_re_content(
+        self, contents: list[PixivMedia], source: str
+    ):
+        """使用pixiv.re图片地址发送作品内容"""
         nodes = []
-        for caption, image_urls in contents:
-            if caption:
-                nodes.append(self.node(caption))
+        for media in contents:
+            if media.caption:
+                nodes.append(self.node(media.caption))
+            for image_url in media.proxy_image_urls:
+                nodes.append(self.node(f"[CQ:image,file={image_url}]"))
+        result = self.reply_forward(nodes, source=source, summary="Pixiv")
+        if Utils.status_ok(result):
+            return result
+
+        nodes = []
+        for media in contents:
+            if media.caption:
+                nodes.append(self.node(media.caption))
             nodes.extend(
-                self.node(f"[CQ:image,file={image_url}]")
-                for image_url in image_urls
+                self.node(image_url)
+                for image_url in media.proxy_image_urls
             )
         return self.reply_forward(nodes, source=source, summary="Pixiv")
 
-    def _send_url_content(self, contents: list[tuple[str, list[str]]], source: str) -> str:
-        """将作品信息和pixiv.re图片地址组装为普通文本消息"""
+    def _send_origin_content(
+        self, contents: list[PixivMedia], source: str
+    ) -> str:
+        """下载Pixiv原图并使用Base64发送作品内容"""
         nodes = []
-        for caption, image_urls in contents:
-            if caption:
-                nodes.append(self.node(caption))
-            for image_url in image_urls:
-                if image_url.startswith("base64://"):
-                    image_url = Utils.get_img_url(self.robot, image_url)
-                nodes.append(self.node(image_url))
+        original_image_data = self._download_original_images_as_base64(
+            [
+                image_url
+                for media in contents
+                for image_url in media.original_image_urls
+            ]
+        )
+        for media in contents:
+            if media.caption:
+                nodes.append(self.node(media.caption))
+            nodes.extend(
+                self.node(f"[CQ:image,file=base64://{original_image_data[image_url]}]")
+                for image_url in media.original_image_urls
+                if image_url in original_image_data
+            )
+
+        result = self.reply_forward(nodes, source=source, summary="Pixiv")
+        if Utils.status_ok(result):
+            return result
+
+        origin_image_count = sum(
+            len(media.original_image_urls) for media in contents
+        )
+        if origin_image_count > 3:
+            return self.reply("Pixiv发送失败且图片数量大于三张", reply=True)
+
+        nodes = []
+        for media in contents:
+            if media.caption:
+                nodes.append(self.node(media.caption))
+            nodes.extend(
+                self.node(
+                    Utils.get_img_url(
+                        self.robot, f"base64://{original_image_data[image_url]}"
+                    )
+                )
+                for image_url in media.original_image_urls
+                if image_url in original_image_data
+            )
         return self.reply_forward(nodes, source=source, summary="Pixiv")
 
     @staticmethod
@@ -481,7 +611,21 @@ class Pixiv(Module):
         return match.group(1).lower() if match else "jpg"
 
     @staticmethod
-    def _build_image_url(pid: str, page: int, extension: str) -> str:
+    def _build_direct_image_urls(original_url: str, page_count: int) -> list[str]:
+        """按Pixiv原图地址生成全部页面的图片直链"""
+        if not original_url:
+            return []
+        match = re.search(
+            r"_p\d+(\.[^/?#]+(?:[?#].*)?)$", original_url, re.IGNORECASE
+        )
+        if not match:
+            return [original_url] if page_count == 1 else []
+        prefix = original_url[: match.start()]
+        suffix = match.group(1)
+        return [f"{prefix}_p{page - 1}{suffix}" for page in range(1, page_count + 1)]
+
+    @staticmethod
+    def _build_pixiv_re_image_url(pid: str, page: int, extension: str) -> str:
         """生成pixiv.re原图地址"""
         page_suffix = "" if page == 1 else f"-{page}"
         return f"https://pixiv.re/{pid}{page_suffix}.{extension}"
