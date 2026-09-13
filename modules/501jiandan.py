@@ -28,7 +28,7 @@ class Jiandan(Module):
         "llm_batch_limit": 5,
         "llm_model": None,
         "llm_prompt": (
-            "你在帮群聊筛选适合发送的帖子，优先保留有明确笑点、梗感强、适合普通群聊的内容，排除低质截图、包含广告的内容。"
+            "你在帮群聊筛选适合发送的帖子，优先保留有明确笑点、梗感强、适合普通群聊的内容，排除低质图片和广告的内容，注意有的梗图包含商品不一定是广告。"
         ),
         "request_headers": {
             "Referer": "https://jandan.net/pic",
@@ -269,15 +269,21 @@ class Jiandan(Module):
         selected = [item for _, item in reviewed]
         return selected
 
-    async def pick_jiandan_items(self, config: dict[str, Any]) -> list[dict]:
+    async def pick_jiandan_items(
+        self, config: dict[str, Any], *, local_only: bool = False
+    ) -> list[dict]:
         """综合历史、本地规则和 LLM 选择本次要发送的帖子"""
-        data_list = await self.get_jiandan()
+        data_list = await self.get_jiandan(page_num=0 if local_only else 3)
         if not data_list:
             return []
         hist = set(config.get("hist", []))
         candidates = [item for item in data_list if item.get("id") not in hist]
         if not candidates:
             return []
+        if local_only:
+            selected = self.filter_jiandan_items_locally(candidates, 1)
+            self.printf(f"[本地筛选] 快速返回 {len(selected)} 张帖子")
+            return selected[:1]
         batch_limit = self.get_jiandan_limit(config, "batch_limit", 2)
         llm_batch_limit = max(batch_limit, self.get_jiandan_limit(config, "llm_batch_limit", 5))
         max_batch_limit = max(batch_limit, llm_batch_limit)
@@ -318,7 +324,9 @@ class Jiandan(Module):
         """获取煎蛋网"""
         if not self.is_private():
             Utils.set_emoji(self.robot, self.event.msg_id, 124)
-        data_list = self.robot.sync(self.pick_jiandan_items(self.conv_config))
+        data_list = self.robot.sync(
+            self.pick_jiandan_items(self.conv_config, local_only=True)
+        )
         if not data_list:
             return self.reply("未获取到新的评论")
         self.remember_jiandan_items(self.conv_config, data_list)
