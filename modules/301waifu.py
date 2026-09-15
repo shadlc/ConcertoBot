@@ -1,7 +1,7 @@
 """抽老婆模块"""
 import base64
 import html
-import imghdr # pylint: disable=deprecated-module
+import io
 import os
 import random
 import datetime
@@ -9,6 +9,7 @@ import re
 import traceback
 
 import httpx
+from PIL import Image
 from src.base import Module
 from src.utils import Utils
 
@@ -26,7 +27,7 @@ class Waifu(Module):
         2: [
             "抽老婆 | 看看今天的二次元老婆是谁",
             "添老婆 [老婆名] + 图片 | 添加老婆",
-            "删老婆 [老婆名.扩展名] | 删除老婆，需指定jpg/jpeg/png扩展名",
+            "删老婆 [老婆名] | 删除老婆",
             "查老婆 @某人 | 查询别人今天抽到的老婆",
             "查老婆 [老婆名] | 查询老婆是否存在",
         ],
@@ -276,7 +277,7 @@ class Waifu(Module):
         and self.conv_config.get("enable")
         and self.match(r"^删(除)?老婆"))
     def del_waifu(self):
-        """删除二次元老婆（必须指定格式）"""
+        """删除二次元老婆"""
         try:
             # 提取老婆名称和格式
             waifu_input = re.sub(r"删(除)?老婆", "", self.event.msg).strip()
@@ -293,23 +294,34 @@ class Waifu(Module):
                     target_format = fmt
                     break
 
-            if not target_format:
-                return self.reply("请指定要删除的图片格式，例如：删老婆 老婆名.jpg\n支持的格式有：jpg、jpeg、png", reply=True)
-
             # 提取老婆名（移除格式后缀）
-            waifu_name = waifu_input[:-len(target_format)]
+            waifu_name = waifu_input[:-len(target_format)] if target_format else waifu_input
             if not waifu_name:
                 return self.reply("请输入有效的老婆名称", reply=True)
 
-            # 查找并删除指定格式的文件
             pic_path = self.get_path()
-            file_path = os.path.join(pic_path, f"{waifu_name}{target_format}")
+            if target_format:
+                waifu_file = f"{waifu_name}{target_format}"
+            else:
+                # 未指定格式时，仅允许删除唯一匹配的老婆文件
+                waifu_files = [
+                    f"{waifu_name}{fmt}"
+                    for fmt in supported_formats
+                    if os.path.exists(os.path.join(pic_path, f"{waifu_name}{fmt}"))
+                ]
+                if not waifu_files:
+                    return self.reply(f"未找到老婆 {waifu_name}", reply=True)
+                if len(waifu_files) > 1:
+                    return self.reply("请指定要删除的图片格式，例如：删老婆 老婆名.jpg\n支持的格式有：jpg、jpeg、png", reply=True)
+                waifu_file = waifu_files[0]
+
+            file_path = os.path.join(pic_path, waifu_file)
 
             if os.path.exists(file_path):
                 os.remove(file_path)
-                self.reply(f"成功删除老婆 {waifu_name}{target_format}", reply=True)
+                self.reply(f"成功删除老婆 {waifu_file}", reply=True)
             else:
-                self.reply(f"未找到老婆 {waifu_name}{target_format}", reply=True)
+                self.reply(f"未找到老婆 {waifu_file}", reply=True)
 
         except Exception: # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
@@ -339,7 +351,8 @@ class Waifu(Module):
         pic_path = self.get_path()
         data = httpx.get(url, timeout=10)
         data.raise_for_status()
-        fmt = imghdr.what(None, h=data.content)
+        with Image.open(io.BytesIO(data.content)) as image:
+            fmt = image.format.lower()
         file_path = os.path.join(pic_path, f"{name}.{fmt}")
         with open(file_path, "wb") as f:
             f.write(data.content)
