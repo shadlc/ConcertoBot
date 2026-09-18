@@ -30,6 +30,7 @@ class Tiktok(Module):
         "tiktok.com": "tiktok.txt",
     }
     JSON_SCRIPT_IDS = (
+        "RENDER_DATA",
         "SIGI_STATE",
         "__UNIVERSAL_DATA_FOR_REHYDRATION__",
         "__NEXT_DATA__",
@@ -183,20 +184,20 @@ class Tiktok(Module):
         hostname = (parsed.hostname or "").lower().rstrip(".")
         return hostname == "music.douyin.com" or parsed.path.lower().startswith("/qishui/")
 
-    def _fetch_page(self, url: str) -> tuple[str, str]:
+    def _fetch_page(self, url: str, *, user_agent: str | None = None) -> tuple[str, str]:
         """在抖音/TikTok域名内手动跟踪重定向并获取页面。"""
         current_url = url
         with httpx.Client(follow_redirects=False, timeout=self.config["page_timeout"]) as client:
             for _ in range(self.config["max_redirects"]):
                 if not self._host_is_allowed(current_url):
                     raise ValueError(f"链接跳转到了非预期域名: {urlparse(current_url).hostname}")
-                response = client.get(
+                headers = self._build_request_headers(
                     current_url,
-                    headers=self._build_request_headers(
-                        current_url,
-                        "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
-                    ),
+                    "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
                 )
+                if user_agent:
+                    headers["User-Agent"] = user_agent
+                response = client.get(current_url, headers=headers)
                 if response.status_code in self.REDIRECT_STATUS:
                     location = response.headers.get("Location", "").strip()
                     if not location:
@@ -207,13 +208,26 @@ class Tiktok(Module):
                 return str(response.url), response.text
         raise RuntimeError("页面重定向次数超过限制")
 
-    def _fetch_image_detail(self, page_url: str) -> dict | None:
-        """从抖音详情接口补充动态页面中缺失的图文数据。"""
+    def _fetch_image_detail(self, page_url: str) -> dict | list | None:
+        """从抖音作品页或详情接口补充分享页中缺失的图文数据。"""
         if not self._is_douyin_url(page_url):
             return None
         match = re.search(r"/(?:note|slides|video)/(\d+)", urlparse(page_url).path)
         if not match:
             return None
+
+        # 手机分享页可能只有路由数据，公开的服务端渲染页仍包含完整图集。
+        # 使用爬虫 UA 获取结构化数据，无需浏览器执行脚本或登录 Cookie。
+        try:
+            _, page = self._fetch_page(
+                f"https://www.douyin.com/note/{match.group(1)}",
+                user_agent="Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+            )
+            for data in self._iter_json_documents(page):
+                if self._extract_image_urls_from_data(data):
+                    return data
+        except httpx.HTTPError as error:
+            self.printf(f"请求抖音图文作品页失败: {error}", level="DEBUG")
 
         query = urlencode({
             "aweme_id": match.group(1),
@@ -364,10 +378,7 @@ class Tiktok(Module):
     def _extract_image_urls(cls, page: str) -> list[str]:
         """从图文页面状态数据中提取并去重图片地址。"""
         for data in cls._iter_json_documents(page):
-            image_items = cls._find_aweme_images(data)
-            if image_items is None:
-                continue
-            image_urls = cls._extract_image_urls_from_items(image_items)
+            image_urls = cls._extract_image_urls_from_data(data)
             if image_urls:
                 return image_urls
         return []
@@ -396,10 +407,14 @@ class Tiktok(Module):
         return None
 
     @classmethod
-    def _extract_image_urls_from_data(cls, data: dict) -> list[str]:
-        """从详情接口数据中提取并去重图片地址。"""
+    def _extract_image_urls_from_data(cls, data) -> list[str]:
+        """从作品状态、结构化图文或详情接口中提取图片地址。"""
+        if isinstance(data, dict) and str(data.get("@type", "")).lower() == "article":
+            images = data.get("image")
+            if isinstance(images, list):
+                return cls._normalise_image_urls([url for url in images if isinstance(url, str)])
         image_items = cls._find_aweme_images(data)
-        if image_items is None:
+        if image_items is None and isinstance(data, dict):
             image_items = data.get("images")
         return cls._extract_image_urls_from_items(image_items)
 
@@ -433,8 +448,8 @@ class Tiktok(Module):
         return image_urls
 
     @classmethod
-    def _extract_image_caption_from_data(cls, data: dict) -> str:
-        """从详情接口数据中提取图文配文。"""
+    def _extract_image_caption_from_data(cls, data) -> str:
+        """从作品状态或详情接口数据中提取图文配文。"""
         caption = cls._find_image_caption(data)
         return html.unescape(caption).strip()[:1000] if caption else ""
 
@@ -451,6 +466,11 @@ class Tiktok(Module):
     def _find_image_caption(cls, value) -> str:
         """在包含图片字段的对象中查找 desc、content 等配文。"""
         if isinstance(value, dict):
+            if str(value.get("@type", "")).lower() == "article" and isinstance(value.get("image"), list):
+                for key in ("articleBody", "headline", "description"):
+                    text = value.get(key)
+                    if isinstance(text, str) and text.strip():
+                        return text
             normalized_keys = {key.replace("-", "_").lower() for key in value}
             if normalized_keys & cls.IMAGE_KEYS:
                 for key in ("desc", "description", "content", "title"):
@@ -474,6 +494,7 @@ class Tiktok(Module):
         patterns = [
             r"window\._ROUTER_DATA\s*=\s*(?P<data>\{.*?\})\s*;?\s*</script>",
             r"window\.__INITIAL_STATE__\s*=\s*(?P<data>\{.*?\})\s*;?\s*</script>",
+            r"<script[^>]+type=[\"']application/ld\+json[\"'][^>]*>(?P<data>.*?)</script>",
         ]
         script_ids = "|".join(re.escape(script_id) for script_id in cls.JSON_SCRIPT_IDS)
         patterns.append(
@@ -483,6 +504,8 @@ class Tiktok(Module):
         for pattern in patterns:
             for match in re.finditer(pattern, page, re.IGNORECASE | re.DOTALL):
                 raw = html.unescape(match.group("data")).strip().rstrip(";")
+                if raw.startswith("%"):
+                    raw = unquote(raw)
                 if raw in seen:
                     continue
                 seen.add(raw)
