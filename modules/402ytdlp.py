@@ -1,6 +1,7 @@
 """视频下载模块"""
 
 import base64
+import html
 import os
 from pathlib import Path
 import re
@@ -116,6 +117,7 @@ class Ytdlp(Module):
             return
         self.handled = True
         file_path = ""
+        original_url = url
         tasks = self.conv_config["tasks"]
         opts = self.get_options(url)
         try:
@@ -192,14 +194,15 @@ class Ytdlp(Module):
             if video_path := self.config["video_path"]:
                 video_path = Path(os.path.join(video_path, video_name)).as_posix()
                 msg = f"[CQ:video,file=file://{urllib.parse.quote(video_path)}]"
-                self.reply(msg)
             else:
                 with open(file_path, "rb") as video_file:
                     video_bytes = video_file.read()
                     b64_bytes = base64.b64encode(video_bytes)
                     b64 = b64_bytes.decode("utf-8")
                     msg = f"[CQ:video,file=base64://{b64}]"
-                    self.reply(msg)
+            result = self.reply(msg)
+            if not self.is_private() and Utils.status_ok(result):
+                self.notify_video(result, original_url)
         except LoadError:
             # http://fileformats.archiveteam.org/wiki/Netscape_cookies.txt
             return self.reply("Cookie载入失败! 请联系管理员", reply=True)
@@ -216,6 +219,31 @@ class Ytdlp(Module):
         finally:
             if os.path.exists(file_path):
                 os.remove(file_path)
+
+    def notify_video(self, result: dict, original_url: str):
+        """获取已发送视频的直链并将用户消息通知麦麦"""
+        if not (notify_maisaka := self.robot.func.get("notify_maisaka")):
+            return
+        msg_id = result.get("data", {}).get("message_id")
+        if msg_id is None:
+            return
+        try:
+            video_msg = Utils.get_msg(self.robot, msg_id)
+            if not Utils.status_ok(video_msg):
+                return
+            msg = video_msg.get("data", {}).get("message", "")
+            if not (match := re.search(r"\[CQ:video,[^\]]*?\burl=([^,\]]+)", msg)):
+                return
+            video_url = html.unescape(match.group(1))
+            content = self.event.msg.replace(self.robot.at_info, "").strip()
+            if original_url in content:
+                content = content.replace(original_url, video_url)
+            else:
+                # 链接来自回复消息时，将视频直链补入用户消息
+                content = f"{content}\n{video_url}".strip()
+            notify_maisaka(content, self.event.group_id, self.event)
+        except Exception: # pylint: disable=broad-exception-caught
+            self.errorf(f"通知麦麦视频消息失败\n{traceback.format_exc()}")
 
     @Utils.handler(
         lambda self: self.at_or_private() and self.au(1)
