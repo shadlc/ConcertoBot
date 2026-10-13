@@ -77,35 +77,50 @@ class Twitter(Module):
         try:
             if not self.is_private():
                 Utils.set_emoji(self.robot, self.event.msg_id, 124)
-            caption, image_data, video_url = self.retry(
+            caption, image_data, gif_data, video_urls = self.retry(
                 self.get_media,
                 url,
                 failed_ok=False,
             )
             if not self.is_private():
                 Utils.set_emoji(self.robot, self.event.msg_id, 66)
-            if video_url:
-                msg = f"[CQ:video,file={video_url}]"
-                return self.reply_media(msg, "video", video_url)
-            image_message = "\n".join(
-                f"[CQ:image,file=base64://{data}]" for data in image_data
-            )
-            msg = f"{caption}\n{image_message}" if caption else image_message
-            if not msg:
-                raise ReferenceError("推文中未找到可发送的图文")
-            return self.reply_media(
-                msg,
-                "image",
-                image_data,
-                caption,
-                source="Twitter",
-                forward=len(image_data) > 3,
-            )
+            return self._reply_tweet_media(caption, image_data, gif_data, video_urls)
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             nodes = self.node(f"URL：{url}\n错误：{e}")
             self.robot.admin_notify("推特内容处理失败", nodes, self.event)
             return self.reply(str(e), reply=True)
+
+    def _reply_tweet_media(
+        self,
+        caption: str,
+        image_data: list[str],
+        gif_data: list[str],
+        video_urls: list[str],
+    ):
+        """文字与普通图片共用节点，GIF 和视频分别使用独立节点。"""
+        text_parts = [caption] if caption else []
+        text_parts.extend(f"[CQ:image,file=base64://{data}]" for data in image_data)
+        messages = ["\n".join(text_parts)] if text_parts else []
+        messages.extend(f"[CQ:image,file=base64://{data}]" for data in gif_data)
+        messages.extend(f"[CQ:video,file={url}]" for url in video_urls)
+        if not messages:
+            raise ReferenceError("推文中未找到可发送的图文或视频")
+        if len(messages) > 1 or len(image_data) > 3:
+            result = self.reply_forward([self.node(msg) for msg in messages], caption, "Twitter")
+        else:
+            result = self.reply(messages[0], reply=not video_urls)
+        if Utils.status_ok(result):
+            return result
+
+        # 统一处理图文、GIF 和视频发送失败时的链接回退。
+        fallback = [caption] if caption else []
+        fallback.extend(
+            Utils.get_img_url(self.robot, f"base64://{data}")
+            for data in image_data + gif_data
+        )
+        fallback.extend(Utils.get_video_url(self.robot, url) for url in video_urls)
+        return self.reply("\n".join(fallback), reply=True)
 
     def _get_tweet_url(self) -> str:
         """从当前消息或被回复消息中提取推特/X链接。"""
@@ -118,8 +133,8 @@ class Twitter(Module):
                 return match.group(0)
         return ""
 
-    def get_media(self, url: str) -> tuple[str, list[str], str]:
-        """读取推文正文、图片、视频地址"""
+    def get_media(self, url: str) -> tuple[str, list[str], list[str], list[str]]:
+        """读取推文正文、图片、GIF 和视频地址。"""
         username, tweet_id = self._parse_tweet_url(url)
         api_url = self.config["api"].format(username=username, tweet_id=tweet_id)
         headers = {
@@ -146,20 +161,19 @@ class Twitter(Module):
         captions, image_urls, video_items = self._collect_tweet_content(tweet)
         image_data = self._download_images_as_base64(image_urls, url)
 
-        video_url = ""
+        video_urls = []
         gif_data = []
         for video, media in video_items:
             candidate = video.get("url", "")
             if not isinstance(candidate, str) or not candidate:
                 continue
-            if not video_url:
-                video_url = candidate
             if self.config["convert_gif"] and self._is_gif_media(media, video):
                 converted_gif = self._convert_video_to_gif(candidate, url)
                 if converted_gif:
                     gif_data.append(converted_gif)
-        image_data.extend(gif_data)
-        return "".join(captions), image_data, "" if gif_data else video_url
+                    continue
+            video_urls.append(candidate)
+        return "\n".join(captions), image_data, gif_data, video_urls
 
     def _collect_tweet_content(
         self,

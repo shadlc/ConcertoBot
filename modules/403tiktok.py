@@ -103,26 +103,35 @@ class Tiktok(Module):
             caption, image_data, video_url = self.retry(self.get_media, url, failed_ok=False)
             if not self.is_private():
                 Utils.set_emoji(self.robot, self.event.msg_id, 66)
-            if image_data:
-                image_message = "\n".join(
-                    f"[CQ:image,file=base64://{data}]" for data in image_data
-                )
-                msg = f"{caption}\n{image_message}" if caption else image_message
-                return self.reply_media(
-                    msg,
-                    "image",
-                    image_data,
-                    caption,
-                    source="TikTok",
-                    forward=len(image_data) > 3,
-                )
-            msg = f"[CQ:video,file={video_url}]"
-            return self.reply_media(msg, "video", video_url)
+            return self._reply_post_media(caption, image_data, video_url)
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             nodes = self.node(f"URL：{url}\n错误：{e}")
             self.robot.admin_notify("抖音处理失败", nodes, self.event)
             return self.reply(str(e), reply=True)
+
+    def _reply_post_media(self, caption: str, image_data: list[str], video_url: str):
+        """文字与图片共用节点，视频使用独立节点。"""
+        text_parts = [caption] if caption else []
+        text_parts.extend(f"[CQ:image,file=base64://{data}]" for data in image_data)
+        messages = ["\n".join(text_parts)] if text_parts else []
+        if video_url:
+            messages.append(f"[CQ:video,file={video_url}]")
+        if not messages:
+            raise ReferenceError("未找到可发送的图文或视频")
+        if len(messages) > 1 or len(image_data) > 3:
+            result = self.reply_forward([self.node(msg) for msg in messages], caption, "TikTok")
+        else:
+            result = self.reply(messages[0], reply=not video_url)
+        if Utils.status_ok(result):
+            return result
+
+        # 统一处理图文和视频发送失败时的链接回退。
+        fallback = [caption] if caption else []
+        fallback.extend(Utils.get_img_url(self.robot, f"base64://{data}") for data in image_data)
+        if video_url:
+            fallback.append(Utils.get_video_url(self.robot, video_url))
+        return self.reply("\n".join(fallback), reply=True)
 
     def _extract_source_url(self) -> str:
         """从当前消息或被回复消息中提取抖音/TikTok链接。"""
@@ -138,31 +147,34 @@ class Tiktok(Module):
     def get_media(self, url: str) -> tuple[str, list[str], str]:
         """解析并返回正文、图片数据和视频地址。"""
         page_url = url
+        caption = ""
         try:
             page_url, page = self._fetch_page(url)
             if self._is_music_page(page_url):
                 raise ReferenceError("这是汽水音乐歌曲分享链接，当前仅支持视频和图文链接")
             if self._is_image_page(page_url):
                 return self._parse_image_media(page_url, page)
+            caption = self._extract_caption(page)
             video_url = self._extract_video_url(page)
             if video_url:
-                return "", [], video_url
+                return caption, [], video_url
         except httpx.HTTPError as error:
             self.printf(f"请求视频页面失败，尝试备用解析器: {error}", level="DEBUG")
 
         try:
-            return "", [], self._extract_video_url_with_ytdlp(page_url)
+            video_caption, video_url = self._extract_video_with_ytdlp(page_url)
+            return caption or video_caption, [], video_url
         except (ImportError, OSError, RuntimeError, ValueError) as error:
             raise ReferenceError("未找到有效的抖音地址，可能是页面风控或链接已失效") from error
 
     def _parse_image_media(self, page_url: str, page: str) -> tuple[str, list[str], str]:
         """解析图文页面并下载图片。"""
         image_urls = self._extract_image_urls(page)
-        caption = self._extract_image_caption(page)
+        caption = self._extract_caption(page)
         if not image_urls and (detail := self._fetch_image_detail(page_url)):
             image_urls = self._extract_image_urls_from_data(detail)
             if not caption:
-                caption = self._extract_image_caption_from_data(detail)
+                caption = self._extract_caption_from_data(detail)
         if not image_urls:
             raise ReferenceError("未找到图文地址")
 
@@ -448,42 +460,42 @@ class Tiktok(Module):
         return image_urls
 
     @classmethod
-    def _extract_image_caption_from_data(cls, data) -> str:
-        """从作品状态或详情接口数据中提取图文配文。"""
-        caption = cls._find_image_caption(data)
+    def _extract_caption_from_data(cls, data) -> str:
+        """从作品状态或详情接口数据中提取配文。"""
+        caption = cls._find_caption(data)
         return html.unescape(caption).strip()[:1000] if caption else ""
 
     @classmethod
-    def _extract_image_caption(cls, page: str) -> str:
-        """提取与图片条目关联的配文，避免误取背景音乐标题。"""
+    def _extract_caption(cls, page: str) -> str:
+        """提取与作品媒体关联的配文，避免误取背景音乐标题。"""
         for data in cls._iter_json_documents(page):
-            caption = cls._find_image_caption(data)
+            caption = cls._extract_caption_from_data(data)
             if caption:
-                return html.unescape(caption).strip()[:1000]
+                return caption
         return ""
 
     @classmethod
-    def _find_image_caption(cls, value) -> str:
-        """在包含图片字段的对象中查找 desc、content 等配文。"""
+    def _find_caption(cls, value) -> str:
+        """在包含作品媒体字段的对象中查找配文。"""
         if isinstance(value, dict):
-            if str(value.get("@type", "")).lower() == "article" and isinstance(value.get("image"), list):
+            if str(value.get("@type", "")).lower() in {"article", "videoobject"}:
                 for key in ("articleBody", "headline", "description"):
                     text = value.get(key)
                     if isinstance(text, str) and text.strip():
                         return text
             normalized_keys = {key.replace("-", "_").lower() for key in value}
-            if normalized_keys & cls.IMAGE_KEYS:
+            if normalized_keys & (cls.IMAGE_KEYS | {"video"} | cls.VIDEO_URL_KEYS):
                 for key in ("desc", "description", "content", "title"):
                     text = value.get(key)
                     if isinstance(text, str) and text.strip():
                         return text
             for nested in value.values():
-                caption = cls._find_image_caption(nested)
+                caption = cls._find_caption(nested)
                 if caption:
                     return caption
         elif isinstance(value, list):
             for nested in value:
-                caption = cls._find_image_caption(nested)
+                caption = cls._find_caption(nested)
                 if caption:
                     return caption
         return ""
@@ -609,7 +621,7 @@ class Tiktok(Module):
             ".mp4",
         ))
 
-    def _extract_video_url_with_ytdlp(self, url: str) -> str:
+    def _extract_video_with_ytdlp(self, url: str) -> tuple[str, str]:
         """使用已安装的 yt-dlp 作为页面结构变化时的备用解析器。"""
         from yt_dlp import YoutubeDL
         from yt_dlp.utils import DownloadError
@@ -637,4 +649,6 @@ class Tiktok(Module):
         video_url = info.get("url")
         if not isinstance(video_url, str) or not video_url:
             raise RuntimeError("yt-dlp 未返回可下载的视频地址")
-        return self._normalise_url(video_url) or video_url
+        caption = info.get("description") or info.get("title")
+        caption = html.unescape(caption).strip()[:1000] if isinstance(caption, str) else ""
+        return caption, self._normalise_url(video_url) or video_url
