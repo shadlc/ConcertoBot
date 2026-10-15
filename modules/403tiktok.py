@@ -7,7 +7,7 @@ import re
 import traceback
 from http.cookiejar import MozillaCookieJar
 from pathlib import Path
-from urllib.parse import unquote, urlencode, urljoin, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
 import httpx
 
@@ -100,37 +100,37 @@ class Tiktok(Module):
         try:
             if not self.is_private():
                 Utils.set_emoji(self.robot, self.event.msg_id, 124)
-            caption, image_data, video_url = self.retry(self.get_media, url, failed_ok=False)
+            caption, image_data, video_urls = self.retry(self.get_media, url, failed_ok=False)
             if not self.is_private():
                 Utils.set_emoji(self.robot, self.event.msg_id, 66)
-            return self._reply_post_media(caption, image_data, video_url)
+            return self._reply_post_media(caption, image_data, video_urls)
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.errorf(traceback.format_exc())
             nodes = self.node(f"URL：{url}\n错误：{e}")
             self.robot.admin_notify("抖音处理失败", nodes, self.event)
             return self.reply(str(e), reply=True)
 
-    def _reply_post_media(self, caption: str, image_data: list[str], video_url: str):
+    def _reply_post_media(self, caption: str, image_data: list[str], video_urls: list[str]):
         """文字与图片共用节点，视频使用独立节点。"""
-        text_parts = [caption] if caption else []
+        media_count = len(image_data) + len(video_urls)
+        text_parts = [caption] if caption and not 0 < media_count <= 2 else []
         text_parts.extend(f"[CQ:image,file=base64://{data}]" for data in image_data)
         messages = ["\n".join(text_parts)] if text_parts else []
-        if video_url:
-            messages.append(f"[CQ:video,file={video_url}]")
+        messages.extend(f"[CQ:video,file={url}]" for url in video_urls)
         if not messages:
             raise ReferenceError("未找到可发送的图文或视频")
-        if len(messages) > 1 or len(image_data) > 3:
+        if media_count > 2:
             result = self.reply_forward([self.node(msg) for msg in messages], caption, "TikTok")
         else:
-            result = self.reply(messages[0], reply=not video_url)
+            results = [self.reply(message, reply=not video_urls) for message in messages]
+            result = next((item for item in results if not Utils.status_ok(item)), results[-1])
         if Utils.status_ok(result):
             return result
 
         # 统一处理图文和视频发送失败时的链接回退。
         fallback = [caption] if caption else []
         fallback.extend(Utils.get_img_url(self.robot, f"base64://{data}") for data in image_data)
-        if video_url:
-            fallback.append(Utils.get_video_url(self.robot, video_url))
+        fallback.extend(Utils.get_video_url(self.robot, url) for url in video_urls)
         return self.reply("\n".join(fallback), reply=True)
 
     def _extract_source_url(self) -> str:
@@ -144,7 +144,7 @@ class Tiktok(Module):
                 return match.group(0).rstrip(".,，。!！?？)）]>")
         return ""
 
-    def get_media(self, url: str) -> tuple[str, list[str], str]:
+    def get_media(self, url: str) -> tuple[str, list[str], list[str]]:
         """解析并返回正文、图片数据和视频地址。"""
         page_url = url
         caption = ""
@@ -157,31 +157,31 @@ class Tiktok(Module):
             caption = self._extract_caption(page)
             video_url = self._extract_video_url(page)
             if video_url:
-                return caption, [], video_url
+                return caption, [], [video_url]
         except httpx.HTTPError as error:
             self.printf(f"请求视频页面失败，尝试备用解析器: {error}", level="DEBUG")
 
         try:
             video_caption, video_url = self._extract_video_with_ytdlp(page_url)
-            return caption or video_caption, [], video_url
+            return caption or video_caption, [], [video_url]
         except (ImportError, OSError, RuntimeError, ValueError) as error:
-            raise ReferenceError("未找到有效的抖音地址，可能是页面风控或链接已失效") from error
+            raise ReferenceError("未找到图文地址，或Cookie已失效") from error
 
-    def _parse_image_media(self, page_url: str, page: str) -> tuple[str, list[str], str]:
-        """解析图文页面并下载图片。"""
-        image_urls = self._extract_image_urls(page)
+    def _parse_image_media(self, page_url: str, page: str) -> tuple[str, list[str], list[str]]:
+        """解析混合图集中的图片和视频，并下载图片。"""
+        image_urls, video_urls = self._extract_slides(page)
         caption = self._extract_caption(page)
-        if not image_urls and (detail := self._fetch_image_detail(page_url)):
-            image_urls = self._extract_image_urls_from_data(detail)
+        if not (image_urls or video_urls) and (detail := self._fetch_image_detail(page_url)):
+            image_urls, video_urls = self._extract_slides_from_data(detail)
             if not caption:
                 caption = self._extract_caption_from_data(detail)
-        if not image_urls:
-            raise ReferenceError("未找到图文地址")
+        if not (image_urls or video_urls):
+            raise ReferenceError("未找到图文地址，或Cookie已失效")
 
         image_data = self._download_images_as_base64(image_urls, page_url)
-        if not image_data:
+        if image_urls and not image_data:
             raise ReferenceError("图文下载失败")
-        return caption, image_data, ""
+        return caption, image_data, video_urls
 
     @staticmethod
     def _is_image_page(url: str) -> bool:
@@ -221,49 +221,30 @@ class Tiktok(Module):
         raise RuntimeError("页面重定向次数超过限制")
 
     def _fetch_image_detail(self, page_url: str) -> dict | list | None:
-        """从抖音作品页或详情接口补充分享页中缺失的图文数据。"""
+        """携带 Cookie 读取桌面作品页，补充分享页中缺失的图集。"""
         if not self._is_douyin_url(page_url):
             return None
         match = re.search(r"/(?:note|slides|video)/(\d+)", urlparse(page_url).path)
         if not match:
             return None
 
-        # 手机分享页可能只有路由数据，公开的服务端渲染页仍包含完整图集。
-        # 使用爬虫 UA 获取结构化数据，无需浏览器执行脚本或登录 Cookie。
+        # 手机分享页可能只有前端壳；桌面页需使用有效的访客 Cookie。
+        # 使用桌面 UA，避免再次跳转到手机分享页。
         try:
-            _, page = self._fetch_page(
+            _, content = self._fetch_page(
                 f"https://www.douyin.com/note/{match.group(1)}",
-                user_agent="Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
             )
-            for data in self._iter_json_documents(page):
-                if self._extract_image_urls_from_data(data):
+            for data in self._iter_json_documents(content):
+                if any(self._extract_slides_from_data(data)):
                     return data
         except httpx.HTTPError as error:
-            self.printf(f"请求抖音图文作品页失败: {error}", level="DEBUG")
-
-        query = urlencode({
-            "aweme_id": match.group(1),
-            "device_platform": "webapp",
-            "aid": "6383",
-            "channel": "channel_pc_web",
-        })
-        api_url = f"https://www.douyin.com/aweme/v1/web/aweme/detail/?{query}"
-        headers = self._build_request_headers(
-            api_url,
-            "application/json, text/plain, */*",
-            referer=page_url,
-            cookie_url=page_url,
-        )
-
-        try:
-            with httpx.Client(timeout=self.config["page_timeout"]) as client:
-                response = client.get(api_url, headers=headers)
-                response.raise_for_status()
-                data = response.json()
-        except (httpx.HTTPError, ValueError) as error:
-            self.printf(f"请求抖音图文详情失败: {error}", level="DEBUG")
-            return None
-        return data if isinstance(data, dict) and isinstance(data.get("aweme_detail"), dict) else None
+            raise ReferenceError("未找到图文地址，或Cookie已失效") from error
+        return None
 
     def _build_request_headers(
         self,
@@ -387,13 +368,13 @@ class Tiktok(Module):
         return ""
 
     @classmethod
-    def _extract_image_urls(cls, page: str) -> list[str]:
-        """从图文页面状态数据中提取并去重图片地址。"""
+    def _extract_slides(cls, page: str) -> tuple[list[str], list[str]]:
+        """从图文页面状态数据中提取图片和视频地址。"""
         for data in cls._iter_json_documents(page):
-            image_urls = cls._extract_image_urls_from_data(data)
-            if image_urls:
-                return image_urls
-        return []
+            media = cls._extract_slides_from_data(data)
+            if any(media):
+                return media
+        return [], []
 
     @classmethod
     def _find_aweme_images(cls, value) -> list | None:
@@ -419,25 +400,38 @@ class Tiktok(Module):
         return None
 
     @classmethod
-    def _extract_image_urls_from_data(cls, data) -> list[str]:
-        """从作品状态、结构化图文或详情接口中提取图片地址。"""
+    def _extract_slides_from_data(cls, data) -> tuple[list[str], list[str]]:
+        """从作品状态、结构化图文或详情接口中提取图片和视频地址。"""
         if isinstance(data, dict) and str(data.get("@type", "")).lower() == "article":
             images = data.get("image")
             if isinstance(images, list):
-                return cls._normalise_image_urls([url for url in images if isinstance(url, str)])
+                return cls._normalise_image_urls([url for url in images if isinstance(url, str)]), []
         image_items = cls._find_aweme_images(data)
         if image_items is None and isinstance(data, dict):
             image_items = data.get("images")
-        return cls._extract_image_urls_from_items(image_items)
+        return cls._extract_slides_from_items(image_items)
 
     @classmethod
-    def _extract_image_urls_from_items(cls, images) -> list[str]:
-        """从当前作品的图集条目中提取图片地址。"""
+    def _extract_slides_from_items(cls, images) -> tuple[list[str], list[str]]:
+        """视频条目的 urlList 是封面，播放地址需从 video 中单独提取。"""
         if not isinstance(images, list):
-            return []
+            return [], []
         candidates = []
+        video_urls = []
         for image in images:
             if not isinstance(image, dict):
+                continue
+            video = image.get("video")
+            if video or image.get("clipType") == 4:
+                video_candidates = []
+                cls._collect_video_urls(video, video_candidates)
+                video_url = next((
+                    url for _, value in sorted(video_candidates, key=lambda item: item[0])
+                    if (url := cls._normalise_url(value))
+                ), "")
+                if not video_url:
+                    raise ReferenceError("图集中的视频缺少有效播放地址")
+                video_urls.append(video_url)
                 continue
             url_list = image.get("urlList") or image.get("url_list")
             if isinstance(url_list, list):
@@ -445,7 +439,7 @@ class Tiktok(Module):
                     if isinstance(url, str):
                         candidates.append(url)
                         break
-        return cls._normalise_image_urls(candidates)
+        return cls._normalise_image_urls(candidates), video_urls
 
     @classmethod
     def _normalise_image_urls(cls, candidates: list[str]) -> list[str]:
@@ -590,7 +584,7 @@ class Tiktok(Module):
         elif isinstance(value, dict):
             for key, nested in value.items():
                 normalized_key = key.replace("-", "_").lower()
-                if normalized_key in {"url_list", "urllist", "url", "uri"}:
+                if normalized_key in {"url_list", "urllist", "url", "uri", "src"}:
                     cls._append_url_values(nested, candidates, priority, media_only)
 
     @staticmethod

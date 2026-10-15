@@ -99,17 +99,19 @@ class Twitter(Module):
         video_urls: list[str],
     ):
         """文字与普通图片共用节点，GIF 和视频分别使用独立节点。"""
-        text_parts = [caption] if caption else []
+        media_count = len(image_data) + len(gif_data) + len(video_urls)
+        text_parts = [caption] if caption and not 0 < media_count <= 2 else []
         text_parts.extend(f"[CQ:image,file=base64://{data}]" for data in image_data)
         messages = ["\n".join(text_parts)] if text_parts else []
         messages.extend(f"[CQ:image,file=base64://{data}]" for data in gif_data)
         messages.extend(f"[CQ:video,file={url}]" for url in video_urls)
         if not messages:
             raise ReferenceError("推文中未找到可发送的图文或视频")
-        if len(messages) > 1 or len(image_data) > 3:
+        if media_count > 2:
             result = self.reply_forward([self.node(msg) for msg in messages], caption, "Twitter")
         else:
-            result = self.reply(messages[0], reply=not video_urls)
+            results = [self.reply(message, reply=not video_urls) for message in messages]
+            result = next((item for item in results if not Utils.status_ok(item)), results[-1])
         if Utils.status_ok(result):
             return result
 

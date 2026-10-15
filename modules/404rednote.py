@@ -25,7 +25,7 @@ class Rednote(Module):
 
     def __init__(self, event, auth = 0):
         """初始化小红书链接匹配规则"""
-        self.video_pattern = r"(https?://[^\s&;,\[]*(xhslink.com/o|xiaohongshu.com/)[^\s;,\"\u4e00-\u9fff\[]*)"
+        self.video_pattern = r"(https?://[^\s&;,\[]*(xhslink.(com|cn)|xiaohongshu.com/)[^\s;,\"\u4e00-\u9fff\[]*)"
         super().__init__(event, auth)
 
     @Utils.listener(lambda self: self.at_or_private() and self.au(2)
