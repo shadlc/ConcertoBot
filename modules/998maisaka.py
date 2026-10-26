@@ -575,9 +575,7 @@ class ConcertoToMaimCodec:
                 sender_info=sender_info,
                 receiver_info=receiver_info,
                 additional_config={
-                    "concerto_owner_id": self.owner.owner_id,
-                    "concerto_msg_type": "group" if event.group_id else "private",
-                    "concerto_sub_type": _safe_str(event.sub_type),
+                    "account_id": _safe_str(self.owner.robot.self_id),
                 },
             ),
             message_segment=segment,
