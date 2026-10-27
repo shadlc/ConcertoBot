@@ -5,6 +5,8 @@ import html
 import os
 from pathlib import Path
 import re
+import subprocess
+import tempfile
 from http.cookiejar import LoadError
 import time
 
@@ -36,6 +38,11 @@ class Ytdlp(Module):
     GLOBAL_CONFIG = {
         "video_path": "", # 如果不使用base64传输，则填入此路径，应该保证API部分程序能获取到相同的对应路径下的文件
         "headers": {},
+        "av1_to_h265": False, # 开启后将下载的 AV1 视频通过 GPU 转为 H.265 再发送
+        "ffmpeg_path": "ffmpeg",
+        "ffprobe_path": "ffprobe",
+        "h265_encoder": "hevc_qsv", # NVIDIA显卡evc_nvenc Intel核显hevc_qsv AMD核显hevc_amf
+        "conversion_timeout": 600,
         "ydl": {
             "paths": {
                 "home": "data/ytdlp",
@@ -170,6 +177,7 @@ class Ytdlp(Module):
                 file_path = f"{file_path}.{ext}"
             if not os.path.exists(file_path):
                 return self.reply("啊咧~视频不见啦，下载失败惹~", reply=True)
+            file_path = self.convert_av1(file_path)
             video_name = file_path.split("/").pop()
             file_size = os.path.getsize(file_path)
             self.printf(f"视频{video_name}下载完成，大小{Utils.calc_size(file_size)}")
@@ -179,9 +187,10 @@ class Ytdlp(Module):
                 if os.path.exists(file_path):
                     os.remove(file_path)
                 opts["format"] = "wv+ba/w"
-                self.download_video(url, opts)
+                file_path = Path(self.download_video(url, opts)).as_posix()
                 if not os.path.exists(file_path):
                     file_path = f"{file_path}.{ext}"
+                file_path = self.convert_av1(file_path)
                 video_name = file_path.split("/").pop()
                 file_size = os.path.getsize(file_path)
                 if file_size > 100 * 1024 * 1024:
@@ -219,6 +228,52 @@ class Ytdlp(Module):
         finally:
             if os.path.exists(file_path):
                 os.remove(file_path)
+
+    def convert_av1(self, file_path: str) -> str:
+        """按全局配置将 AV1 视频使用 GPU 编码为 H.265。"""
+        if not self.config["av1_to_h265"]:
+            return file_path
+        output_path = ""
+        try:
+            result = subprocess.run(
+                [self.config["ffprobe_path"], "-v", "error", "-select_streams", "v:0",
+                 "-show_entries", "stream=codec_name", "-of", "default=noprint_wrappers=1:nokey=1", file_path],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=self.config["conversion_timeout"], check=False,
+            )
+            if result.returncode:
+                raise RuntimeError(f"检测视频编码失败: {result.stderr.strip()[-500:]}")
+            if result.stdout.strip() != "av1":
+                return file_path
+            # 输出放在原文件目录，保证 video_path 映射仍然有效。
+            with tempfile.NamedTemporaryFile(
+                prefix=f"{Path(file_path).stem}_h265_", suffix=".mp4",
+                dir=Path(file_path).parent, delete=False,
+            ) as output:
+                output_path = output.name
+            self.printf("视频为 AV1，正在使用 GPU 转码为 H.265")
+            result = subprocess.run(
+                [self.config["ffmpeg_path"], "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+                 "-i", file_path, "-map", "0:v:0", "-map", "0:a?",
+                 "-c:v", self.config["h265_encoder"], "-tag:v", "hvc1",
+                 "-c:a", "aac", "-movflags", "+faststart", output_path],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=self.config["conversion_timeout"], check=False,
+            )
+            if result.returncode:
+                raise RuntimeError(f"AV1 转 H.265 失败: {result.stderr.strip()[-500:]}")
+            if not os.path.getsize(output_path):
+                raise RuntimeError("AV1 转 H.265 失败: 输出文件为空")
+            os.remove(file_path)
+            return Path(output_path).as_posix()
+        except Exception: # pylint: disable=broad-exception-caught
+            self.errorf(f"AV1 转 H.265 失败，使用原视频发送\n{traceback.format_exc()}")
+            if os.path.exists(output_path):
+                try:
+                    os.remove(output_path)
+                except OSError: # 清理失败不影响原视频发送
+                    self.errorf(f"清理转码文件失败\n{traceback.format_exc()}")
+            return file_path
 
     def notify_video(self, result: dict, original_url: str):
         """获取已发送视频的直链并将用户消息通知麦麦"""
