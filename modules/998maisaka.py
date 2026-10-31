@@ -575,6 +575,8 @@ class ConcertoToMaimCodec:
                 sender_info=sender_info,
                 receiver_info=receiver_info,
                 additional_config={
+                    # 旧版 API-Server 链路没有顶层 account_id，只能通过
+                    # additional_config 兼容字段把机器人账号带给 MaiBot。
                     "account_id": _safe_str(self.owner.robot.self_id),
                 },
             ),
@@ -817,8 +819,10 @@ class MaimToConcertoCodec:
             segment_type = _safe_str(data.get("type"))
             if not segment_type:
                 return None
+            # 没有 data 键的 dict（如 MaiBot 下发的 {"type":"video","binary_data_base64":...}）
+            # 要把整份载荷传下去，否则视频/文件内容会被丢掉
             return await self._render_segment(
-                Seg(type=segment_type, data=data.get("data")),
+                Seg(type=segment_type, data=data["data"] if "data" in data else data),
                 group_id,
                 apply_mentions=apply_mentions,
             )
@@ -842,17 +846,6 @@ class MaimToConcertoCodec:
 
         if segment.type == "text":
             text = segment.data
-            # 此处为不支持戳一戳与at方法时，使用固定格式实现简单的戳一戳与at功能
-            # 转发消息内的文本不做该处理，避免历史消息里的@或#误触发戳一戳等动作
-            if apply_mentions and (match := re.search(r"[\(（]?[@#](.*?)[\)）]?", text)):
-                user_name = match.group(1)
-                user_id = Utils.get_user_id(self.owner.robot, user_name, group_id)
-                if re.search(r"[\(（]?#(.*?)[\)）]?", text) and user_id:
-                    Utils.poke(self.owner.robot, user_id, group_id)
-                    text = re.sub(r"[\(（]?#(.*?)[\)）]?", "", text)
-                if re.search(r"[\(（]?@(.*?)[\)）]?", text) and user_id:
-                    at_msg = f"[CQ:at,qq={user_id}] " if user_id else f"@{user_name}"
-                    text = re.sub(r"[\(（]?@(.*?)[\)）]?", at_msg, text)
             if not text:
                 return None
             return {"type": "message", "message": _safe_str(text)}
@@ -892,7 +885,18 @@ class MaimToConcertoCodec:
             return {"type": "message", "message": f"[CQ:record,file=base64://{segment.data}]"}
 
         if segment.type == "video":
-            return {"type": "message", "message": f"[CQ:video,file=base64://{_safe_str(segment.data)}]"}
+            payload = segment.data
+            if isinstance(payload, Mapping):
+                video_file = _safe_str(
+                    payload.get("binary_data_base64") or payload.get("base64")
+                    or payload.get("file") or payload.get("url") or payload.get("path")
+                    or payload.get("data")
+                )
+            else:
+                video_file = _safe_str(payload)
+            if video_file.startswith(("http://", "https://", "file://", "base64://")):
+                return {"type": "message", "message": f"[CQ:video,file={video_file}]"}
+            return {"type": "message", "message": f"[CQ:video,file=base64://{video_file}]"}
 
         if segment.type == "poke":
             data = segment.data
@@ -932,6 +936,7 @@ class MaimToConcertoCodec:
             rendered = await self._render_segment(segment, target.group_id, apply_mentions=False)
             content = _safe_str(rendered.get("message")).strip() if rendered else ""
             if not content:
+                self.owner.warnf(f"转发节点内容为空已跳过: {_segment_preview(segment)}")
                 continue
             if not source:
                 source = content.split("\n", 1)[0]
