@@ -135,6 +135,44 @@ class Waifu(Module):
             conn.close()
         return [row[0] for row in rows]
 
+    def get_group_member_ids(self):
+        """获取当前群聊的成员QQ号，无法确认时返回None"""
+        group_id = self.event.group_id
+        if not group_id:
+            return None
+        try:
+            result = Utils.get_group_member_list(self.robot, group_id)
+        except Exception: # pylint: disable=broad-exception-caught
+            self.errorf(f"获取群成员列表失败，本次不抽取群友\n{traceback.format_exc()}")
+            return None
+        if not Utils.status_ok(result):
+            self.warnf(f"获取群成员列表失败，本次不抽取群友: {result}")
+            return None
+        return {str(member.get("user_id", "")) for member in (result.get("data") or [])}
+
+    def get_available_users(self, role, user_id):
+        """获取本次可抽取的群友，已退出群聊的用户不参与抽取"""
+        today = datetime.date.today()
+        recent_targets = self.get_recent_targets(role, user_id)
+        # 如果抽的是群角色，只允许近30天内抽过角色的群友
+        recent_targets.update(self._get_draws_by_dates(
+            role,
+            {
+                today.strftime("%Y%m%d"),
+                (today - datetime.timedelta(days=1)).strftime("%Y%m%d"),
+            },
+        ))
+        user_list = [
+            target for target in self.get_recent_draw_users(role)
+            if target != user_id and target not in recent_targets
+        ]
+        if not user_list:
+            return []
+        member_ids = self.get_group_member_ids()
+        if member_ids is None:
+            return []
+        return [target for target in user_list if target in member_ids]
+
     def get_recent_waifus(self):
         """获取今天和昨天已分配的老婆列表"""
         today = datetime.date.today()
@@ -171,7 +209,18 @@ class Waifu(Module):
             if os.path.splitext(person)[0] not in recent_names
         ]
 
-        return available_people
+        return self.exclude_left_members(available_people)
+
+    def exclude_left_members(self, people):
+        """剔除已退出群聊用户的群友图片"""
+        users = {person for person in people if re.search(r"^[0-9]+$", os.path.splitext(person)[0])}
+        if not users:
+            return people
+        member_ids = self.get_group_member_ids()
+        if member_ids is None:
+            # 无法确认群成员身份时，群友图片不参与抽取
+            return [person for person in people if person not in users]
+        return [person for person in people if person not in users or os.path.splitext(person)[0] in member_ids]
 
     @Utils.handler(lambda self: self.au(2) and self.conv_config.get("enable") and self.match(r"^抽取?老婆$"))
     def draw_waifu(self):
@@ -194,22 +243,11 @@ class Waifu(Module):
         if person is None:
             # 从可用角色中随机选择
             user_rate = self.conv_config.get("user_rate", 0)
-            recent_targets = self.get_recent_targets(role, user_id)
-            # 如果抽的是群角色，只允许近30天内抽过角色的群友
-            recent_targets.update(self._get_draws_by_dates(
-                role,
-                {
-                    datetime.date.today().strftime("%Y%m%d"),
-                    (datetime.date.today() - datetime.timedelta(days=1)).strftime("%Y%m%d"),
-                },
-            ))
-            user_list = [
-                target for target in self.get_recent_draw_users(role)
-                if target != user_id and target not in recent_targets
-            ]
+            # 抽取群角色时，只从仍在群内的群友中抽取
+            user_list = self.get_available_users(role, user_id) if user_rate > 0 else []
 
             # 是否抽取群角色
-            is_user_person = user_rate > 0 and user_list and random.random() <= user_rate
+            is_user_person = bool(user_list) and random.random() <= user_rate
             if is_user_person:
                 # 抽群友
                 person = random.choice(user_list)
